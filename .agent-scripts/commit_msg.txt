@@ -1,11 +1,1 @@
-feat: Sharpe + max drawdown, sparkline tiles, richer backtest metrics
-
-- quantitative_models: backtest_zscore_meanreversion now returns
-  max_drawdown_usd (peak-to-trough) and Sharpe (annualised by
-  trades-per-year estimated from mean hold). Zero-safe.
-- app.py: 6-column backtest metrics row (adds DD + Sharpe tiles).
-- app.py: 4-tile sparkline strip above the hero banner (Brent,
-  WTI, Spread Z, Inventory), each a miniature Scattergl with a
-  headline metric card.
-
-All checks still green (28/28).
+docs: refresh screenshots with sparkline strip + extra backtest tiles
