@@ -115,6 +115,55 @@ st.caption(
     "and tanker fleet composition by regulatory regime."
 )
 
+
+def _sparkline(series, color: str, height: int = 60) -> go.Figure:
+    fig = go.Figure(
+        data=[
+            go.Scattergl(
+                x=list(range(len(series))),
+                y=list(series),
+                mode="lines",
+                line=dict(color=color, width=1.6),
+                hoverinfo="skip",
+            )
+        ]
+    )
+    fig.update_layout(
+        height=height,
+        margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        showlegend=False,
+    )
+    return fig
+
+
+spark_cols = st.columns(4)
+# Brent 30d spark
+brent_tail = prices["Brent"].tail(60)
+spark_cols[0].metric("Brent (60d)", f"${brent_tail.iloc[-1]:,.2f}",
+                      delta=f"{(brent_tail.iloc[-1]-brent_tail.iloc[0]):+.2f}")
+spark_cols[0].plotly_chart(_sparkline(brent_tail, "#1f77b4"), use_container_width=True, config={"displayModeBar": False})
+
+wti_tail = prices["WTI"].tail(60)
+spark_cols[1].metric("WTI (60d)", f"${wti_tail.iloc[-1]:,.2f}",
+                      delta=f"{(wti_tail.iloc[-1]-wti_tail.iloc[0]):+.2f}")
+spark_cols[1].plotly_chart(_sparkline(wti_tail, "#d62728"), use_container_width=True, config={"displayModeBar": False})
+
+z_tail = spread_df["Z_Score"].dropna().tail(120)
+z_val = z_tail.iloc[-1] if not z_tail.empty else 0.0
+spark_cols[2].metric("Spread Z (120d)", f"{z_val:+.2f}\u03c3",
+                      delta=("ALERT" if abs(z_val) >= z_threshold else "calm"),
+                      delta_color=("inverse" if abs(z_val) >= z_threshold else "normal"))
+spark_cols[2].plotly_chart(_sparkline(z_tail, "#2ca02c"), use_container_width=True, config={"displayModeBar": False})
+
+inv_tail = inventory["Total_Inventory_bbls"].tail(52) / 1e6
+spark_cols[3].metric("Inventory (52w)", f"{inv_tail.iloc[-1]:,.0f} Mbbl",
+                      delta=f"{(inv_tail.iloc[-1]-inv_tail.iloc[0]):+.1f}")
+spark_cols[3].plotly_chart(_sparkline(inv_tail, "#ff9f1c"), use_container_width=True, config={"displayModeBar": False})
+
 render_hero_banner(height=220)
 
 
@@ -242,7 +291,7 @@ with tab_arb:
     bt = backtest_zscore_meanreversion(
         spread_df, entry_z=z_threshold, exit_z=0.2, notional_bbls=10_000.0
     )
-    bt_c1, bt_c2, bt_c3, bt_c4 = st.columns(4)
+    bt_c1, bt_c2, bt_c3, bt_c4, bt_c5, bt_c6 = st.columns(6)
     bt_c1.metric("Trades", f"{bt['n_trades']:,}")
     bt_c2.metric(
         "Total PnL",
@@ -251,6 +300,8 @@ with tab_arb:
     )
     bt_c3.metric("Win rate", f"{bt['win_rate']*100:.1f}%")
     bt_c4.metric("Avg hold", f"{bt['avg_days_held']:.1f} days")
+    bt_c5.metric("Max drawdown", f"${bt.get('max_drawdown_usd', 0.0):,.0f}")
+    bt_c6.metric("Sharpe (ann.)", f"{bt.get('sharpe', 0.0):.2f}")
 
     if not bt["equity_curve"].empty:
         eq_fig = go.Figure()

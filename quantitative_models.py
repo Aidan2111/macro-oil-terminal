@@ -11,6 +11,8 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Dict, Tuple
 
+import math
+
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
@@ -305,6 +307,21 @@ def backtest_zscore_meanreversion(
         eq["cum_pnl_usd"] = eq["pnl_usd"].cumsum()
         equity = eq.rename(columns={"exit_date": "Date"})[["Date", "cum_pnl_usd"]]
 
+        # Max drawdown (peak-to-trough on cumulative PnL)
+        running_max = equity["cum_pnl_usd"].cummax()
+        drawdown = equity["cum_pnl_usd"] - running_max
+        max_dd = float(drawdown.min()) if not drawdown.empty else 0.0
+
+        # Sharpe-ish ratio: mean trade PnL / stdev, annualised by sqrt(trades/yr).
+        # Trades are irregularly spaced so we approximate annualisation by
+        # sqrt(365 / mean_hold_days).
+        pnl_series = tdf["pnl_usd"].astype(float)
+        mean_hold = float(tdf["days_held"].mean()) or 1.0
+        trades_per_year = 365.0 / max(mean_hold, 1.0)
+        sharpe = float(
+            (pnl_series.mean() / pnl_series.std(ddof=0)) * np.sqrt(trades_per_year)
+        ) if pnl_series.std(ddof=0) > 0 else 0.0
+
         out.update(
             {
                 "trades": tdf.sort_values("entry_date").reset_index(drop=True),
@@ -314,8 +331,12 @@ def backtest_zscore_meanreversion(
                 "avg_days_held": float(tdf["days_held"].mean()),
                 "avg_pnl_per_bbl": float(tdf["pnl_per_bbl"].mean()),
                 "equity_curve": equity.reset_index(drop=True),
+                "max_drawdown_usd": max_dd,
+                "sharpe": sharpe,
             }
         )
+    else:
+        out.update({"max_drawdown_usd": 0.0, "sharpe": 0.0})
 
     return out
 
