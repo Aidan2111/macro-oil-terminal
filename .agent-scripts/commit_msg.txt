@@ -1,1 +1,6 @@
-docs: final progress log + handover notes
+feat: flag-state drill-down bar + PnL distribution histogram
+
+- Tab 1 (Macro Arbitrage): PnL histogram under the equity curve, with
+  a dotted breakeven vertical.
+- Tab 3 (Fleet Analytics): new stacked-by-category flag-state drill-down
+  bar between the headline 4-category chart and the globe.

@@ -324,6 +324,32 @@ with tab_arb:
         )
         st.plotly_chart(eq_fig, use_container_width=True)
 
+        # PnL distribution histogram
+        pnl_fig = go.Figure()
+        pnl_fig.add_trace(
+            go.Histogram(
+                x=bt["trades"]["pnl_usd"],
+                nbinsx=24,
+                marker_color="#ff9f1c",
+                opacity=0.85,
+                hovertemplate="bucket %{x:,.0f} USD<br>count=%{y}<extra></extra>",
+            )
+        )
+        pnl_fig.add_vline(
+            x=0, line=dict(color="#e7ecf3", width=1, dash="dot"),
+            annotation_text="breakeven", annotation_position="top right",
+        )
+        pnl_fig.update_layout(
+            height=260,
+            template="plotly_dark",
+            margin=dict(l=40, r=20, t=20, b=40),
+            yaxis_title="Trades",
+            xaxis_title="Trade PnL (USD)",
+            showlegend=False,
+            bargap=0.03,
+        )
+        st.plotly_chart(pnl_fig, use_container_width=True)
+
         with st.expander("Trade blotter"):
             st.dataframe(bt["trades"], use_container_width=True)
             st.download_button(
@@ -486,6 +512,49 @@ with tab_fleet:
     m3.metric("Jones Act Share", f"{(jones / total_mbbl * 100.0) if total_mbbl else 0:.1f}%")
 
     st.plotly_chart(bar, use_container_width=True)
+
+    # Per-country drill-down (Mbbl by flag state, colored by category)
+    drill = (
+        ais_with_cat.groupby(["Flag_State", "Category"], as_index=False)
+        .agg(
+            Total_Cargo_bbls=("Cargo_Volume_bbls", "sum"),
+            Vessel_Count=("Cargo_Volume_bbls", "count"),
+        )
+        .sort_values("Total_Cargo_bbls", ascending=False)
+    )
+    drill["Total_Cargo_Mbbl"] = drill["Total_Cargo_bbls"] / 1_000_000.0
+    drill_fig = go.Figure()
+    for cat, cat_color in category_colors.items():
+        subset = drill[drill["Category"] == cat]
+        if subset.empty:
+            continue
+        drill_fig.add_trace(
+            go.Bar(
+                x=subset["Flag_State"],
+                y=subset["Total_Cargo_Mbbl"],
+                name=cat,
+                marker_color=cat_color,
+                hovertemplate=(
+                    "%{x}<br>%{y:,.1f} Mbbl "
+                    "<br>%{customdata} vessels"
+                    "<extra>"
+                    + cat
+                    + "</extra>"
+                ),
+                customdata=subset["Vessel_Count"],
+            )
+        )
+    drill_fig.update_layout(
+        height=380,
+        template="plotly_dark",
+        margin=dict(l=40, r=20, t=30, b=60),
+        yaxis_title="Mbbl on water",
+        xaxis_title="Flag state",
+        barmode="stack",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.markdown("#### Flag-state drill-down")
+    st.plotly_chart(drill_fig, use_container_width=True)
 
     st.markdown("#### 3D Globe — WebGPU Tanker Positions")
     st.caption(
