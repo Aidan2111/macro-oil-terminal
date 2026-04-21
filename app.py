@@ -30,6 +30,7 @@ from quantitative_models import (
 )
 from webgpu_components import render_hero_banner, render_fleet_globe
 from ai_insights import InsightContext, generate_commentary
+from alerts import maybe_send_zscore_alert
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,13 @@ st.sidebar.markdown("---")
 st.sidebar.caption(
     "Pricing: yfinance (5y daily, BZ=F / CL=F). Inventory: simulated 2y. "
     "AIS: mock 500-vessel fleet."
+)
+
+alert_on = st.sidebar.toggle(
+    "Email me on Z-score breach",
+    value=False,
+    help="Requires ALERT_SMTP_* env vars. Without them, the UI will show the "
+    "exact message that would have been sent.",
 )
 
 
@@ -192,6 +200,18 @@ with tab_arb:
         delta=f"{'ALERT' if z_flag else 'calm'}  |  spread ${latest_spread:,.2f}",
         delta_color="inverse" if z_flag else "normal",
     )
+
+    if alert_on:
+        alert_status = maybe_send_zscore_alert(latest_z, z_threshold, latest_spread)
+        if alert_status is None:
+            st.success(f"Spread within band — no alert sent (|Z|={abs(latest_z):.2f} < {z_threshold:.1f}).")
+        elif alert_status.startswith("[sent]"):
+            st.error(alert_status)
+        elif alert_status.startswith("[error]"):
+            st.warning(alert_status)
+        else:
+            with st.expander("Alert would be sent (SMTP not configured)", expanded=False):
+                st.code(alert_status)
 
     fig = make_subplots(
         rows=2,

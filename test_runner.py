@@ -336,6 +336,31 @@ def test_ai_insights() -> None:
     _check("ai_insights.generate(no_env)", t_generate_no_env)
 
 
+def test_alerts() -> None:
+    import os
+    from alerts import maybe_send_zscore_alert
+
+    def t_below_threshold() -> None:
+        assert maybe_send_zscore_alert(1.2, 3.0, 2.5) is None
+
+    def t_breach_preview() -> None:
+        # Ensure env vars are not set so we hit the preview branch
+        for key in ("ALERT_SMTP_HOST", "ALERT_SMTP_USER", "ALERT_SMTP_PASS", "ALERT_SMTP_TO"):
+            os.environ.pop(key, None)
+        out = maybe_send_zscore_alert(3.8, 3.0, 4.2)
+        assert out is not None and out.startswith("[would-send]")
+        assert "+3.80" in out or "3.80" in out
+
+    def t_breach_negative() -> None:
+        out = maybe_send_zscore_alert(-3.4, 3.0, -1.1)
+        assert out is not None
+        assert "-3.40" in out or "3.40" in out
+
+    _check("alerts.below_threshold(no_op)", t_below_threshold)
+    _check("alerts.breach_preview(unset_env)", t_breach_preview)
+    _check("alerts.breach_negative", t_breach_negative)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -349,6 +374,8 @@ def main() -> int:
     test_webgpu_components()
     print("-- ai_insights --")
     test_ai_insights()
+    print("-- alerts --")
+    test_alerts()
 
     total = len(PASSED) + len(FAILED)
     print("\nResults:")

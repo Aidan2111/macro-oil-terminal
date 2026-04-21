@@ -1,6 +1,9 @@
-feat: flag-state drill-down bar + PnL distribution histogram
+feat: email alert stub (SMTP) wired to sidebar toggle
 
-- Tab 1 (Macro Arbitrage): PnL histogram under the equity curve, with
-  a dotted breakeven vertical.
-- Tab 3 (Fleet Analytics): new stacked-by-category flag-state drill-down
-  bar between the headline 4-category chart and the globe.
+- alerts.py: maybe_send_zscore_alert with four return states
+  (None below threshold / [would-send] preview when SMTP env unset /
+  [sent] on success / [error] on failure). Env-var driven, no keys in repo.
+- Sidebar toggle "Email me on Z-score breach"; Tab 1 renders preview
+  (unconfigured) / success (sent) / warning (error) surfaces.
+- test_runner: 3 new alert checks (below threshold, preview, negative-Z
+  breach). Runner now 31/31 green.
