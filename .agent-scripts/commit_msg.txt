@@ -1,1 +1,1 @@
-docs: refresh screenshots with sparkline strip + extra backtest tiles
+docs: final progress log + handover notes

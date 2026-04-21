@@ -134,4 +134,28 @@ Timestamps are UTC (sandbox time).
 - Zip deploy #2: `RuntimeSuccessful`. Live screenshot confirmed — Brent $95.48 / WTI $89.61, backtest 11 trades / $252,900 PnL / 100% win rate.
 - **Live URL:** https://oil-tracker-app-4281.azurewebsites.net
 
+### 12:59Z — Richer backtest + sparkline tiles
+- `backtest_zscore_meanreversion` now returns `max_drawdown_usd` (peak-to-trough on cumulative PnL) and an annualised Sharpe-like ratio (mean/std × √(trades/yr)).
+- Tab 1 backtest row widened from 4 → 6 metrics (adds DD + Sharpe).
+- 4-tile sparkline strip above the hero banner: Brent / WTI / Spread Z / Inventory, each a miniature `Scattergl` with a headline metric card.
+
+### 13:01Z — Zip deploy #3
+- Deployed sparkline + Sharpe upgrade to Azure. `RuntimeSuccessful`.
+- Fresh local screenshots captured with the sparkline strip visible. Backtest now reads 11 trades / $252,900 PnL / 100% / 33.4 days / $0 DD / 5.01 Sharpe.
+
+### 13:03Z — GitHub Actions CI
+- First run on `fix:` commit → **success** (54s).
+- Second run on `feat:` commit → **success** (54s).
+- Third run on `docs:` commit → **success** (53s).
+- Matrix covers Python 3.11 + 3.12, plus a separate Streamlit boot+healthz smoke job.
+
+### State at handover
+- **Local dir:** `/Users/aidanbothost/Documents/macro_oil_terminal`
+- **GitHub:** https://github.com/Aidan2111/macro-oil-terminal (7 commits, CI green)
+- **Azure RG:** oil-price-tracker (westus2 for plan, eastus for AOAI)
+- **Azure Web App:** oil-tracker-app-4281.azurewebsites.net — deployed, serving
+- **Azure OpenAI:** oil-tracker-aoai, `gpt-4o-mini` GlobalStandard deployment
+- **Tests:** 28/28 local, 3/3 CI runs green
+
+
 
