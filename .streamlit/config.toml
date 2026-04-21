@@ -5,3 +5,11 @@ fileWatcherType = "none"
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#ff9f1c"
+backgroundColor = "#0b0f14"
+secondaryBackgroundColor = "#111821"
+textColor = "#e7ecf3"
+font = "monospace"

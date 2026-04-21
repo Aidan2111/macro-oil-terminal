@@ -218,4 +218,111 @@ def categorize_flag_states(ais_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataF
     return df, grouped
 
 
-__all__ = ["compute_spread_zscore", "forecast_depletion", "categorize_flag_states"]
+# ---------------------------------------------------------------------------
+# Backtest — Z-score mean-reversion on the Brent-WTI spread
+# ---------------------------------------------------------------------------
+def backtest_zscore_meanreversion(
+    spread_df: pd.DataFrame,
+    entry_z: float = 2.0,
+    exit_z: float = 0.2,
+    notional_bbls: float = 10_000.0,
+) -> Dict[str, object]:
+    """Rule-based backtest of the classic spread mean-reversion play.
+
+    Rule:
+      * Enter **short spread** (short Brent / long WTI) when Z >=  entry_z
+      * Enter **long spread**  (long  Brent / short WTI) when Z <= -entry_z
+      * Exit flat on the next bar where ``abs(Z) <= exit_z``
+
+    Returns a dict containing the per-trade DataFrame and summary stats
+    (win rate, total PnL, Sharpe-ish). Spread PnL is measured per barrel.
+    """
+    empty = pd.DataFrame(
+        columns=[
+            "entry_date", "exit_date", "side", "entry_spread",
+            "exit_spread", "pnl_per_bbl", "pnl_usd", "days_held",
+        ]
+    )
+    out = {
+        "trades": empty,
+        "total_pnl_usd": 0.0,
+        "n_trades": 0,
+        "win_rate": 0.0,
+        "avg_days_held": 0.0,
+        "avg_pnl_per_bbl": 0.0,
+        "equity_curve": pd.DataFrame(columns=["Date", "cum_pnl_usd"]),
+    }
+
+    if spread_df is None or spread_df.empty:
+        return out
+    if "Z_Score" not in spread_df.columns or "Spread" not in spread_df.columns:
+        return out
+
+    df = spread_df[["Spread", "Z_Score"]].dropna().copy()
+    if df.empty:
+        return out
+
+    trades: list[dict] = []
+    position = 0  # +1 long spread, -1 short spread, 0 flat
+    entry_date = None
+    entry_spread = 0.0
+
+    for date, row in df.iterrows():
+        z = float(row["Z_Score"])
+        s = float(row["Spread"])
+        if position == 0:
+            if z >= entry_z:
+                position = -1  # short spread
+                entry_date, entry_spread = date, s
+            elif z <= -entry_z:
+                position = 1   # long spread
+                entry_date, entry_spread = date, s
+        else:
+            if abs(z) <= exit_z:
+                side = "long_spread" if position == 1 else "short_spread"
+                pnl_per_bbl = (s - entry_spread) * position
+                trades.append(
+                    {
+                        "entry_date": entry_date,
+                        "exit_date": date,
+                        "side": side,
+                        "entry_spread": entry_spread,
+                        "exit_spread": s,
+                        "pnl_per_bbl": pnl_per_bbl,
+                        "pnl_usd": pnl_per_bbl * notional_bbls,
+                        "days_held": (date - entry_date).days,
+                    }
+                )
+                position = 0
+                entry_date, entry_spread = None, 0.0
+
+    tdf = pd.DataFrame(trades) if trades else empty
+
+    if not tdf.empty:
+        total = float(tdf["pnl_usd"].sum())
+        wins = int((tdf["pnl_usd"] > 0).sum())
+        eq = tdf.sort_values("exit_date").copy()
+        eq["cum_pnl_usd"] = eq["pnl_usd"].cumsum()
+        equity = eq.rename(columns={"exit_date": "Date"})[["Date", "cum_pnl_usd"]]
+
+        out.update(
+            {
+                "trades": tdf.sort_values("entry_date").reset_index(drop=True),
+                "total_pnl_usd": total,
+                "n_trades": int(len(tdf)),
+                "win_rate": wins / len(tdf),
+                "avg_days_held": float(tdf["days_held"].mean()),
+                "avg_pnl_per_bbl": float(tdf["pnl_per_bbl"].mean()),
+                "equity_curve": equity.reset_index(drop=True),
+            }
+        )
+
+    return out
+
+
+__all__ = [
+    "compute_spread_zscore",
+    "forecast_depletion",
+    "categorize_flag_states",
+    "backtest_zscore_meanreversion",
+]

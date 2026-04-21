@@ -255,4 +255,35 @@ def generate_ais_mock(n_vessels: int = 500, seed: int = 19) -> pd.DataFrame:
     return df
 
 
-__all__ = ["fetch_pricing_data", "simulate_inventory", "generate_ais_mock"]
+# ---------------------------------------------------------------------------
+# 4. Live AIS (stubbed — key-gated)
+# ---------------------------------------------------------------------------
+def fetch_live_ais(api_key: str | None = None) -> pd.DataFrame:
+    """Live AIS via aisstream.io — currently a documented stub.
+
+    aisstream.io is free but requires a GitHub-linked API key (issued at
+    https://aisstream.io/apikeys). Their protocol is a JSON subscription
+    over ``wss://stream.aisstream.io/v0/stream`` with an ``APIKey`` field
+    and geographic bounding boxes. Hooking this up means:
+
+      1. Add ``websockets`` to ``requirements.txt``.
+      2. Accept ``api_key`` from ``AISSTREAM_API_KEY`` env var.
+      3. Open a background asyncio task that consumes for ~20s, filters
+         message type 1/2/3/5 for cargo-type ``80`` (crude tanker),
+         normalises into the same schema as :func:`generate_ais_mock`.
+
+    Until an API key is provided we raise a clear ``NotImplementedError`` so
+    the caller (``app.py``) can gracefully fall back to the mock generator.
+    """
+    raise NotImplementedError(
+        "Live AIS disabled: set AISSTREAM_API_KEY to enable (aisstream.io "
+        "requires a free GitHub-linked key)."
+    )
+
+
+__all__ = [
+    "fetch_pricing_data",
+    "simulate_inventory",
+    "generate_ais_mock",
+    "fetch_live_ais",
+]

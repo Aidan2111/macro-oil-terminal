@@ -115,6 +115,7 @@ def test_quant_models() -> None:
         compute_spread_zscore,
         forecast_depletion,
         categorize_flag_states,
+        backtest_zscore_meanreversion,
     )
 
     prices = fetch_pricing_data(years=5)
@@ -201,8 +202,35 @@ def test_quant_models() -> None:
     _check("quant.forecast_depletion(weeks)", t_depletion_weekspan)
     _check("quant.forecast_depletion(empty)", t_depletion_empty)
     _check("quant.forecast_depletion(rising)", t_depletion_rising)
+    def t_backtest_basic() -> None:
+        sdf = compute_spread_zscore(prices, window=90)
+        out = backtest_zscore_meanreversion(sdf, entry_z=1.0, exit_z=0.2)
+        assert isinstance(out, dict)
+        assert {"trades", "total_pnl_usd", "n_trades", "win_rate", "equity_curve"}.issubset(out)
+        if out["n_trades"] > 0:
+            assert math.isfinite(out["total_pnl_usd"])
+            assert 0.0 <= out["win_rate"] <= 1.0
+            assert set(out["trades"].columns) >= {
+                "entry_date", "exit_date", "side",
+                "entry_spread", "exit_spread",
+                "pnl_per_bbl", "pnl_usd", "days_held",
+            }
+
+    def t_backtest_empty() -> None:
+        out = backtest_zscore_meanreversion(pd.DataFrame(), entry_z=2.0, exit_z=0.2)
+        assert out["n_trades"] == 0
+        assert out["total_pnl_usd"] == 0.0
+
+    def t_backtest_threshold_too_high() -> None:
+        sdf = compute_spread_zscore(prices, window=90)
+        out = backtest_zscore_meanreversion(sdf, entry_z=99.0, exit_z=0.2)
+        assert out["n_trades"] == 0
+
     _check("quant.categorize_flag_states(basic)", t_categorize_basic)
     _check("quant.categorize_flag_states(edges)", t_categorize_edges)
+    _check("quant.backtest_zscore_meanreversion(basic)", t_backtest_basic)
+    _check("quant.backtest_zscore_meanreversion(empty)", t_backtest_empty)
+    _check("quant.backtest_zscore_meanreversion(no_signal)", t_backtest_threshold_too_high)
 
 
 # ---------------------------------------------------------------------------

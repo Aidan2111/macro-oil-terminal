@@ -26,6 +26,7 @@ from quantitative_models import (
     compute_spread_zscore,
     forecast_depletion,
     categorize_flag_states,
+    backtest_zscore_meanreversion,
 )
 from webgpu_components import render_hero_banner, render_fleet_globe
 from ai_insights import InsightContext, generate_commentary
@@ -210,7 +211,7 @@ with tab_arb:
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=40, r=20, t=60, b=40),
-        template="plotly_white",
+        template="plotly_dark",
     )
     fig.update_yaxes(title_text="USD / bbl", row=1, col=1)
     fig.update_yaxes(title_text="Z-Score", row=2, col=1)
@@ -222,6 +223,69 @@ with tab_arb:
         st.dataframe(
             spread_df.tail(20)[["Brent", "WTI", "Spread", "Z_Score"]].round(3),
             use_container_width=True,
+        )
+        st.download_button(
+            label="Download full series (CSV)",
+            data=spread_df[["Brent", "WTI", "Spread", "Z_Score"]].to_csv().encode(),
+            file_name="brent_wti_spread.csv",
+            mime="text/csv",
+            key="download_spread",
+        )
+
+    st.markdown("#### Historical Z-score mean-reversion backtest")
+    st.caption(
+        f"Enters at \u00b1{z_threshold:.1f}\u03c3, exits when |Z| < 0.2. "
+        "10,000 bbl notional per trade. Toy strategy — excludes carry, "
+        "slippage, and financing, so treat the PnL as a signal-quality "
+        "indicator rather than a P&L forecast."
+    )
+    bt = backtest_zscore_meanreversion(
+        spread_df, entry_z=z_threshold, exit_z=0.2, notional_bbls=10_000.0
+    )
+    bt_c1, bt_c2, bt_c3, bt_c4 = st.columns(4)
+    bt_c1.metric("Trades", f"{bt['n_trades']:,}")
+    bt_c2.metric(
+        "Total PnL",
+        f"${bt['total_pnl_usd']:,.0f}",
+        delta=f"{bt['avg_pnl_per_bbl']:+.2f}/bbl avg",
+    )
+    bt_c3.metric("Win rate", f"{bt['win_rate']*100:.1f}%")
+    bt_c4.metric("Avg hold", f"{bt['avg_days_held']:.1f} days")
+
+    if not bt["equity_curve"].empty:
+        eq_fig = go.Figure()
+        eq_fig.add_trace(
+            go.Scattergl(
+                x=bt["equity_curve"]["Date"],
+                y=bt["equity_curve"]["cum_pnl_usd"],
+                name="Cumulative PnL",
+                line=dict(color="#ff9f1c", width=1.8),
+                hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.0f}<extra></extra>",
+            )
+        )
+        eq_fig.update_layout(
+            height=320,
+            template="plotly_dark",
+            margin=dict(l=40, r=20, t=20, b=40),
+            yaxis_title="Cumulative PnL (USD)",
+            xaxis_title="Trade exit date",
+            showlegend=False,
+        )
+        st.plotly_chart(eq_fig, use_container_width=True)
+
+        with st.expander("Trade blotter"):
+            st.dataframe(bt["trades"], use_container_width=True)
+            st.download_button(
+                label="Download trade blotter (CSV)",
+                data=bt["trades"].to_csv(index=False).encode(),
+                file_name="zscore_backtest_trades.csv",
+                mime="text/csv",
+                key="download_blotter",
+            )
+    else:
+        st.info(
+            f"No trades triggered at \u00b1{z_threshold:.1f}\u03c3 on the "
+            "historical window. Drop the threshold in the sidebar to see activity."
         )
 
 
@@ -289,7 +353,7 @@ with tab_depl:
 
     fig2.update_layout(
         height=560,
-        template="plotly_white",
+        template="plotly_dark",
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=40, r=20, t=40, b=40),
@@ -302,6 +366,23 @@ with tab_depl:
     st.caption(
         f"Linear regression on trailing {depletion_weeks}-week inventory window. "
         "Dashed orange line is the forward projection; red dotted line is the user-set floor."
+    )
+
+    st.download_button(
+        label="Download inventory + projection (CSV)",
+        data=(
+            pd.concat(
+                [
+                    inventory.reset_index().rename(columns={"Date": "Date"}),
+                    depletion["regression_line"].assign(Date=depletion["regression_line"]["Date"]),
+                ],
+                axis=0,
+                ignore_index=True,
+            ).to_csv(index=False).encode()
+        ),
+        file_name="inventory_depletion.csv",
+        mime="text/csv",
+        key="download_depletion",
     )
 
 
@@ -337,7 +418,7 @@ with tab_fleet:
     )
     bar.update_layout(
         height=440,
-        template="plotly_white",
+        template="plotly_dark",
         yaxis_title="Mbbl on Water",
         xaxis_title="",
         showlegend=False,
@@ -375,6 +456,13 @@ with tab_fleet:
                 ]
             ],
             use_container_width=True,
+        )
+        st.download_button(
+            label="Download full fleet roster (CSV)",
+            data=ais_with_cat.to_csv(index=False).encode(),
+            file_name="ais_fleet_roster.csv",
+            mime="text/csv",
+            key="download_fleet",
         )
 
 
