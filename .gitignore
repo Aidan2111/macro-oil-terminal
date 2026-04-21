@@ -5,6 +5,9 @@ __pycache__/
 venv/
 .env
 .env.*
+!.env.example
+.agent-scripts/app_name.txt
+.agent-scripts/aoai_endpoint.txt
 *.log
 .DS_Store
 .streamlit/secrets.toml

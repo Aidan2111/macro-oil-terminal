@@ -6,6 +6,16 @@ Streamlit entry point. Run with:
 
 from __future__ import annotations
 
+import os
+
+# Load .env (no-op if python-dotenv absent or no file) so local dev picks
+# up AZURE_OPENAI_* keys without App Service's app settings.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -18,6 +28,7 @@ from quantitative_models import (
     categorize_flag_states,
 )
 from webgpu_components import render_hero_banner, render_fleet_globe
+from ai_insights import InsightContext, generate_commentary
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +120,8 @@ render_hero_banner(height=220)
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
-tab_arb, tab_depl, tab_fleet = st.tabs(
-    ["Macro Arbitrage", "Depletion Forecast", "Fleet Analytics"]
+tab_arb, tab_depl, tab_fleet, tab_ai = st.tabs(
+    ["Macro Arbitrage", "Depletion Forecast", "Fleet Analytics", "AI Insights"]
 )
 
 
@@ -367,8 +378,83 @@ with tab_fleet:
         )
 
 
+# ---- Tab 4 — AI Insights -------------------------------------------------
+with tab_ai:
+    st.subheader("AI-Generated Market Commentary")
+
+    endpoint_set = bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
+    key_set = bool(os.environ.get("AZURE_OPENAI_KEY"))
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+
+    status_cols = st.columns([1, 1, 1, 2])
+    status_cols[0].metric("Endpoint", "set" if endpoint_set else "missing")
+    status_cols[1].metric("API key", "set" if key_set else "missing")
+    status_cols[2].metric("Deployment", deployment)
+    status_cols[3].metric(
+        "Mode",
+        "Azure OpenAI" if (endpoint_set and key_set) else "Canned fallback",
+    )
+
+    jones_mbbl = float(
+        headline.loc[headline["Category"] == "Jones Act / Domestic", "Total_Cargo_Mbbl"].sum()
+    )
+    shadow_mbbl = float(
+        headline.loc[headline["Category"] == "Shadow Risk", "Total_Cargo_Mbbl"].sum()
+    )
+    sanctioned_mbbl = float(
+        headline.loc[headline["Category"] == "Sanctioned", "Total_Cargo_Mbbl"].sum()
+    )
+
+    ctx = InsightContext(
+        latest_brent=float(prices["Brent"].iloc[-1]),
+        latest_wti=float(prices["WTI"].iloc[-1]),
+        latest_spread=latest_spread,
+        latest_z=latest_z,
+        z_threshold=z_threshold,
+        current_inventory_bbls=current_inv,
+        floor_bbls=floor_bbls,
+        daily_depletion_bbls=daily_rate,
+        projected_floor_date=proj_date,
+        r_squared=r2,
+        jones_mbbl=jones_mbbl,
+        shadow_mbbl=shadow_mbbl,
+        sanctioned_mbbl=sanctioned_mbbl,
+        total_fleet_mbbl=total_mbbl,
+        total_vessels=total_vessels,
+    )
+
+    regenerate = st.button("Regenerate commentary", type="primary")
+    cache_key = (
+        round(latest_z, 2),
+        round(current_inv / 1e6, 1),
+        round(daily_rate / 1e3, 1),
+        proj_date.strftime("%Y-%m-%d") if proj_date is not None else "",
+        round(jones_mbbl, 1),
+        round(shadow_mbbl, 1),
+        round(sanctioned_mbbl, 1),
+        round(z_threshold, 2),
+        regenerate,
+    )
+
+    # Use session_state as a simple memo keyed by the tuple above to avoid
+    # hashing the dataclass itself.
+    if (
+        "_ai_key" not in st.session_state
+        or st.session_state["_ai_key"] != cache_key
+    ):
+        with st.spinner("Asking Azure OpenAI..."):
+            st.session_state["_ai_commentary"] = generate_commentary(ctx)
+            st.session_state["_ai_key"] = cache_key
+    commentary = st.session_state["_ai_commentary"]
+
+    st.markdown(commentary)
+
+    with st.expander("Snapshot sent to the model"):
+        st.code(ctx.prompt_snapshot(), language="text")
+
+
 st.markdown("---")
 st.caption(
-    "Streamlit + Plotly + Three.js/WebGPU. Pricing via yfinance, inventory simulated, "
-    "AIS mocked. Not investment advice."
+    "Streamlit + Plotly + Three.js/WebGPU + Azure OpenAI. Pricing via yfinance, "
+    "inventory simulated, AIS mocked. Not investment advice."
 )

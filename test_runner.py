@@ -238,6 +238,68 @@ def test_webgpu_components() -> None:
 
 
 # ---------------------------------------------------------------------------
+# ai_insights
+# ---------------------------------------------------------------------------
+def test_ai_insights() -> None:
+    import os
+    from ai_insights import InsightContext, generate_commentary, _canned_commentary
+
+    def _mk_ctx(**overrides):
+        base = dict(
+            latest_brent=82.10,
+            latest_wti=78.40,
+            latest_spread=3.70,
+            latest_z=1.45,
+            z_threshold=3.0,
+            current_inventory_bbls=680_000_000.0,
+            floor_bbls=300_000_000.0,
+            daily_depletion_bbls=-320_000.0,
+            projected_floor_date=pd.Timestamp("2028-06-15"),
+            r_squared=0.87,
+            jones_mbbl=120.0,
+            shadow_mbbl=240.0,
+            sanctioned_mbbl=180.0,
+            total_fleet_mbbl=640.0,
+            total_vessels=500,
+        )
+        base.update(overrides)
+        return InsightContext(**base)
+
+    def t_canned_basic() -> None:
+        out = _canned_commentary(_mk_ctx())
+        assert "Commentary" in out and "Risk observations" in out
+        assert "Fallback mode" in out
+        assert "-" in out  # bullets
+
+    def t_canned_no_breach() -> None:
+        out = _canned_commentary(_mk_ctx(projected_floor_date=None))
+        assert "no floor breach" in out.lower() or "not imminent" in out.lower()
+
+    def t_prompt_snapshot() -> None:
+        snap = _mk_ctx().prompt_snapshot()
+        for keyword in ("Brent", "WTI", "Z-score", "Mbbl"):
+            assert keyword in snap, f"missing {keyword} in snapshot"
+
+    def t_generate_no_env() -> None:
+        # Without env vars, should deterministically fall back
+        orig_e = os.environ.pop("AZURE_OPENAI_ENDPOINT", None)
+        orig_k = os.environ.pop("AZURE_OPENAI_KEY", None)
+        try:
+            out = generate_commentary(_mk_ctx())
+            assert "Fallback mode" in out
+        finally:
+            if orig_e is not None:
+                os.environ["AZURE_OPENAI_ENDPOINT"] = orig_e
+            if orig_k is not None:
+                os.environ["AZURE_OPENAI_KEY"] = orig_k
+
+    _check("ai_insights.canned(basic)", t_canned_basic)
+    _check("ai_insights.canned(no_breach)", t_canned_no_breach)
+    _check("ai_insights.prompt_snapshot", t_prompt_snapshot)
+    _check("ai_insights.generate(no_env)", t_generate_no_env)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> int:
@@ -248,6 +310,8 @@ def main() -> int:
     test_quant_models()
     print("-- webgpu_components --")
     test_webgpu_components()
+    print("-- ai_insights --")
+    test_ai_insights()
 
     total = len(PASSED) + len(FAILED)
     print("\nResults:")
