@@ -5,6 +5,9 @@ inventory drawdown velocity, and mock AIS-based tanker fleet exposure by
 regulatory regime, with a WebGPU/Three.js TSL hero shader, a textured
 day/night Earth globe, and an Azure OpenAI-backed market-commentary panel.
 
+- **Live (Azure App Service):** https://oil-tracker-app-4281.azurewebsites.net
+- **Repo:** https://github.com/Aidan2111/macro-oil-terminal
+
 ## Screens
 
 ![Macro Arbitrage](docs/screenshots/01_macro_arbitrage.png)

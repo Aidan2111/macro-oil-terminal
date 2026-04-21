@@ -79,6 +79,14 @@ def test_data_ingestion() -> None:
         df = simulate_inventory(years=0)  # clamps to 8 weeks minimum
         assert not df.empty
 
+    def t_inventory_length_consistency() -> None:
+        # Regression for the pandas pd.date_range(end=..., periods=N, freq='W-FRI')
+        # returning N-1 entries observed on Azure's pandas stack.
+        for yrs in (1, 2, 3, 5):
+            df = simulate_inventory(years=yrs)
+            assert len(df) == len(df["Total_Inventory_bbls"])
+            assert df["Total_Inventory_bbls"].notna().all()
+
     def t_ais() -> None:
         df = generate_ais_mock(n_vessels=500)
         assert df is not None and len(df) == 500
@@ -102,6 +110,7 @@ def test_data_ingestion() -> None:
     _check("data_ingestion.fetch_pricing_data(1y)", t_pricing_shortwindow)
     _check("data_ingestion.simulate_inventory(2y)", t_inventory)
     _check("data_ingestion.simulate_inventory(tiny)", t_inventory_short)
+    _check("data_ingestion.simulate_inventory(length_consistency)", t_inventory_length_consistency)
     _check("data_ingestion.generate_ais_mock(500)", t_ais)
     _check("data_ingestion.generate_ais_mock(5)", t_ais_small)
 

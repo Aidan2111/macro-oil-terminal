@@ -1,0 +1,20 @@
+fix: pandas 2.x length alignment in simulate_inventory + Azure live
+
+The simulate_inventory helper built its numeric arrays from a hard-coded
+weeks count, but pd.date_range(end=..., periods=N, freq="W-FRI") on
+pandas 2.x can return N-1 rows when the end date isn't on the Friday
+anchor. This crashed the Azure F1 deployment with a ValueError on
+DataFrame construction.
+
+- Build the index first, size trend/seasonal/noise/values from len(idx)
+- Fallback to 7D frequency if W-FRI returns empty
+- test_runner: new simulate_inventory(length_consistency) check for
+  years in 1, 2, 3, 5. Runner now 28/28 green.
+
+Infra completed in this commit:
+- GitHub Actions CI (.github/workflows/ci.yml) matrix 3.11/3.12
+- Zip deploy to oil-tracker-app-4281 on oil-tracker-plan-westus2
+  (F1 Linux, Python 3.11, websockets enabled)
+- Azure OpenAI gpt-4o-mini deployment wired via App Settings, live
+  smoke verified on host
+- Live URL: https://oil-tracker-app-4281.azurewebsites.net

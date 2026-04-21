@@ -118,3 +118,20 @@ Timestamps are UTC (sandbox time).
 - `playwright install chromium`; `capture_screens.py` iterates the 4 tabs with `get_by_role("tab")` + 2.5s render wait.
 - 5 PNGs in `docs/screenshots/`; README now embeds them.
 
+### 12:43Z — Live Azure OpenAI smoke test
+- Exported endpoint + key from the resource, ran `ai_insights.generate_commentary` with a realistic context. Model returned coherent Commentary + 3 risk bullets, ended with "Live — Azure OpenAI gpt-4o-mini".
+
+### 12:45Z — GitHub Actions CI
+- `.github/workflows/ci.yml`: matrix Python 3.11/3.12, runs `test_runner.py`, plus a Streamlit boot+healthz smoke job.
+
+### 12:50Z — Zip deploy to Azure Web App
+- First deploy: Kudu returned 400 "Deployment Failed" even though build phase was clean (0 errors/warnings). The site served Streamlit HTML anyway (HTTP 200).
+- Runtime crashed inside simulate_inventory: pandas 2.x returned 103 rows from `pd.date_range(end=today, periods=104, freq="W-FRI")` when `end` didn't align to the Friday anchor; DataFrame construction then mismatched a 104-length `values` array.
+
+### 12:53Z — Hotfix + redeploy
+- Built `idx` first and sized `trend`, `seasonal`, `noise`, `values` from `len(idx)`; added `W-FRI → 7D` fallback when the range returns empty.
+- Regression test `simulate_inventory(length_consistency)` covering years ∈ {1, 2, 3, 5}. test_runner now 28/28 green.
+- Zip deploy #2: `RuntimeSuccessful`. Live screenshot confirmed — Brent $95.48 / WTI $89.61, backtest 11 trades / $252,900 PnL / 100% win rate.
+- **Live URL:** https://oil-tracker-app-4281.azurewebsites.net
+
+

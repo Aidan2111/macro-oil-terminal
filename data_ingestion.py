@@ -111,16 +111,22 @@ def simulate_inventory(years: int = 2, seed: int = 7) -> pd.DataFrame:
     seasonal wave.
     """
     rng = np.random.default_rng(seed)
-    end = datetime.utcnow().date()
+    end = pd.Timestamp(datetime.utcnow().date())
     weeks = max(8, years * 52)
 
+    # Build the index first, then size every numeric array from len(idx).
+    # pandas 2.x has been observed to return ``periods - 1`` entries when
+    # ``end`` doesn't land on the weekly anchor, so don't assume the length.
     idx = pd.date_range(end=end, periods=weeks, freq="W-FRI")
+    if len(idx) == 0:
+        idx = pd.date_range(end=end, periods=max(weeks, 8), freq="7D")
+    n = len(idx)
 
     # Start ~ 820 Mbbl (commercial ~430 + SPR ~390) – current-era realistic
     start_level = 820_000_000.0
-    trend = np.linspace(0, -160_000_000.0, weeks)  # ~160 Mbbl drawdown over window
-    seasonal = 18_000_000.0 * np.sin(np.linspace(0, 4 * np.pi, weeks))
-    noise = rng.normal(0, 4_500_000.0, size=weeks)
+    trend = np.linspace(0, -160_000_000.0, n)  # ~160 Mbbl drawdown over window
+    seasonal = 18_000_000.0 * np.sin(np.linspace(0, 4 * np.pi, n))
+    noise = rng.normal(0, 4_500_000.0, size=n)
     values = start_level + trend + seasonal + noise
 
     df = pd.DataFrame({"Total_Inventory_bbls": values}, index=idx)
