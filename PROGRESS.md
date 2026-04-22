@@ -310,7 +310,40 @@ The warm path — the everyday user experience — is **11x faster to interactiv
 - Rendered in a Tab 1 expander with a walk-forward bar chart, MC percentile tiles, and a regime bar.
 - 4 new tests: slippage reduces PnL monotonically, walk-forward shape, MC monotone percentiles, regime buckets both present. **36/36 green locally.**
 
-### 03:15Z — Housekeeping
+---
+
+## Sixth autonomous block — UI language pass (2026-04-22 03:20Z)
+
+### 03:20Z — Plain-language relabel
+- Rationale: Aidan wants finance terms on the surface, not stats jargon. Keep the math; rename the labels.
+- Renamed across `app.py` only (internal code identifiers like `Z_Score`, category names, stance strings unchanged so the backtest + thesis + tests + audit log stay stable):
+  - **Z-score → Dislocation** (90-day dislocation on the subplot; `|Z| > X` → `dislocation > X`).
+  - Mean reversion → "Snap-back to normal".
+  - Sharpe ratio → "Risk-adjusted return (Sharpe)" on hover.
+  - Max drawdown → "Biggest losing streak".
+  - Depletion → "Drawdown".
+  - "Inventory floor breach date" → "Date inventory hits the floor".
+  - "Flag State" → "Vessel registration country"; category labels mapped to plain language at the render boundary only.
+  - Trade Thesis card: LONG/SHORT/FLAT → "Buy the spread / Sell the spread / Stand aside"; Entry/Target/Stop → "Enter when / Take profit when / Cut the trade if"; "Invalidation risks" → "What would make us wrong"; "Catalyst watchlist" → "Upcoming events to watch"; "Data caveats" → "Things to keep in mind"; Position sizing → "How much to risk"; Conviction → Confidence.
+  - Tabs: "Macro Arbitrage / Depletion Forecast / Fleet Analytics / AI Insights" → "Spread dislocation / Inventory drawdown / Tanker fleet / AI trade thesis".
+
+### 03:22Z — Advanced view toggle
+- Sidebar checkbox "Show advanced metrics" (default off). When on, every renamed label shows the raw statistical term inline (Z-score, σ, R², Kelly). When off, pure plain language.
+- Every metric has a `help=` tooltip with the precise stats definition so the math is always one click away.
+
+### 03:23Z — System prompt tweak
+- `trade_thesis.SYSTEM_PROMPT` tells the model to prefer "dislocation" and "snap-back to normal" in the prose. Still precise — "dislocation of 2.4" not "the spread is weird".
+
+### 03:25Z — Screenshots refreshed
+- `capture_screens.py` locators updated for the new tab names.
+- 5 new PNGs in `docs/screenshots/` — dark theme, dislocation labels, plain-language backtest card.
+
+### 03:27Z — pandas 3.x regression caught by CI
+- Python 3.12 matrix run of `test_runner.py` surfaced `TypeError: NDFrame.fillna() got an unexpected keyword argument 'method'` from `quantitative_models.regime_breakdown`.
+- Fixed by swapping `.fillna(method="ffill")` → `.ffill()` directly.
+- Next deploy (`24757249588`) landed RuntimeSuccessful in 2m49s. Health endpoint `ok`, root 625ms.
+
+### 03:29Z — Housekeeping
 - `ai_insights.py` deleted (superseded by `trade_thesis.py`).
 - `.env.example` expanded with `AISSTREAM_API_KEY`, `FRED_API_KEY`, `TWELVEDATA_API_KEY`, SMTP block.
 - `data/` added to `.gitignore` (audit log is operational, not source).
