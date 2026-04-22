@@ -114,3 +114,67 @@ def test_decorate_returns_a_deepcopy_not_the_same_object(minimal_context):
     thesis = _thesis(stance="flat")
     out = decorate_thesis_for_execution(thesis, minimal_context)
     assert out is not thesis
+
+
+def test_decorate_long_spread_produces_three_tiers(minimal_context):
+    thesis = _thesis(
+        stance="long_spread",
+        conviction_0_to_10=7.0,
+        time_horizon_days=4,
+        position_sizing={"suggested_pct_of_capital": 4.0,
+                         "method": "fixed_fractional", "rationale": "stub"},
+    )
+    out = decorate_thesis_for_execution(thesis, minimal_context)
+    assert [i.tier for i in out.instruments] == [1, 2, 3]
+    # Paper tier is always zero size
+    assert out.instruments[0].suggested_size_pct == 0.0
+    assert out.instruments[0].symbol is None
+    # ETF at half the thesis suggested size
+    assert out.instruments[1].suggested_size_pct == pytest.approx(2.0)
+    assert "USO" in out.instruments[1].rationale
+    assert "BNO" in out.instruments[1].rationale
+    assert "long uso" in out.instruments[1].rationale.lower()
+    # Futures at full suggested size
+    assert out.instruments[2].suggested_size_pct == pytest.approx(4.0)
+    assert "CL=F" in out.instruments[2].rationale or "CL" in out.instruments[2].rationale
+    # Checklist stays empty this task
+    assert out.checklist == []
+
+
+def test_decorate_short_spread_inverts_etf_pair(minimal_context):
+    thesis = _thesis(
+        stance="short_spread",
+        conviction_0_to_10=7.0,
+        time_horizon_days=4,
+        position_sizing={"suggested_pct_of_capital": 4.0,
+                         "method": "fixed_fractional", "rationale": "stub"},
+    )
+    out = decorate_thesis_for_execution(thesis, minimal_context)
+    # ETF leg inverted: short USO / long BNO
+    assert "short uso" in out.instruments[1].rationale.lower()
+    assert "long bno" in out.instruments[1].rationale.lower()
+    # Futures leg inverted
+    assert "short CL=F" in out.instruments[2].rationale or "short CL" in out.instruments[2].rationale.lower()
+
+
+def test_decorate_tier3_size_tracks_thesis_suggested_pct(minimal_context):
+    """Tier 3 (futures) size must equal the thesis suggested_pct_of_capital —
+    the guardrail clamp lives upstream and is NOT re-applied here."""
+    thesis = _thesis(
+        stance="long_spread",
+        conviction_0_to_10=6.0,
+        time_horizon_days=4,
+        position_sizing={"suggested_pct_of_capital": 8.5,
+                         "method": "fixed_fractional", "rationale": "stub"},
+    )
+    out = decorate_thesis_for_execution(thesis, minimal_context)
+    assert out.instruments[2].suggested_size_pct == pytest.approx(8.5)
+    assert out.instruments[1].suggested_size_pct == pytest.approx(4.25)
+
+
+def test_decorate_flat_stance_still_empty_instruments(minimal_context):
+    """Regression: Task 3 behaviour preserved."""
+    thesis = _thesis(stance="flat")
+    out = decorate_thesis_for_execution(thesis, minimal_context)
+    assert out.instruments == []
+    assert out.checklist == []

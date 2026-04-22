@@ -260,17 +260,58 @@ class Thesis:
 def decorate_thesis_for_execution(thesis: Thesis, ctx: ThesisContext) -> Thesis:
     """Return a deepcopy of `thesis` with executable decorations attached.
 
-    The decoration — `instruments` and `checklist` — is a pure function
-    of `(thesis, ctx)` so it can be applied anywhere without touching
-    the LLM path. This task handles only the `stance == "flat"` case:
-    no instruments, no checklist. Non-flat decoration lands in later
-    tasks.
+    For `stance == "flat"`, instruments and checklist are empty. For
+    `long_spread` / `short_spread`, three instrument tiers are built:
+
+    - Tier 1 (Paper) — size always zero.
+    - Tier 2 (USO/BNO ETF pair) — half the thesis suggested size,
+      leg direction inverted on short_spread.
+    - Tier 3 (CL=F / BZ=F futures) — full thesis suggested size,
+      legs inverted on short_spread.
+
+    The checklist is populated in Task 5; this task leaves it empty.
+    The size clamp (vol-regime, backtest, cointegration) is applied
+    upstream in `_apply_guardrails` and is not re-applied here.
     """
     from copy import deepcopy
     out = deepcopy(thesis)
-    if (out.raw or {}).get("stance") == "flat":
+    stance = (out.raw or {}).get("stance")
+    if stance == "flat":
         out.instruments = []
         out.checklist = []
+        return out
+
+    size = float(
+        ((out.raw or {}).get("position_sizing") or {}).get("suggested_pct_of_capital", 0.0)
+    )
+
+    if stance == "short_spread":
+        etf_rationale = "short USO / long BNO (WTI vs Brent ETF pair, inverted)"
+        fut_rationale = "short CL=F / long BZ=F (futures calendar pair, inverted)"
+    else:  # long_spread (or unknown — treat as long for safety)
+        etf_rationale = "long USO / short BNO (WTI vs Brent ETF pair)"
+        fut_rationale = "long CL=F / short BZ=F (futures calendar pair)"
+
+    out.instruments = [
+        Instrument(
+            tier=1, name="Paper", symbol=None,
+            rationale="Track the thesis without capital at risk.",
+            suggested_size_pct=0.0, worst_case_per_unit="N/A",
+        ),
+        Instrument(
+            tier=2, name="USO/BNO ETF pair", symbol="USO/BNO",
+            rationale=etf_rationale,
+            suggested_size_pct=round(size * 0.5, 2),
+            worst_case_per_unit="~$X per $1k notional",
+        ),
+        Instrument(
+            tier=3, name="CL=F / BZ=F futures", symbol="CL=F/BZ=F",
+            rationale=fut_rationale,
+            suggested_size_pct=round(size * 1.0, 2),
+            worst_case_per_unit="$1000 per contract per $1 move",
+        ),
+    ]
+    out.checklist = []  # filled in Task 5
     return out
 
 
