@@ -40,6 +40,10 @@ def test_all_four_tabs_render(streamlit_server, page):
         "Tanker fleet",
         "AI trade thesis",
     ):
+        # Wait for each tab to actually attach to the DOM before asserting.
+        page.get_by_role("tab", name=tab_name).first.wait_for(
+            state="attached", timeout=60_000
+        )
         assert page.get_by_role("tab", name=tab_name).count() >= 1, f"tab missing: {tab_name}"
 
 
