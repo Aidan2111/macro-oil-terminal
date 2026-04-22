@@ -13,6 +13,11 @@ from auth.user import (
     UserStore,
     UserStoreError,
 )
+from auth.widgets import (
+    render_login_gate,
+    require_auth,
+    requires_auth,
+)
 
 __all__ = [
     "InMemoryUserStore",
@@ -23,5 +28,8 @@ __all__ = [
     "clear_cached_user",
     "current_user",
     "get_user_store",
+    "render_login_gate",
+    "require_auth",
+    "requires_auth",
     "set_user_store",
 ]
