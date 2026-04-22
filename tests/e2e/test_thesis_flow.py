@@ -20,19 +20,26 @@ pytestmark = pytest.mark.timeout(120)
 
 
 def _goto(page, url):
-    page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+    page.goto(url, wait_until="domcontentloaded", timeout=90_000)
     page.locator("h1", has_text="Inventory-Adjusted").first.wait_for(
-        state="visible", timeout=90_000
+        state="visible", timeout=120_000
+    )
+    # Hero band is the last main-column element Streamlit renders; in CI on
+    # a cold Chromium the full script takes longer than on dev laptops.
+    # Use the disclaimer caption as the "app is fully hydrated" sentinel —
+    # it's the explicit last-render marker inside the hero band.
+    page.wait_for_selector(
+        'text="Research & education only"', state="visible", timeout=120_000
     )
     page.locator('[data-testid="hero-band"]').first.wait_for(
-        state="visible", timeout=30_000
+        state="visible", timeout=60_000
     )
 
 
 def _open_model_internals(page):
     """Open the Model-internals expander on Tab 1 where the mode toggle now lives."""
     page.get_by_text("Model internals (thesis engine)").click()
-    page.wait_for_selector("text=Quick read", timeout=30_000)
+    page.wait_for_selector("text=Quick read", timeout=60_000)
 
 
 def test_mode_toggle_visible(streamlit_server, page):
