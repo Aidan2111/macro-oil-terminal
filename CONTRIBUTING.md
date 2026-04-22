@@ -1,5 +1,30 @@
 # Contributing
 
+## Development workflow
+
+Any change bigger than a typo fix goes through: **brainstorm → design →
+worktree → plan → TDD → review → finish**. See [`docs/workflow.md`](docs/workflow.md)
+for the full picture, and `docs/brainstorms/`, `docs/designs/`, `docs/plans/`
+for in-flight work.
+
+TL;DR:
+
+1. Write a brainstorm in `docs/brainstorms/<feature>.md` (problem + alternatives).
+2. Distil a spec in `docs/designs/<feature>.md` (reviewable in 5 minutes).
+3. Break into tasks in `docs/plans/<feature>.md` (2–5 min each, tests-first).
+4. `git worktree add ../macro_oil_terminal-<feature> <feature>` — work happens there.
+5. Red → Green → Refactor → Commit, per task.
+6. Review after each task. Critical issues block progress.
+7. `finishing-a-development-branch`: verify tests, merge to main, clean up worktree.
+
+This workflow is Superpowers-inspired; if you're using Claude Code, install
+the plugin (`/plugin install superpowers@claude-plugins-official`) and the
+skills trigger automatically. If you're working by hand, `docs/workflow.md`
+describes the whole thing in plain terms.
+
+**Skip the workflow only for:** typo fixes, Dependabot bumps, docs-only changes,
+log message tweaks.
+
 ## Quick start
 
 ```bash

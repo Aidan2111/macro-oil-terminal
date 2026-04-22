@@ -18,3 +18,4 @@ data/
 *.egg-info/
 dist/
 build/
+.worktrees/

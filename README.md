@@ -73,6 +73,12 @@ Covers every public function in `data_ingestion.py` and
 The yfinance call degrades to a synthetic fallback if the network is
 unreachable, so tests remain deterministic offline.
 
+## Contributing
+
+All feature work follows the Superpowers-inspired workflow
+(brainstorm → design → worktree → plan → TDD → review → finish).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`docs/workflow.md`](docs/workflow.md).
+
 ## Notes
 
 - Pricing source: yfinance tickers `BZ=F` (Brent) and `CL=F` (WTI). If

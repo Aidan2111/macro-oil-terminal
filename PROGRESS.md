@@ -476,7 +476,41 @@ The warm path — the everyday user experience — is **11x faster to interactiv
   - `providers/pricing.py` 91% · `_fred` 89% · `_twelvedata` 88% · `_polygon` 90%
 - **122 unit tests green, smoke test green.**
 
-### 21:05Z — Housekeeping
+### 21:08Z — Second quant-review pass (post Tier-A+B)
+- `docs/quant_review_2026-04-22_pass2.md` — same K.N. persona, re-read the product after Tier-A+B landed.
+- Verdict: cointegration clamp works as designed, Cushing + crack tiles are correct, extended risk suite is "the set I'd have asked for". Sizing bumped to $5m sleeve conditional on the next three items.
+- Next top-5 ranked (not yet shipped): CFTC disagg COT positioning, Kalman filter dynamic hedge ratio, carry-aware backtest (roll adjustment), trade blotter as first-class panel, EIA weekly-petroleum-status CSV pull.
+- Three bugs flagged: sparkline flicker during fragment refresh, keep-warm cadence overkill at 5-min, thesis copy-markdown button dominates the card.
+
+### 21:12Z — Pass-2 quick wins shipped
+- **Vol-regime guardrail** (Q8a): new 3rd clamp — when spread 30d vol is above the 85th percentile of its 1y history, position sizing is capped at 2% of capital with an explicit caveat. Unit tests: clamp fires when vol high + size > 2%; no-op when vol high but size already modest.
+- **Keep-warm cadence** (Q8b): split into two crons — `*/10 07-22 UTC` + `*/30 23,0-6 UTC`. Saves ~60% of GitHub Actions minutes.
+- **Thesis liveness annotation** (Q8c): rotating one-liner above the card (dislocation persistence over last 5 sessions, hours-since-last-EIA, half-life reminder). Picks by `now.minute % N` so it feels alive across reruns without burning tokens.
+- **124/124 unit tests green**, smoke test clean, commit `feat(quant): pass-2 review — vol-regime guardrail, liveness, keep-warm tune` pushed to main. CI + CodeQL + CD + E2E all in flight when the pause signal came in.
+
+### 21:15Z — PAUSE: Superpowers methodology adoption (external)
+- Aidan paused new feature work pending installation + adoption of the Superpowers methodology (https://github.com/obra/superpowers). A separate task is driving that install and will re-run the hero-thesis work through Superpowers' brainstorm → design → worktree → plan → TDD → subagent-driven execution → review loop.
+- **Owning-state at pause:**
+  - `main` is at commit `feat(quant): pass-2 review — vol-regime guardrail, liveness, keep-warm tune` (pushed, CI in flight, expected green based on local 124/124).
+  - **Not started yet** (pass-2 ranked backlog): CFTC COT, Kalman hedge, carry-aware backtest, blotter promotion, weekly-petroleum CSV, historical hit-rate tracker, Slack webhook, spread term-structure tile, bug #1 sparkline flicker (move sparklines out of the fragment), bug #3 copy-markdown button demote.
+  - The hero-thesis pivot (whatever that refers to in the Superpowers context) is **not owned by this agent** going forward; I'll only resume feature work when explicitly handed back.
+- Agent is idle, watching for the next instruction. Any in-flight workflows on GitHub will complete on their own.
+
+### 20:40Z — Superpowers installed + methodology adopted
+
+*(Wed Apr 22 2026, separate install agent.)*
+
+- **Plugin installed** via `claude plugin install superpowers@claude-plugins-official` (v5.0.7, scope=user, gitSha `b55764852ac78870e65c6565fb585b6cd8b3c5c9`). Backup of `~/.claude` taken at `~/.claude.backup.20260422-134019` (164M) before any change. `settings.json` diff is one line: `enabledPlugins.superpowers@claude-plugins-official: true`. Install log at `/tmp/superpowers-install.log`.
+- **All 9 required skills present:** brainstorming, writing-plans, test-driven-development, subagent-driven-development, using-git-worktrees, requesting-code-review, finishing-a-development-branch, verification-before-completion, systematic-debugging. Plus 5 extras (executing-plans, dispatching-parallel-agents, receiving-code-review, writing-skills, using-superpowers).
+- **Methodology installed as project convention** on `main`:
+  - `docs/workflow.md` — plain-language description of brainstorm → design → worktree → plan → TDD → review → finish.
+  - `docs/brainstorms/`, `docs/designs/`, `docs/plans/` — each with a README explaining what lives where.
+  - `CONTRIBUTING.md` — added a Development workflow section at the top.
+  - `README.md` — added a Contributing pointer.
+  - `.gitignore` — `.worktrees/` ignored for in-repo worktrees.
+- **Hero-thesis work restarted under the workflow:** worktree at `../macro_oil_terminal-hero` on branch `hero-thesis`. Brainstorm, design, and plan docs written. Execution (TDD + subagent dispatch) deferred — the `brainstorming` skill's HARD-GATE requires explicit user approval of the design before implementation begins, and Aidan hasn't reviewed the spec yet.
+
+### 21:20Z — Housekeeping
 - `ai_insights.py` deleted (superseded by `trade_thesis.py`).
 - `.env.example` expanded with `AISSTREAM_API_KEY`, `FRED_API_KEY`, `TWELVEDATA_API_KEY`, SMTP block.
 - `data/` added to `.gitignore` (audit log is operational, not source).
