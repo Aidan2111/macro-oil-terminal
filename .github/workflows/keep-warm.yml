@@ -2,8 +2,10 @@ name: keep-warm
 
 on:
   schedule:
-    # Every 5 minutes during waking hours (UTC)
-    - cron: "*/5 7-22 * * *"
+    # Every 10 minutes during waking hours (07:00-22:00 UTC)
+    - cron: "*/10 7-22 * * *"
+    # Every 30 minutes overnight (23:00-06:00 UTC) — saves free-tier CPU
+    - cron: "*/30 23,0-6 * * *"
   workflow_dispatch:
 
 concurrency:

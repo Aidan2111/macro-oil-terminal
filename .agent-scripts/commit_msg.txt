@@ -1,42 +1,22 @@
-feat(quant+ops): Tier A+B desk review items + alt providers + desk UX + ADRs
+feat(quant): pass-2 review — vol-regime guardrail, liveness, keep-warm tune
 
-Alt pricing providers (Tier Q4):
-* providers/_twelvedata.py — TWELVE_DATA_API_KEY gated; daily +
-  intraday + health_check(). Orchestrator falls through when yfinance
-  is down.
-* providers/_polygon.py — POLYGON_API_KEY gated; daily + health_check().
-* providers/_yfinance.py adds health_check() probe (BZ=F 2d history).
-* providers/health.py aggregates all five provider probes for the
-  sidebar. Sidebar "Data sources (health)" expander renders 🟢/🔴/⚪
-  with latency + note each.
+Following the second desk-quant review (`docs/quant_review_2026-04-22_pass2.md`):
 
-Desk UX (Tier Q5):
-* Pinned risk bar above the tabs: stance pill + confidence + Brent +
-  WTI + spread + dislocation (⚠ at threshold) + EIA countdown.
-* Keyboard shortcuts: 1/2/3/4 tabs, R regenerate, ? cheat sheet.
+* Vol-regime guardrail (new 3rd clamp in `_apply_guardrails`):
+  when `vol_spread_1y_percentile > 85` the suggested position size
+  is capped at 2% of capital with a caveat. Already-modest sizes
+  are left alone. Two unit tests (clamp fires; below-cap untouched).
 
-Ops polish (Tier Q6):
-* .github/ISSUE_TEMPLATE/ bug + feature + config (security advisory
-  link, blank issues disabled).
-* docs/adr/ — README, template, 0001 plain-language labels, 0002
-  dual-model Trade Thesis, 0003 OIDC for CD.
+* Keep-warm cadence tuned: 10-min during 07:00-22:00 UTC (from 5-min),
+  30-min overnight. Saves GitHub Actions minutes on the free tier.
 
-Test coverage push (Q3):
-* tests/unit/test_alt_providers.py + test_coverage_gaps.py — 25 new
-  unit tests. Covers: pricing fall-through error path, Polygon +
-  Twelve Data happy + error + health, yfinance health, materiality
-  thresholds across all 5 signal types, diff_theses catalyst branch,
-  audit log read + missing-file, Cushing fetch, EIA missing-SPR
-  resilience, crack short-panel corr guard.
-* Coverage source adds cointegration, crack_spread, vol_models.
-* pyproject.toml fail_under bumped 70 → 75. Overall 79.46%. Core
-  modules all ≥85%: quant_models 85, trade_thesis 86, thesis_context 85,
-  cointegration 88, vol_models 95, pricing 91, fred 89, twelvedata 88,
-  polygon 90.
+* Liveness annotation above the Trade Thesis card — rotates between
+  dislocation-persistence, hours-since-last-EIA, and half-life
+  summary. Tiny but makes the card feel live on every rerun.
 
-Docs:
-* PROGRESS.md ninth-block log with timestamps for each sub-step.
+* docs/quant_review_2026-04-22_pass2.md — K.N. second look.
+  What improved, next top-5 ranked (CFTC positioning, Kalman hedge
+  ratio, carry-aware backtest, trade blotter promoted, weekly
+  petroleum CSV). Sizing verdict bumped pre-pass-2 → $5m sleeve.
 
-requirements.txt adds statsmodels>=0.14.0 and arch>=7.0.0 (Tier-A deps).
-
-122 unit tests green locally; smoke-test clean.
+124 unit tests green, smoke test clean.

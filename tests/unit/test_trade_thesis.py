@@ -62,6 +62,39 @@ def test_guardrail_conviction_clamp_on_weak_backtest(sample_ctx):
     assert any("calibration" in n.lower() for n in notes)
 
 
+def test_guardrail_high_vol_caps_sizing(sample_ctx):
+    from trade_thesis import _apply_guardrails, _rule_based_fallback
+    ctx_hv = sample_ctx.__class__(
+        **{**sample_ctx.__dict__, "vol_spread_1y_percentile": 92.0}
+    )
+    raw = _rule_based_fallback(ctx_hv)
+    raw["position_sizing"] = {
+        "method": "fixed_fractional",
+        "suggested_pct_of_capital": 12.0,
+        "rationale": "orig",
+    }
+    out, notes = _apply_guardrails(raw, ctx_hv)
+    assert out["position_sizing"]["suggested_pct_of_capital"] == 2.0
+    assert any("high-vol" in n.lower() for n in notes)
+
+
+def test_guardrail_high_vol_leaves_modest_size_alone(sample_ctx):
+    from trade_thesis import _apply_guardrails, _rule_based_fallback
+    ctx_hv = sample_ctx.__class__(
+        **{**sample_ctx.__dict__, "vol_spread_1y_percentile": 92.0}
+    )
+    raw = _rule_based_fallback(ctx_hv)
+    raw["position_sizing"] = {
+        "method": "fixed_fractional",
+        "suggested_pct_of_capital": 1.5,
+        "rationale": "orig",
+    }
+    out, notes = _apply_guardrails(raw, ctx_hv)
+    # Below the cap → unchanged
+    assert out["position_sizing"]["suggested_pct_of_capital"] == 1.5
+    assert not any("high-vol" in n.lower() for n in notes)
+
+
 def test_guardrail_cointegration_broken_clamps_conviction(sample_ctx):
     from trade_thesis import _apply_guardrails, _rule_based_fallback
     ctx_broken = sample_ctx.__class__(

@@ -1633,6 +1633,41 @@ with tab_ai:
         unsafe_allow_html=True,
     )
 
+    # --- Liveness annotation (rotating one-liner above the card) ------
+    live_lines: list[str] = []
+    try:
+        # How many of the last 5 daily closes had |Z| > 2
+        z_last5 = spread_df["Z_Score"].dropna().tail(5)
+        streak = int((z_last5.abs() > 2.0).sum())
+        if streak >= 2:
+            live_lines.append(
+                f"Dislocation has held > 2σ for {streak} of the last "
+                f"5 sessions — sticky regime."
+            )
+    except Exception:
+        pass
+    # Hours since the most recent EIA release Wednesday (most recent past Wed 14:30 UTC)
+    _now = pd.Timestamp.utcnow().tz_localize(None)
+    _days_back = (_now.weekday() - 2) % 7
+    _last_eia = (_now - pd.Timedelta(days=_days_back)).replace(hour=14, minute=30, second=0, microsecond=0)
+    if _last_eia > _now:
+        _last_eia -= pd.Timedelta(days=7)
+    _hrs_since = int((_now - _last_eia).total_seconds() // 3600)
+    if 0 <= _hrs_since < 96:
+        live_lines.append(
+            f"Last EIA release was **{_hrs_since}h** ago; next one in "
+            f"**{(168 - _hrs_since) % 168}h**."
+        )
+    if ctx_obj.coint_verdict == "cointegrated" and ctx_obj.coint_half_life_days:
+        live_lines.append(
+            f"Half-life to mean: **{ctx_obj.coint_half_life_days:.0f} days** — "
+            f"{'fast reverting' if ctx_obj.coint_half_life_days < 30 else 'slow grind'}."
+        )
+    if live_lines:
+        # Rotate by minute so it feels live across reruns
+        idx = (pd.Timestamp.utcnow().minute) % len(live_lines)
+        st.caption("🔔  " + live_lines[idx])
+
     entry = raw.get("entry", {}) or {}
     exit_ = raw.get("exit", {}) or {}
     sizing = raw.get("position_sizing", {}) or {}

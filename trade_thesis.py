@@ -273,6 +273,27 @@ def _apply_guardrails(raw: dict, ctx: ThesisContext) -> tuple[dict, list[str]]:
             "Suggested position size capped at 20% of capital by policy."
         )
 
+    # 3b) High-vol regime → cap position sizing at 2% of capital.
+    try:
+        vol_pct = float(getattr(ctx, "vol_spread_1y_percentile", float("nan")))
+    except Exception:
+        vol_pct = float("nan")
+    if vol_pct == vol_pct and vol_pct > 85.0:
+        sz = raw.get("position_sizing") or {}
+        cur_pct = float(sz.get("suggested_pct_of_capital", 0) or 0)
+        if cur_pct > 2.0:
+            notes.append(
+                f"high-vol clamp: sizing {cur_pct:.1f}% → 2.0% "
+                f"(spread 30d vol is at {vol_pct:.0f}th percentile of 1y)"
+            )
+            sz["suggested_pct_of_capital"] = 2.0
+            raw["position_sizing"] = sz
+            raw.setdefault("data_caveats", []).append(
+                f"Spread realised-vol is in the top 15% of its 1y range "
+                f"({vol_pct:.0f}th pct). Position size capped at 2% of "
+                "capital by policy until vol mean-reverts."
+            )
+
     # 4) Cointegration-broken → clamp conviction ≤ 5 and mark caveat.
     if getattr(ctx, "coint_verdict", "inconclusive") == "not_cointegrated":
         try:
