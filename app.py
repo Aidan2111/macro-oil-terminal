@@ -94,29 +94,51 @@ def _q_default(key: str, lo: float, hi: float, default: float) -> float:
     return _clamp(qv, lo, hi, default)
 
 
+show_advanced = st.sidebar.checkbox(
+    "Show advanced metrics",
+    value=False,
+    help=(
+        "When on, the UI also shows the raw statistical labels "
+        "(Z-score, percentile, Kelly sizing math) alongside the plain-language ones."
+    ),
+)
+
 z_threshold = st.sidebar.slider(
-    "Z-Score Alert Threshold",
+    "Dislocation alert level" + (" (σ, Z-score)" if show_advanced else ""),
     min_value=0.5,
     max_value=5.0,
     value=_q_default("z", 0.5, 5.0, 3.0),
     step=0.1,
+    help=(
+        "How far the Brent-WTI spread has to drift from its normal range "
+        "before we flag it. Measured in standard deviations (Z-score). "
+        "3.0σ ≈ extreme dislocation, triggers once every few years on average."
+    ),
 )
 floor_mbbl_default = int(_q_default("floor", 100, 700, 300))
 floor_mbbl = st.sidebar.slider(
-    "Inventory Floor (Million bbls)",
+    "Inventory floor (million barrels)",
     min_value=100,
     max_value=700,
     value=floor_mbbl_default,
     step=25,
+    help=(
+        "The inventory level we want to stay above. The depletion tab "
+        "projects when we'd hit this floor if the current drawdown pace held."
+    ),
 )
 floor_bbls = float(floor_mbbl) * 1_000_000.0
 
 depletion_weeks = st.sidebar.slider(
-    "Depletion Rolling Window (Weeks)",
+    "Drawdown lookback (weeks)",
     min_value=2,
     max_value=26,
     value=int(_q_default("window", 2, 26, 4)),
     step=1,
+    help=(
+        "How many trailing weeks of inventory history to fit the "
+        "drawdown-rate regression to. Shorter = more reactive but noisier."
+    ),
 )
 
 # Keep the URL query params in sync so links capture the current slider state.
@@ -323,7 +345,7 @@ def _ticker_strip() -> None:
     latest_wti_v = float(wti_tail.iloc[-1])
     latest_spread_v = latest_brent_v - latest_wti_v
 
-    st.caption(f"Source: **Yahoo Finance BZ=F/CL=F** · {mode_badge}")
+    st.caption(f"Source: **Yahoo Finance (Brent / WTI)** · {mode_badge}")
     cols = st.columns(4)
     cols[0].metric(
         "Brent",
@@ -347,11 +369,20 @@ def _ticker_strip() -> None:
 
     z_tail = spread_df["Z_Score"].dropna().tail(120)
     z_val = z_tail.iloc[-1] if not z_tail.empty else 0.0
+    dislocation_label = (
+        f"Dislocation {z_val:+.2f}\u03c3" if show_advanced
+        else f"Dislocation {z_val:+.2f}"
+    )
     cols[2].metric(
         f"Spread ${latest_spread_v:+.2f}",
-        f"Z {z_val:+.2f}\u03c3",
+        dislocation_label,
         delta=("ALERT" if abs(z_val) >= z_threshold else "calm"),
         delta_color=("inverse" if abs(z_val) >= z_threshold else "normal"),
+        help=(
+            "Dislocation measures how far today's Brent-WTI spread is from "
+            "its normal range. +2 = spread is about 2× its usual daily wobble "
+            "above average; statistically extreme. Technically a Z-score."
+        ),
     )
     cols[2].plotly_chart(_sparkline(z_tail, "#2ca02c"),
                         use_container_width=True,
@@ -379,7 +410,12 @@ render_hero_banner(height=220)
 # Tabs
 # ---------------------------------------------------------------------------
 tab_arb, tab_depl, tab_fleet, tab_ai = st.tabs(
-    ["Macro Arbitrage", "Depletion Forecast", "Fleet Analytics", "AI Insights"]
+    [
+        "Spread dislocation",
+        "Inventory drawdown",
+        "Tanker fleet",
+        "AI trade thesis",
+    ]
 )
 
 
@@ -399,10 +435,15 @@ with tab_arb:
     col1.metric("Latest Brent", f"${float(prices['Brent'].iloc[-1]):,.2f}")
     col2.metric("Latest WTI", f"${float(prices['WTI'].iloc[-1]):,.2f}")
     col3.metric(
-        f"Spread Z (90d)",
+        "90-day dislocation" + (" (Z-score)" if show_advanced else ""),
         f"{latest_z:+.2f}",
         delta=f"{'ALERT' if z_flag else 'calm'}  |  spread ${latest_spread:,.2f}",
         delta_color="inverse" if z_flag else "normal",
+        help=(
+            "How far the Brent-WTI spread is from its 90-day normal, in "
+            "standard deviations. |Dislocation| > 2 = statistically unusual; "
+            "> 3 = extreme."
+        ),
     )
 
     if alert_on:
@@ -423,7 +464,11 @@ with tab_arb:
         shared_xaxes=True,
         vertical_spacing=0.08,
         row_heights=[0.62, 0.38],
-        subplot_titles=("Brent & WTI (USD / bbl)", "Brent-WTI Spread Z-Score (90d rolling)"),
+        subplot_titles=(
+            "Brent & WTI (USD / barrel)",
+            "How stretched is the spread? — 90-day dislocation"
+            + (" (Z-score)" if show_advanced else ""),
+        ),
     )
 
     fig.add_trace(
@@ -505,12 +550,15 @@ with tab_arb:
             key="download_spread",
         )
 
-    st.markdown("#### Historical Z-score mean-reversion backtest")
+    st.markdown(
+        "#### Snap-back to normal — historical backtest"
+        + (" (Z-score mean reversion)" if show_advanced else "")
+    )
     st.caption(
-        f"Enters at \u00b1{z_threshold:.1f}\u03c3, exits when |Z| < 0.2. "
-        "10,000 bbl notional per trade. Toy strategy — excludes carry, "
-        "slippage, and financing, so treat the PnL as a signal-quality "
-        "indicator rather than a P&L forecast."
+        f"Enters when dislocation reaches \u00b1{z_threshold:.1f}, exits when "
+        "the spread is back near normal. 10,000 barrels per trade, with the "
+        "slippage and commission drag you set in the sidebar. "
+        "Think of the PnL as a signal-quality indicator, not a P&L forecast."
     )
     bt = _backtest_cached(
         _fp(spread_df), float(z_threshold), 0.2,
@@ -523,10 +571,33 @@ with tab_arb:
         f"${bt['total_pnl_usd']:,.0f}",
         delta=f"{bt['avg_pnl_per_bbl']:+.2f}/bbl avg",
     )
-    bt_c3.metric("Win rate", f"{bt['win_rate']*100:.1f}%")
-    bt_c4.metric("Avg hold", f"{bt['avg_days_held']:.1f} days")
-    bt_c5.metric("Max drawdown", f"${bt.get('max_drawdown_usd', 0.0):,.0f}")
-    bt_c6.metric("Sharpe (ann.)", f"{bt.get('sharpe', 0.0):.2f}")
+    bt_c3.metric(
+        "Win rate",
+        f"{bt['win_rate']*100:.1f}%",
+        help="Share of historical trades that closed profitably.",
+    )
+    bt_c4.metric(
+        "Avg hold",
+        f"{bt['avg_days_held']:.1f} days",
+        help="Average number of days a trade was open.",
+    )
+    bt_c5.metric(
+        "Biggest losing streak",
+        f"${bt.get('max_drawdown_usd', 0.0):,.0f}",
+        help=(
+            "The deepest peak-to-trough drop the cumulative PnL experienced "
+            "during the backtest. Technically the max drawdown."
+        ),
+    )
+    bt_c6.metric(
+        "Risk-adjusted return",
+        f"{bt.get('sharpe', 0.0):.2f}",
+        help=(
+            "Average trade return divided by its volatility, annualised. "
+            "Rule of thumb: > 1 is good, > 2 is excellent, < 0.5 is noise. "
+            "Technically the Sharpe ratio."
+        ),
+    )
 
     if not bt["equity_curve"].empty:
         eq_fig = go.Figure()
@@ -690,7 +761,7 @@ with tab_arb:
 
 # ---- Tab 2 --------------------------------------------------------------
 with tab_depl:
-    st.subheader("Inventory Depletion Forecaster")
+    st.subheader("How fast is US crude inventory drawing down?")
     st.caption(
         f"Source: **EIA (dnav, keyless)** via {inventory_res.source} · "
         f"fetched {inventory_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')} · "
@@ -704,17 +775,38 @@ with tab_depl:
     r2 = depletion["r_squared"]
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Current Inventory", f"{current_inv/1e6:,.1f} Mbbl")
+    c1.metric(
+        "Current inventory",
+        f"{current_inv/1e6:,.1f} million barrels",
+        help="US commercial crude (ex-SPR) + SPR, as of the latest EIA weekly release.",
+    )
     c2.metric(
-        "Daily Depletion",
-        f"{daily_rate/1e3:+,.1f} kbbl/d",
-        delta=f"{weekly_rate/1e6:+.2f} Mbbl/wk",
+        "Daily drawdown",
+        f"{daily_rate/1e3:+,.1f} thousand bbl/day",
+        delta=f"{weekly_rate/1e6:+.2f} million bbl/week",
+        help=(
+            "How much inventory is disappearing per day on average, "
+            "estimated from a linear fit to the trailing lookback window. "
+            "Negative = inventories shrinking."
+        ),
     )
     c3.metric(
-        "Projected Floor Breach",
-        proj_date.strftime("%Y-%m-%d") if proj_date is not None else "N/A",
+        "Date inventory hits the floor",
+        proj_date.strftime("%Y-%m-%d") if proj_date is not None else "—",
+        help=(
+            "If the current daily drawdown continues unchanged, this is the "
+            "approximate date the total inventory would fall to the floor you "
+            "set in the sidebar."
+        ),
     )
-    c4.metric("Regression R\u00b2", f"{r2:.3f}")
+    c4.metric(
+        "Trend fit quality" + (" (R²)" if show_advanced else ""),
+        f"{r2:.3f}",
+        help=(
+            "How well the linear trend explains the recent inventory path. "
+            "1.0 = perfect line, 0 = noise. Technically R² of the regression."
+        ),
+    )
 
     fig2 = go.Figure()
 
@@ -792,7 +884,12 @@ with tab_depl:
 
 # ---- Tab 3 --------------------------------------------------------------
 with tab_fleet:
-    st.subheader("Global Tanker Fleet — Flag-State Exposure")
+    st.subheader("Where are the crude tankers flagged?")
+    st.caption(
+        "Tanker registrations split into three policy-relevant buckets: "
+        "US-flagged vessels (Jones Act), flags of convenience used by "
+        "sanctions-sensitive cargoes, and sanctioned-country flags."
+    )
     st.caption(
         f"Source: **{ais_res.source}** · fetched {ais_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')}"
     )
@@ -805,6 +902,22 @@ with tab_fleet:
         "Sanctioned": "#d62728",
         "Other": "#8c8c8c",
     }
+    # UI-only labels — the underlying category names stay stable for downstream
+    # math (backtest / thesis / tests). See quantitative_models.categorize_flag_states.
+    category_display = {
+        "Jones Act / Domestic": "US-flagged / US-destined",
+        "Shadow Risk": "Flags of convenience",
+        "Sanctioned": "Sanctioned-country flags",
+        "Other": "Other",
+    }
+    category_display_full = {
+        "Jones Act / Domestic": (
+            "US-flagged / US-destined (Jones Act)"
+        ),
+        "Shadow Risk": "Flags of convenience (Panama, Liberia, Marshall Is., Malta)",
+        "Sanctioned": "Sanctioned-country flags (Russia, Iran, Venezuela)",
+        "Other": "Other",
+    }
 
     headline = ais_agg[ais_agg["Category"].isin(category_colors.keys())].copy()
     headline = headline.set_index("Category").reindex(
@@ -813,22 +926,27 @@ with tab_fleet:
 
     colors = [category_colors[c] for c in headline["Category"]]
 
+    display_labels = [category_display.get(c, c) for c in headline["Category"]]
+
     bar = go.Figure()
     bar.add_trace(
         go.Bar(
-            x=headline["Category"],
+            x=display_labels,
             y=headline["Total_Cargo_Mbbl"],
             marker_color=colors,
-            text=[f"{v:,.1f} Mbbl<br>{int(n)} vessels" for v, n in zip(headline["Total_Cargo_Mbbl"], headline["Vessel_Count"])],
+            text=[
+                f"{v:,.1f} million barrels<br>{int(n)} vessels"
+                for v, n in zip(headline["Total_Cargo_Mbbl"], headline["Vessel_Count"])
+            ],
             textposition="outside",
-            hovertemplate="%{x}<br>%{y:,.1f} Mbbl<extra></extra>",
-            name="Cargo Mbbl",
+            hovertemplate="%{x}<br>%{y:,.1f} million barrels<extra></extra>",
+            name="Cargo",
         )
     )
     bar.update_layout(
         height=440,
         template="plotly_dark",
-        yaxis_title="Mbbl on Water",
+        yaxis_title="Million barrels on water",
         xaxis_title="",
         showlegend=False,
         margin=dict(l=40, r=20, t=30, b=40),
@@ -838,10 +956,25 @@ with tab_fleet:
     total_vessels = int(len(ais_with_cat))
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Tankers Tracked", f"{total_vessels:,}")
-    m2.metric("Total Cargo on Water", f"{total_mbbl:,.1f} Mbbl")
+    m1.metric(
+        "Tankers tracked",
+        f"{total_vessels:,}",
+        help="Number of crude tankers in the current snapshot.",
+    )
+    m2.metric(
+        "Total cargo on water",
+        f"{total_mbbl:,.1f} million barrels",
+        help="Sum of estimated cargo volumes across all tracked tankers.",
+    )
     jones = float(headline.loc[headline["Category"] == "Jones Act / Domestic", "Total_Cargo_Mbbl"].sum())
-    m3.metric("Jones Act Share", f"{(jones / total_mbbl * 100.0) if total_mbbl else 0:.1f}%")
+    m3.metric(
+        "US-flagged / US-destined share",
+        f"{(jones / total_mbbl * 100.0) if total_mbbl else 0:.1f}%",
+        help=(
+            "Share of cargo on US-flagged vessels OR destined for a US port. "
+            "Technically the 'Jones Act / Domestic' bucket."
+        ),
+    )
 
     st.plotly_chart(bar, use_container_width=True)
 
@@ -860,17 +993,18 @@ with tab_fleet:
         subset = drill[drill["Category"] == cat]
         if subset.empty:
             continue
+        display_cat = category_display.get(cat, cat)
         drill_fig.add_trace(
             go.Bar(
                 x=subset["Flag_State"],
                 y=subset["Total_Cargo_Mbbl"],
-                name=cat,
+                name=display_cat,
                 marker_color=cat_color,
                 hovertemplate=(
-                    "%{x}<br>%{y:,.1f} Mbbl "
+                    "%{x}<br>%{y:,.1f} million barrels"
                     "<br>%{customdata} vessels"
                     "<extra>"
-                    + cat
+                    + display_cat
                     + "</extra>"
                 ),
                 customdata=subset["Vessel_Count"],
@@ -880,34 +1014,54 @@ with tab_fleet:
         height=380,
         template="plotly_dark",
         margin=dict(l=40, r=20, t=30, b=60),
-        yaxis_title="Mbbl on water",
-        xaxis_title="Flag state",
+        yaxis_title="Million barrels on water",
+        xaxis_title="Vessel registration country",
         barmode="stack",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    st.markdown("#### Flag-state drill-down")
+    st.markdown("#### Per-country breakdown")
     st.plotly_chart(drill_fig, use_container_width=True)
 
-    st.markdown("#### 3D Globe — WebGPU Tanker Positions")
+    st.markdown("#### Live globe")
     st.caption(
-        "Green = Jones Act/Domestic, Amber = Shadow Risk, Red = Sanctioned, Grey = Other. "
-        "WebGPU is used when available (`navigator.gpu`); the scene falls back to WebGL otherwise."
+        "Green = US-flagged / US-destined · Amber = flags of convenience · "
+        "Red = sanctioned-country flags · Grey = other. "
+        "Uses WebGPU when your browser supports it; falls back to WebGL."
     )
     render_fleet_globe(ais_with_cat, height=560)
 
     with st.expander("Vessel sample (first 25 rows)"):
+        sample = ais_with_cat.head(25)[
+            [
+                "Vessel_Name",
+                "MMSI",
+                "Flag_State",
+                "Destination",
+                "Cargo_Volume_bbls",
+                "Category",
+            ]
+        ].rename(
+            columns={
+                "Vessel_Name": "Vessel name",
+                "MMSI": "Vessel ID",
+                "Flag_State": "Registered in",
+                "Destination": "Destination",
+                "Cargo_Volume_bbls": "Cargo (barrels)",
+                "Category": "Bucket",
+            }
+        )
+        sample["Bucket"] = sample["Bucket"].map(
+            lambda c: category_display.get(c, c)
+        )
         st.dataframe(
-            ais_with_cat.head(25)[
-                [
-                    "Vessel_Name",
-                    "MMSI",
-                    "Flag_State",
-                    "Destination",
-                    "Cargo_Volume_bbls",
-                    "Category",
-                ]
-            ],
+            sample,
             use_container_width=True,
+            column_config={
+                "Vessel ID": st.column_config.TextColumn(
+                    "Vessel ID",
+                    help="MMSI — Maritime Mobile Service Identity, the 9-digit AIS radio callsign.",
+                ),
+            } if hasattr(st, "column_config") else None,
         )
         st.download_button(
             label="Download full fleet roster (CSV)",
@@ -923,11 +1077,12 @@ with tab_ai:
     from trade_thesis import generate_thesis
     from thesis_context import build_context
 
-    st.subheader("AI Trade Thesis")
+    st.subheader("AI trade thesis")
     st.caption(
-        "Structured trade guidance grounded in real current state — spread "
-        "Z, mean-reversion backtest, EIA inventory, fleet composition, vol "
-        "regime. Educational research only."
+        "Plain-language trade guidance grounded in today's real state — "
+        "spread dislocation, snap-back hit rate from the backtest, EIA "
+        "inventory trend, tanker fleet composition, volatility regime. "
+        "Educational research only."
     )
 
     endpoint_set = bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
@@ -976,10 +1131,20 @@ with tab_ai:
     thesis = st.session_state["_thesis_obj"]
     raw = thesis.raw
 
-    # Stance pill
+    # Stance pill — plain-language mapping
     stance = raw.get("stance", "flat")
     stance_color = {"long_spread": "#2ecc71", "short_spread": "#e74c3c", "flat": "#95a5a6"}[stance]
-    stance_label = {"long_spread": "LONG SPREAD", "short_spread": "SHORT SPREAD", "flat": "FLAT"}[stance]
+    stance_label = {
+        "long_spread": "BUY THE SPREAD",
+        "short_spread": "SELL THE SPREAD",
+        "flat": "STAND ASIDE",
+    }[stance]
+    # Technical suffix only when advanced view is on
+    stance_suffix = (
+        {"long_spread": "  (long spread)", "short_spread": "  (short spread)", "flat": "  (flat)"}[stance]
+        if show_advanced
+        else ""
+    )
     conviction = float(raw.get("conviction_0_to_10", 0.0))
     horizon = int(raw.get("time_horizon_days", 0))
 
@@ -988,11 +1153,11 @@ with tab_ai:
         <div style="display:flex; gap:18px; align-items:center; margin-top:6px; margin-bottom:10px;">
           <span style="background:{stance_color}; color:#0b0f14; padding:10px 18px; border-radius:8px;
                        font-weight:700; letter-spacing:1.2px; font-size:1.15rem;">
-            {stance_label}
+            {stance_label}{stance_suffix}
           </span>
           <span style="color:#e7ecf3; font-family:ui-monospace,Menlo,monospace;">
-            conviction <b>{conviction:.1f}/10</b>
-            &nbsp;·&nbsp; horizon <b>{horizon}d</b>
+            confidence <b>{conviction:.1f}/10</b>
+            &nbsp;·&nbsp; horizon <b>{horizon} days</b>
             &nbsp;·&nbsp; source <b>{thesis.source}</b>
           </span>
         </div>
@@ -1004,51 +1169,60 @@ with tab_ai:
     exit_ = raw.get("exit", {}) or {}
     sizing = raw.get("position_sizing", {}) or {}
 
+    def _z_display(v):
+        return f"{v}σ (Z)" if show_advanced else f"{v}"
+
     tri_cols = st.columns(3)
     tri_cols[0].markdown(
-        f"**Entry**\n\n"
-        f"- Trigger: {entry.get('trigger_condition','—')}\n"
-        f"- Suggested Z: `{entry.get('suggested_z_level','—')}σ`\n"
-        f"- Suggested spread: `${entry.get('suggested_spread_usd','—')}`"
+        f"**Enter when**\n\n"
+        f"- {entry.get('trigger_condition','—')}\n"
+        f"- Dislocation reaches **{_z_display(entry.get('suggested_z_level','—'))}**\n"
+        f"- Spread near **${entry.get('suggested_spread_usd','—')}**"
     )
     tri_cols[1].markdown(
-        f"**Target**\n\n"
-        f"- Condition: {exit_.get('target_condition','—')}\n"
-        f"- Target Z: `{exit_.get('target_z_level','—')}σ`"
+        f"**Take profit when**\n\n"
+        f"- {exit_.get('target_condition','—')}\n"
+        f"- Dislocation reaches **{_z_display(exit_.get('target_z_level','—'))}**"
     )
     tri_cols[2].markdown(
-        f"**Stop**\n\n"
-        f"- Condition: {exit_.get('stop_loss_condition','—')}\n"
-        f"- Stop Z: `{exit_.get('stop_z_level','—')}σ`"
+        f"**Cut the trade if**\n\n"
+        f"- {exit_.get('stop_loss_condition','—')}\n"
+        f"- Dislocation reaches **{_z_display(exit_.get('stop_z_level','—'))}**"
     )
 
-    st.markdown("#### Thesis")
+    st.markdown("#### Why — the thesis")
     st.markdown(f"> {raw.get('thesis_summary','(no summary)')}")
 
     col_a, col_b = st.columns(2)
     with col_a:
-        st.markdown("#### Key drivers")
+        st.markdown("#### What's driving this")
         for d in (raw.get("key_drivers") or []):
             st.markdown(f"- {d}")
+        sizing_method_display = {
+            "fixed_fractional": "fixed fraction of capital",
+            "volatility_scaled": "scaled by volatility",
+            "kelly": "Kelly-style sizing",
+        }.get(sizing.get("method", ""), sizing.get("method", "?"))
+        method_suffix = f" ({sizing.get('method','?')})" if show_advanced else ""
         st.markdown(
-            f"**Sizing** — {sizing.get('method','?')} · "
-            f"suggested **{sizing.get('suggested_pct_of_capital',0):.1f}% of capital**"
+            f"**How much to risk** — {sizing_method_display}{method_suffix} · "
+            f"suggest **{sizing.get('suggested_pct_of_capital',0):.1f}% of capital**"
         )
         st.caption(sizing.get("rationale", ""))
     with col_b:
-        st.markdown("#### Invalidation risks")
+        st.markdown("#### What would make us wrong")
         with st.container(border=True):
             for r in (raw.get("invalidation_risks") or []):
                 st.warning(r)
 
     if raw.get("catalyst_watchlist"):
-        st.markdown("#### Catalyst watchlist")
+        st.markdown("#### Upcoming events to watch")
         for c in raw["catalyst_watchlist"]:
             st.info(f"**{c.get('event','?')}** — {c.get('date','?')} · {c.get('expected_impact','')}")
 
-    with st.expander("Data caveats & guardrails"):
+    with st.expander("Things to keep in mind (caveats & guardrails)"):
         if thesis.guardrails_applied:
-            st.markdown("**Guardrails applied this run:**")
+            st.markdown("**Automatic adjustments this run:**")
             for g in thesis.guardrails_applied:
                 st.markdown(f"- {g}")
         if raw.get("data_caveats"):
@@ -1056,25 +1230,25 @@ with tab_ai:
             for c in raw["data_caveats"]:
                 st.markdown(f"- {c}")
 
-    # Copy-as-markdown report
+    # Copy-as-markdown report — same plain language
     md_report_lines = [
         f"# Trade Thesis — {thesis.generated_at}",
-        f"**Stance:** {stance_label}  \n**Conviction:** {conviction:.1f}/10  \n"
-        f"**Horizon:** {horizon}d  \n**Source:** {thesis.source}",
+        f"**Stance:** {stance_label}  \n**Confidence:** {conviction:.1f}/10  \n"
+        f"**Horizon:** {horizon} days  \n**Source:** {thesis.source}",
         "",
-        f"## Thesis\n\n{raw.get('thesis_summary','')}",
+        f"## Why\n\n{raw.get('thesis_summary','')}",
         "",
-        f"### Entry\n- {entry.get('trigger_condition','')}\n- Z: {entry.get('suggested_z_level','')}σ\n- Spread: ${entry.get('suggested_spread_usd','')}",
-        f"\n### Target\n- {exit_.get('target_condition','')}\n- Z: {exit_.get('target_z_level','')}σ",
-        f"\n### Stop\n- {exit_.get('stop_loss_condition','')}\n- Z: {exit_.get('stop_z_level','')}σ",
+        f"### Enter when\n- {entry.get('trigger_condition','')}\n- Dislocation: {entry.get('suggested_z_level','')}\n- Spread: ${entry.get('suggested_spread_usd','')}",
+        f"\n### Take profit when\n- {exit_.get('target_condition','')}\n- Dislocation: {exit_.get('target_z_level','')}",
+        f"\n### Cut the trade if\n- {exit_.get('stop_loss_condition','')}\n- Dislocation: {exit_.get('stop_z_level','')}",
         "",
-        f"### Sizing\n{sizing.get('method','?')} — {sizing.get('suggested_pct_of_capital',0):.1f}% of capital\n\n{sizing.get('rationale','')}",
+        f"### How much to risk\n{sizing_method_display} — {sizing.get('suggested_pct_of_capital',0):.1f}% of capital\n\n{sizing.get('rationale','')}",
         "",
-        "### Key drivers\n" + "\n".join(f"- {d}" for d in (raw.get("key_drivers") or [])),
-        "\n### Invalidation risks\n" + "\n".join(f"- {r}" for r in (raw.get("invalidation_risks") or [])),
+        "### What's driving this\n" + "\n".join(f"- {d}" for d in (raw.get("key_drivers") or [])),
+        "\n### What would make us wrong\n" + "\n".join(f"- {r}" for r in (raw.get("invalidation_risks") or [])),
     ]
     if raw.get("data_caveats"):
-        md_report_lines.append("\n### Data caveats\n" + "\n".join(f"- {c}" for c in raw["data_caveats"]))
+        md_report_lines.append("\n### Things to keep in mind\n" + "\n".join(f"- {c}" for c in raw["data_caveats"]))
     md_report = "\n".join(md_report_lines)
 
     st.download_button(

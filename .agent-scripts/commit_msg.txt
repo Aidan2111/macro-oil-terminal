@@ -1,27 +1,52 @@
-feat+ops: App Insights, Azure alerts, Bicep IaC, backtest realism
+ui: plain-language pass — rename Z-score to Dislocation, add tooltips
 
-Ops / observability
-* Application Insights component oil-tracker-ai (westus2) created,
-  connection string wired into App Service settings (never in repo).
-* observability.py: defensive azure-monitor-opentelemetry wrapper —
-  no-op when env var missing, never raises.
-* Metric alerts wired (action group → Aidan's email):
-  - oil-tracker-http5xx (Http5xx total > 5 in 5m, sev 2)
-  - oil-tracker-slow-response (HttpResponseTime avg > 5s, sev 3).
-* infra/main.bicep + infra/deploy.sh capture the whole stack (RG,
-  plan, Web App + settings + streamlit startup, AOAI + gpt-4o-mini,
-  AI component, action group, both alerts) reproducibly from scratch.
-  Idempotent; `what-if` preview supported.
+Copy-only change; no math, no schema, no behaviour difference.
 
-Backtest realism
-* backtest_zscore_meanreversion: slippage + commission now applied per
-  completed trade.
-* walk_forward_backtest: 12m/3m rolling-window stats.
-* monte_carlo_entry_noise: 200 runs with ±0.15σ threshold noise —
-  surfaces threshold overfit.
-* regime_breakdown: low-vol vs high-vol trade performance, median-split
-  on 30d realised spread vol.
-* Tab 1 expander renders the walk-forward bar chart, MC percentile
-  metrics, and regime bar. Sidebar has slippage + commission inputs.
+Relabels at the UI boundary only; internal code identifiers (Z_Score,
+category names, stance strings, conviction_0_to_10) stay stable so the
+backtest, thesis, tests, and trade_theses.jsonl audit log are all
+unaffected.
 
-Tests: 36/36 green. Smoke test green. CD ready.
+Renames applied throughout app.py:
+* Z-score → Dislocation (90-day dislocation on the subplot title).
+* "Historical Z-score mean-reversion backtest" →
+  "Snap-back to normal — historical backtest".
+* Sidebar: "Z-Score Alert Threshold" → "Dislocation alert level",
+  "Inventory Floor" → sentence-case, "Depletion rolling window" →
+  "Drawdown lookback".
+* Backtest metrics: win rate / avg hold / biggest losing streak
+  (max drawdown) / risk-adjusted return (Sharpe).
+* Depletion tab: "Daily Depletion" → "Daily drawdown", "Projected
+  Floor Breach" → "Date inventory hits the floor", "Regression R²"
+  → "Trend fit quality".
+* Fleet tab: "Jones Act / Domestic" → "US-flagged / US-destined",
+  "Shadow Risk" → "Flags of convenience", "Sanctioned" →
+  "Sanctioned-country flags", "Flag State" → "Vessel registration
+  country", MMSI column header → "Vessel ID" (MMSI kept in tooltip).
+* Trade Thesis card: LONG SPREAD → BUY THE SPREAD, SHORT → SELL,
+  FLAT → STAND ASIDE; "Entry/Target/Stop" → "Enter when / Take
+  profit when / Cut the trade if"; "Key drivers" → "What's driving
+  this"; "Invalidation risks" → "What would make us wrong";
+  "Catalyst watchlist" → "Upcoming events to watch"; "Position
+  sizing" → "How much to risk"; "Data caveats" → "Things to keep in
+  mind". Conviction → Confidence. Kelly/fixed_fractional/vol
+  methods translated to plain language.
+* Tabs: "Macro Arbitrage / Depletion Forecast / Fleet Analytics /
+  AI Insights" → "Spread dislocation / Inventory drawdown / Tanker
+  fleet / AI trade thesis".
+* Chart ticker captions: "BZ=F/CL=F" → "Brent / WTI".
+
+Every renamed metric keeps a `help=` tooltip with the precise
+definition so the raw stats term is one click away.
+
+Advanced view toggle:
+* Sidebar "Show advanced metrics" (default off) reveals the raw
+  Z-score/σ/R²/Kelly terms inline beside the plain-language labels.
+
+System prompt update:
+* trade_thesis.SYSTEM_PROMPT now tells the model to prefer
+  "dislocation" over "Z-score" and "snap-back to normal" over
+  "mean reversion" in its prose — still precise, not fluffy.
+
+Tests + smoke both still green (36/36). Underlying dataframes and
+JSONL audit shape unchanged.
