@@ -1,0 +1,29 @@
+# Opt-in pre-commit hooks. Not wired into CI — run locally:
+#   pip install pre-commit
+#   pre-commit install                # one-time, installs the hook
+#   pre-commit run --all-files        # manual sweep
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: gitleaks (block committed secrets)
+        stages: [pre-commit]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+        exclude: "^(tests/fixtures/.*|docs/perf/.*|docs/screenshots/.*)$"
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fixes]

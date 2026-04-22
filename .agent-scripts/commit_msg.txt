@@ -1,16 +1,36 @@
-perf+ci: cache heavy compute, preconnect hints, scheduled keep-warm
+feat+ops: live ticker, URL state, Dependabot/CodeQL/pre-commit, release automation, docs
 
-- app.py: @st.cache_data wrappers around compute_spread_zscore,
-  forecast_depletion, and backtest — keyed by (frame fingerprint,
-  params). Slider changes no longer re-run heavy math.
-- app.py: preconnect/dns-prefetch hints to jsdelivr.net and
-  threejs.org so Three.js + Earth textures start fetching earlier.
-- .github/workflows/keep-warm.yml: cron */5 07-22 UTC hitting
-  /_stcore/health. F1's 20s cold-start should stay hidden from users
-  during waking hours.
+User-facing:
+* Real-time ticker strip — 1-min yfinance intraday inside
+  st.fragment(run_every=60) when the new "Live mode" sidebar toggle is
+  on. Handles weekend/holiday/closed-feed by falling back to the daily
+  series with a clear "market closed" badge and last-bar timestamp.
+* URL state sync — sidebar z/floor/window round-trip into
+  st.query_params so links capture the current view. Values are clamped
+  (NaN/inf/non-numeric → safe default) via a new _clamp helper.
 
-Baseline recorded in docs/perf/baseline.json:
-  Cold   TTFB 1.44s  TTI 2.25s  T-chart 5.29s  transfer 3.2MB
-  Warm   TTFB 0.83s  TTI 12.15s  T-chart 14.61s  transfer 3.3MB
+Ops + security:
+* .github/dependabot.yml — weekly pip + github-actions + docker PRs.
+* .github/workflows/codeql.yml — Python security+quality queries
+  on every push, PR, and Monday 04:00 UTC.
+* .pre-commit-config.yaml — opt-in gitleaks + ruff + basic hygiene hooks.
+* .github/CODEOWNERS — @Aidan2111 owns everything (explicit on
+  infra-sensitive paths).
+* SECURITY.md — reporting + secret-handling posture + documented
+  CSP/header limitation (Streamlit default).
 
-Next: measure after, log delta in PROGRESS.md.
+Release automation:
+* .github/workflows/release.yml — triggers on v*.*.* tag (+ manual
+  dispatch). Test-gate → OIDC login → zip deploy → health check → GitHub
+  Release with release notes generated from commits + PROGRESS.md diff
+  since the previous tag. Signed with the same SP used for CD.
+
+Docs:
+* docs/architecture.md — Mermaid data-flow + deployment diagrams,
+  trade-off notes.
+* CONTRIBUTING.md — quick start, test gate, CD expectations, data policy.
+
+Tests:
+* test_runner.py +8 checks (clamp valid/NaN/non-numeric/±inf, plus
+  workflow-file sanity: CD OIDC + test gate, release notes builder,
+  Dependabot present). 32/32 green.

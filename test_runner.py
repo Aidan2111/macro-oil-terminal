@@ -373,6 +373,84 @@ def test_alerts() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Input hardening (clamp helper)
+# ---------------------------------------------------------------------------
+def test_input_hardening() -> None:
+    # Import the clamp helper by compiling the app.py line-range that defines it.
+    import importlib.util, pathlib, types
+    source = pathlib.Path("app.py").read_text()
+    # Extract the _clamp function via exec in an isolated namespace. We pick
+    # the function definition string directly so we don't need to boot
+    # Streamlit.
+    import re
+    m = re.search(r"def _clamp\(.*?(?=\ndef |\nst\.sidebar)", source, re.S)
+    assert m, "could not locate _clamp in app.py"
+    ns: dict = {}
+    exec(m.group(0), ns)
+    _clamp = ns["_clamp"]
+
+    def t_clamp_valid() -> None:
+        assert _clamp(2.5, 0, 10, 5) == 2.5
+        assert _clamp(-1, 0, 10, 5) == 0
+        assert _clamp(99, 0, 10, 5) == 10
+
+    def t_clamp_nan_falls_back() -> None:
+        assert _clamp(float("nan"), 0, 10, 5) == 5
+
+    def t_clamp_non_numeric_falls_back() -> None:
+        assert _clamp("banana", 0, 10, 5) == 5
+        assert _clamp(None, 0, 10, 5) == 5
+
+    def t_clamp_inf_falls_back() -> None:
+        assert _clamp(float("inf"), 0, 10, 5) == 5
+        assert _clamp(float("-inf"), 0, 10, 5) == 5
+
+    _check("input.clamp valid range", t_clamp_valid)
+    _check("input.clamp NaN → default", t_clamp_nan_falls_back)
+    _check("input.clamp non-numeric → default", t_clamp_non_numeric_falls_back)
+    _check("input.clamp ±inf → default", t_clamp_inf_falls_back)
+
+
+# ---------------------------------------------------------------------------
+# Workflow sanity (yaml parseable + essential keys)
+# ---------------------------------------------------------------------------
+def test_workflows() -> None:
+    import pathlib
+
+    workflows = [
+        ".github/workflows/ci.yml",
+        ".github/workflows/cd.yml",
+        ".github/workflows/keep-warm.yml",
+        ".github/workflows/codeql.yml",
+        ".github/workflows/release.yml",
+    ]
+
+    def t_workflow_files_present() -> None:
+        for w in workflows:
+            assert pathlib.Path(w).is_file(), f"missing {w}"
+
+    def t_cd_has_oidc() -> None:
+        txt = pathlib.Path(".github/workflows/cd.yml").read_text()
+        assert "id-token: write" in txt
+        assert "azure/login@v2" in txt
+        assert "test_runner.py" in txt
+
+    def t_release_builds_notes() -> None:
+        txt = pathlib.Path(".github/workflows/release.yml").read_text()
+        assert "PROGRESS.md diff" in txt
+        assert "gh release create" in txt
+
+    def t_dependabot_present() -> None:
+        txt = pathlib.Path(".github/dependabot.yml").read_text()
+        assert "pip" in txt and "github-actions" in txt
+
+    _check("workflows present", t_workflow_files_present)
+    _check("cd.yml uses OIDC + test gate", t_cd_has_oidc)
+    _check("release.yml builds notes", t_release_builds_notes)
+    _check(".github/dependabot.yml present", t_dependabot_present)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> int:
@@ -389,6 +467,10 @@ def main() -> int:
     test_thesis_context()
     print("-- alerts --")
     test_alerts()
+    print("-- input hardening --")
+    test_input_hardening()
+    print("-- workflows --")
+    test_workflows()
 
     total = len(PASSED) + len(FAILED)
     print("\nResults:")

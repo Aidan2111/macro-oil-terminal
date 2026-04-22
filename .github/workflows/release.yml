@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  id-token: write
+  contents: write  # needs write to create the release
+
+concurrency:
+  group: release-prod
+  cancel-in-progress: false
+
+env:
+  AZURE_WEBAPP_NAME: oil-tracker-app-4281
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  release:
+    name: Tag-driven release
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+      url: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net
+    steps:
+      - name: Checkout (with full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute tag
+        id: tag
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install + test gate
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python test_runner.py
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          zip -rq dist/app.zip . \
+            -x "*.venv*" -x "*.git*" -x "__pycache__/*" \
+            -x ".agent-scripts/*" -x "docs/screenshots/*" -x "dist/*"
+
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: dist/app.zip
+
+      - name: Health check
+        run: |
+          set -eu
+          URL="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS --max-time 20 "$URL/_stcore/health" > /dev/null; then
+              echo "healthy on attempt $attempt"; exit 0
+            fi
+            sleep 10
+          done
+          echo "unhealthy" >&2; exit 1
+
+      - name: Compose release notes from PROGRESS.md diff
+        id: notes
+        shell: bash
+        run: |
+          set -eu
+          TAG="${{ steps.tag.outputs.tag }}"
+          prev=$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -n 1 || true)
+          {
+            echo "## ${TAG}"
+            echo ""
+            if [ -n "${prev}" ]; then
+              echo "Changes since ${prev}:"
+              echo ""
+              echo "### Commits"
+              echo '```'
+              git log --pretty=format:"- %s (%h)" "${prev}..${TAG}" | head -50 || true
+              echo ""
+              echo '```'
+              echo ""
+              echo "### PROGRESS.md diff"
+              echo '```diff'
+              git diff "${prev}..${TAG}" -- PROGRESS.md | head -200 || true
+              echo '```'
+            else
+              echo "First release."
+              echo ""
+              echo '```'
+              git log --pretty=format:"- %s (%h)" | head -50
+              echo '```'
+            fi
+          } > /tmp/release-notes.md
+
+          cat /tmp/release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${{ steps.tag.outputs.tag }}"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes.md \
+            dist/app.zip

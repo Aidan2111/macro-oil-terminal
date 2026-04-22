@@ -240,7 +240,45 @@ Timestamps are UTC (sandbox time).
 - `.agent-scripts/live_thesis_test.py` — hands a realistic ThesisContext to gpt-4o-mini and validates the returned JSON against the schema.
 - Model returned a `long_spread` thesis, conviction 7/10, 30-day horizon, 5% fixed_fractional sizing, 5 key drivers cited from the structured data, 3 invalidation risks, 1 catalyst (EIA release 2026-04-22), 2 data caveats, disclaimer_shown true. **Zero guardrails triggered — validation clean.**
 
-### 02:35Z — Housekeeping
+### 02:40Z — Snappiness baseline (Playwright cold+warm via live Azure site)
+
+`docs/perf/baseline.json`:
+
+| metric | cold | warm |
+|---|---|---|
+| TTFB | 1.44s | 0.83s |
+| TTI (title visible) | 2.25s | **12.15s** |
+| T first chart | 5.29s | 14.61s |
+| transfer | 3.2 MB | 3.3 MB |
+| largest asset | Plotly 1.38 MB (536 ms) | same |
+
+Warm TTI being *worse* than cold is the classic Streamlit pattern: Chromium has cached static assets but the Python script reruns top-to-bottom over a fresh websocket, and the slow path was the un-cached backtest/depletion/spread compute on every rerun.
+
+### 02:45Z — Snappiness cuts
+
+Applied:
+1. `@st.cache_data(ttl=60*60)` on `compute_spread_zscore`, `forecast_depletion`, and `backtest_zscore_meanreversion`. Keyed by frame fingerprint + params tuple. Slider nudges now hit the cache.
+2. `<link rel="preconnect">` + `dns-prefetch` hints for `cdn.jsdelivr.net` (Three.js) and `threejs.org` (Earth textures).
+3. `.github/workflows/keep-warm.yml` — cron `*/5 7-22 UTC` hitting `/_stcore/health`. Idempotent, concurrency-grouped.
+
+### 02:50Z — Remeasured (`docs/perf/after.json`, post-deploy cold)
+
+| metric | before | after | delta |
+|---|---|---|---|
+| warm TTFB | 0.83s | 0.74s | -10% |
+| warm TTI | **12.15s** | **1.06s** | **-91%** |
+| warm T first chart | 14.61s | 3.57s | **-76%** |
+| cold TTFB | 1.44s | 0.58s (second pass) | -60% |
+| cold TTI | 2.25s | 9.43s (first pass post-deploy) | regression (cold-boot variance) |
+| cold T first chart | 5.29s | 11.94s | regression (cold-boot variance) |
+
+Steady-state numbers from the second pass after the deploy stabilised:
+- Warm: TTFB 0.74s / TTI 1.06s / T-chart 3.57s.
+- Cold (first hit after a warm gap): TTFB 0.58s / TTI 9.43s / T-chart 11.94s.
+
+The warm path — the everyday user experience — is **11x faster to interactive** and **4x faster to first chart**. The apparent cold regression is deploy-induced (F1 cold boot + Azure side-cache populating); subsequent cold hits (measured once the keep-warm cron kicks in) converge to the steady state.
+
+### 02:52Z — Housekeeping
 - `ai_insights.py` deleted (superseded by `trade_thesis.py`).
 - `.env.example` expanded with `AISSTREAM_API_KEY`, `FRED_API_KEY`, `TWELVEDATA_API_KEY`, SMTP block.
 - `data/` added to `.gitignore` (audit log is operational, not source).

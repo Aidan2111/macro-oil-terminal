@@ -1,0 +1,9 @@
+# Every change requires review from Aidan.
+*                                   @Aidan2111
+
+# Infra-sensitive paths — explicit so nothing slips via auto-merge bots.
+.github/                            @Aidan2111
+providers/                          @Aidan2111
+trade_thesis.py                     @Aidan2111
+DEPLOY.md                           @Aidan2111
+PROGRESS.md                         @Aidan2111

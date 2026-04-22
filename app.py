@@ -68,21 +68,55 @@ st.markdown(
 )
 
 st.sidebar.header("Controls")
+
+
+def _clamp(value, lo, hi, default):
+    try:
+        v = float(value)
+        if v != v or v == float("inf") or v == float("-inf"):
+            return default
+        return max(lo, min(hi, v))
+    except (TypeError, ValueError):
+        return default
+
+
+def _q_default(key: str, lo: float, hi: float, default: float) -> float:
+    """Read a sidebar default from ?key=... query params with strict clamping."""
+    qv = st.query_params.get(key)
+    if qv is None:
+        return default
+    return _clamp(qv, lo, hi, default)
+
+
 z_threshold = st.sidebar.slider(
-    "Z-Score Alert Threshold", min_value=0.5, max_value=5.0, value=3.0, step=0.1
+    "Z-Score Alert Threshold",
+    min_value=0.5,
+    max_value=5.0,
+    value=_q_default("z", 0.5, 5.0, 3.0),
+    step=0.1,
 )
+floor_mbbl_default = int(_q_default("floor", 100, 700, 300))
 floor_mbbl = st.sidebar.slider(
     "Inventory Floor (Million bbls)",
     min_value=100,
     max_value=700,
-    value=300,
+    value=floor_mbbl_default,
     step=25,
 )
 floor_bbls = float(floor_mbbl) * 1_000_000.0
 
 depletion_weeks = st.sidebar.slider(
-    "Depletion Rolling Window (Weeks)", min_value=2, max_value=26, value=4, step=1
+    "Depletion Rolling Window (Weeks)",
+    min_value=2,
+    max_value=26,
+    value=int(_q_default("window", 2, 26, 4)),
+    step=1,
 )
+
+# Keep the URL query params in sync so links capture the current slider state.
+st.query_params["z"] = f"{z_threshold:.1f}"
+st.query_params["floor"] = str(int(floor_mbbl))
+st.query_params["window"] = str(int(depletion_weeks))
 
 st.sidebar.markdown("---")
 st.sidebar.caption(
@@ -96,6 +130,13 @@ alert_on = st.sidebar.toggle(
     value=False,
     help="Requires ALERT_SMTP_* env vars. Without them, the UI will show the "
     "exact message that would have been sent.",
+)
+
+live_mode = st.sidebar.toggle(
+    "Live mode (1-min bars, 60s refresh)",
+    value=True,
+    help="When on, the top ticker strip pulls 1-min intraday bars from yfinance "
+    "every 60s via an st.fragment. When off, a 60-day static snapshot is used.",
 )
 
 
@@ -221,29 +262,91 @@ def _sparkline(series, color: str, height: int = 60) -> go.Figure:
     return fig
 
 
-spark_cols = st.columns(4)
-# Brent 30d spark
-brent_tail = prices["Brent"].tail(60)
-spark_cols[0].metric("Brent (60d)", f"${brent_tail.iloc[-1]:,.2f}",
-                      delta=f"{(brent_tail.iloc[-1]-brent_tail.iloc[0]):+.2f}")
-spark_cols[0].plotly_chart(_sparkline(brent_tail, "#1f77b4"), use_container_width=True, config={"displayModeBar": False})
+@st.cache_data(show_spinner=False, ttl=45)
+def _load_intraday_cached(refresh_token: int):
+    """Cached intraday pull — token gives us a per-minute bucket."""
+    try:
+        return fetch_pricing_intraday_data(interval="1m", period="2d")
+    except Exception:
+        return None
 
-wti_tail = prices["WTI"].tail(60)
-spark_cols[1].metric("WTI (60d)", f"${wti_tail.iloc[-1]:,.2f}",
-                      delta=f"{(wti_tail.iloc[-1]-wti_tail.iloc[0]):+.2f}")
-spark_cols[1].plotly_chart(_sparkline(wti_tail, "#d62728"), use_container_width=True, config={"displayModeBar": False})
 
-z_tail = spread_df["Z_Score"].dropna().tail(120)
-z_val = z_tail.iloc[-1] if not z_tail.empty else 0.0
-spark_cols[2].metric("Spread Z (120d)", f"{z_val:+.2f}\u03c3",
-                      delta=("ALERT" if abs(z_val) >= z_threshold else "calm"),
-                      delta_color=("inverse" if abs(z_val) >= z_threshold else "normal"))
-spark_cols[2].plotly_chart(_sparkline(z_tail, "#2ca02c"), use_container_width=True, config={"displayModeBar": False})
+@st.fragment(run_every=60 if live_mode else None)
+def _ticker_strip() -> None:
+    """Real-time ticker strip — autorefreshes every 60s in live mode."""
+    import time as _t
+    bucket = int(_t.time() // 60)
+    intraday = _load_intraday_cached(bucket) if live_mode else None
 
-inv_tail = inventory["Total_Inventory_bbls"].tail(52) / 1e6
-spark_cols[3].metric("Inventory (52w)", f"{inv_tail.iloc[-1]:,.0f} Mbbl",
-                      delta=f"{(inv_tail.iloc[-1]-inv_tail.iloc[0]):+.1f}")
-spark_cols[3].plotly_chart(_sparkline(inv_tail, "#ff9f1c"), use_container_width=True, config={"displayModeBar": False})
+    brent_tail: pd.Series
+    wti_tail: pd.Series
+    mode_badge: str
+    last_updated: str
+
+    if intraday is not None and not intraday.frame.empty:
+        brent_tail = intraday.frame["Brent"].tail(120)
+        wti_tail = intraday.frame["WTI"].tail(120)
+        last_updated = intraday.frame.index[-1].strftime("%H:%M:%S UTC")
+        mode_badge = f"LIVE 1-min  ·  last bar {last_updated}  ·  ~15-min publisher delay"
+    else:
+        brent_tail = prices["Brent"].tail(60)
+        wti_tail = prices["WTI"].tail(60)
+        mode_badge = "DAILY snapshot (market closed or live feed unavailable)"
+        last_updated = prices.index[-1].strftime("%Y-%m-%d")
+
+    spread_tail = brent_tail.reindex_like(wti_tail).dropna() - wti_tail.dropna().reindex_like(brent_tail.reindex_like(wti_tail).dropna())
+    latest_brent_v = float(brent_tail.iloc[-1])
+    latest_wti_v = float(wti_tail.iloc[-1])
+    latest_spread_v = latest_brent_v - latest_wti_v
+
+    st.caption(f"Source: **Yahoo Finance BZ=F/CL=F** · {mode_badge}")
+    cols = st.columns(4)
+    cols[0].metric(
+        "Brent",
+        f"${latest_brent_v:,.2f}",
+        delta=f"{(latest_brent_v - float(brent_tail.iloc[0])):+.2f}",
+    )
+    cols[0].plotly_chart(_sparkline(brent_tail, "#1f77b4"),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                        key="sp_brent")
+
+    cols[1].metric(
+        "WTI",
+        f"${latest_wti_v:,.2f}",
+        delta=f"{(latest_wti_v - float(wti_tail.iloc[0])):+.2f}",
+    )
+    cols[1].plotly_chart(_sparkline(wti_tail, "#d62728"),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                        key="sp_wti")
+
+    z_tail = spread_df["Z_Score"].dropna().tail(120)
+    z_val = z_tail.iloc[-1] if not z_tail.empty else 0.0
+    cols[2].metric(
+        f"Spread ${latest_spread_v:+.2f}",
+        f"Z {z_val:+.2f}\u03c3",
+        delta=("ALERT" if abs(z_val) >= z_threshold else "calm"),
+        delta_color=("inverse" if abs(z_val) >= z_threshold else "normal"),
+    )
+    cols[2].plotly_chart(_sparkline(z_tail, "#2ca02c"),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                        key="sp_z")
+
+    inv_tail = inventory["Total_Inventory_bbls"].tail(52) / 1e6
+    cols[3].metric(
+        "Inventory",
+        f"{inv_tail.iloc[-1]:,.0f} Mbbl",
+        delta=f"{(inv_tail.iloc[-1]-inv_tail.iloc[0]):+.1f}",
+    )
+    cols[3].plotly_chart(_sparkline(inv_tail, "#ff9f1c"),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                        key="sp_inv")
+
+
+_ticker_strip()
 
 render_hero_banner(height=220)
 
