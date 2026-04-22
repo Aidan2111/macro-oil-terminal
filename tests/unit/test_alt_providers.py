@@ -132,8 +132,9 @@ def test_providers_health_returns_known_labels(monkeypatch):
         "Twelve Data (pricing)",
         "Polygon.io (pricing)",
         "EIA dnav (inventory)",
-        "FRED API (inventory)",
+        "FRED API (inventory fallback)",
         "aisstream.io (AIS)",
+        "CFTC disaggregated (positioning)",
     ):
         assert label in labels
     # At least yfinance + EIA should be ok=True (both mocked)

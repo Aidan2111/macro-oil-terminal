@@ -7,6 +7,7 @@ This module aggregates them into a sidebar-ready traffic-light panel.
 from __future__ import annotations
 
 import os
+import time
 from typing import Dict, List
 
 
@@ -49,28 +50,24 @@ def providers_health() -> List[dict]:
         })
 
     # --- inventory ---
-    def _eia_ping():
-        import requests
-        r = requests.get(
-            "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?n=pet&s=WCESTUS1&f=W",
-            timeout=6,
-        )
-        return {"ok": r.status_code == 200 and len(r.text) > 10000, "latency_ms": int(r.elapsed.total_seconds() * 1000), "note": f"status={r.status_code}"}
-    rows.append({**_safe(_eia_ping, "EIA dnav (inventory)"), "kind": "inventory"})
+    from . import _eia as eia
+    eia_label = "EIA v2 API (inventory)" if os.environ.get("EIA_API_KEY") else "EIA dnav (inventory)"
+    rows.append({**_safe(eia.health_check, eia_label), "kind": "inventory"})
 
     if os.environ.get("FRED_API_KEY"):
         def _fred_ping():
             import requests
+            t0 = time.monotonic()
             r = requests.get(
                 "https://api.stlouisfed.org/fred/series",
                 params={"series_id": "WCESTUS1", "api_key": os.environ["FRED_API_KEY"], "file_type": "json"},
                 timeout=6,
             )
-            return {"ok": r.status_code == 200, "latency_ms": int(r.elapsed.total_seconds() * 1000), "note": f"status={r.status_code}"}
-        rows.append({**_safe(_fred_ping, "FRED API (inventory)"), "kind": "inventory"})
+            return {"ok": r.status_code == 200, "latency_ms": int((time.monotonic() - t0) * 1000), "note": f"status={r.status_code}"}
+        rows.append({**_safe(_fred_ping, "FRED API (inventory fallback)"), "kind": "inventory"})
     else:
         rows.append({
-            "label": "FRED API (inventory)", "ok": None, "latency_ms": 0,
+            "label": "FRED API (inventory fallback)", "ok": None, "latency_ms": 0,
             "note": "FRED_API_KEY not set (skipping)", "kind": "inventory",
         })
 
@@ -83,8 +80,12 @@ def providers_health() -> List[dict]:
     else:
         rows.append({
             "label": "aisstream.io (AIS)", "ok": None, "latency_ms": 0,
-            "note": "AISSTREAM_API_KEY not set (placeholder mode)", "kind": "ais",
+            "note": "AISSTREAM_API_KEY not set (Q3 2024 snapshot)", "kind": "ais",
         })
+
+    # --- CFTC positioning ---
+    from . import _cftc
+    rows.append({**_safe(_cftc.health_check, "CFTC disaggregated (positioning)"), "kind": "positioning"})
 
     return rows
 

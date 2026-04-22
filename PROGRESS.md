@@ -518,6 +518,59 @@ The warm path — the everyday user experience — is **11x faster to interactiv
 
 ---
 
+## 2026-04-22 — Real data providers wired
+
+### ~21:15Z — EIA API key provisioned
+- Registered at `https://www.eia.gov/opendata/register.php` (form submitted autonomously; verification email + key delivered out-of-band).
+- **EIA API key received + wired as App Setting + local `.env` (gitignored) at 2026-04-22T21:18Z.**
+- Verified Azure: `az webapp config appsettings list -g oil-price-tracker -n oil-tracker-app-4281 --query "[?name=='EIA_API_KEY'].name" -o tsv` → `EIA_API_KEY` (name only returned; value never logged).
+- Key is NOT in git history, README, PROGRESS, or any committed file.
+
+### ~21:20Z — EIA v2 API upgrade (providers/_eia.py)
+- New primary path: `https://api.eia.gov/v2/seriesid/PET.<SERIES>.W?api_key=...` with 1-hour in-process cache.
+- Series ID transform: bare code (`WCESTUS1`) → v2 form (`PET.WCESTUS1.W`).
+- Keyless dnav HTML scrape retained as automatic fallback when `EIA_API_KEY` is unset.
+- Added public helper `fetch_series_v2(series_id) -> (DatetimeIndex, Series)` per the brief.
+- Live-verified against the real endpoint: 433 rows from 2018-01-01 → 2026-04-17; Cushing latest 30.57M bbl; health probe 200.
+
+### ~21:22Z — CFTC COT positioning (providers/_cftc.py, new)
+- Weekly disaggregated futures zip: `https://www.cftc.gov/files/dea/history/fut_disagg_txt_YYYY.zip`.
+- Default pull = current + previous 2 years so managed-money Z-score has ~3y of history.
+- 24h in-process cache (COT releases Friday 3:30pm ET).
+- Contract: `"WTI-PHYSICAL - NEW YORK MERCANTILE EXCHANGE"` (the main NYMEX CL futures; OI ~2.09M) — modern label; `"CRUDE OIL, LIGHT SWEET..."` is retained as an accepted alias.
+- Live-verified: 120 weeks through 2026-04-14, MM net +98,368 contracts, Z-score −0.19, producer net +294K, swap-dealer net −541K.
+
+### ~21:24Z — Integration + UI
+- `data_ingestion.fetch_cftc_positioning()` — wraps the provider, returns a `COTResult` with `source_url`, `weeks`, `mm_zscore_3y`.
+- `ThesisContext` extended with 7 new CFTC fields (as-of date, OI, MM / producer / swap nets, MM Z-score, MM percentile). Defaults to `None` so old audit-log rows still deserialise.
+- `thesis_context.build_context(..., cftc_res=...)` populates the new fields.
+- `app.py` — CFTC load cached 12h; new "Positioning — CFTC COT (WTI)" expander on tab_arb (Macro Arbitrage) with 4 KPI tiles + MM net chart + Z-score overlay.
+- Data-source badges: tab_depl shows green EIA v2 / amber dnav badge; tab_fleet shows green "LIVE AIS" badge when websocket returned vessels, else amber "Q3 2024 snapshot" label.
+- `providers/health.py` picks up the new `_eia.health_check()` (v2-aware) and adds a CFTC row.
+
+### ~21:25Z — Tests
+- `tests/unit/test_eia_v2.py` — 8 tests: v2 happy path, cache hit avoids second call, missing-key raises, 403 raises, empty-data raises, `active_mode` env flip, `fetch_inventory` schema via v2, plus CI-gated real-call integration smoke (`@pytest.mark.skipif(not (CI and EIA_API_KEY))`).
+- `tests/unit/test_cftc.py` — 7 tests: happy path, cache hit, total-fail raises, MM Z-score edge cases, WTI market filter precedence, health_check failure.
+- `tests/unit/test_cftc_integration.py` — 3 tests: `fetch_cftc_positioning` pass-through, `build_context` populates CFTC fields, `build_context` tolerates `cftc_res=None`.
+- `tests/unit/test_alt_providers.py` — updated label assertion for FRED → "FRED API (inventory fallback)" and added CFTC row expectation.
+
+### ~21:28Z — AISStream signup (deferred; awaiting Aidan's GitHub web login)
+- AISStream only offers `Sign in with GitHub` OAuth.
+- The Chrome instance accessible via CDP is an isolated profile (user-data-dir=`~/.openclaw/browser`) with no cached GitHub session. `gh` CLI is authenticated as `Aidan2111` locally but an API token cannot establish a web session for the OAuth redirect.
+- Safety policy forbids entering a password on the user's behalf.
+- **Manual step for Aidan (≈2 min):**
+  1. Open `https://aisstream.io/authenticate` in his main Chrome profile.
+  2. Click "Sign in with GitHub" → approve scopes.
+  3. Go to `https://aisstream.io/apikeys` → create key named "macro-oil-terminal".
+  4. Copy the key and run:
+     ```
+     az webapp config appsettings set -g oil-price-tracker -n oil-tracker-app-4281 --settings AISSTREAM_API_KEY=<paste-key>
+     ```
+     and append `AISSTREAM_API_KEY=<paste-key>` to `~/Documents/macro_oil_terminal/.env`.
+- The code is already key-gated — the moment the App Setting lands, the Fleet tab flips from "Q3 2024 snapshot" to "LIVE AIS" without a redeploy (Azure restarts the worker on App Setting changes).
+
+---
+
 ## CD resources summary (for cleanup awareness)
 - **Entra app registration:** `macro-oil-terminal-cd` / appId `9d8ae4e7-d5f1-49cc-b6e3-b62cf1ad23a8`
 - **Service principal object ID:** `6556aad8-7eda-44c5-b5ad-09757b5edf47`

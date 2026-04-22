@@ -103,6 +103,15 @@ class ThesisContext:
     crack_corr_30d: Optional[float] = None
     hours_to_next_eia: Optional[float] = None
 
+    # CFTC Commitments of Traders — WTI positioning (disaggregated futures)
+    cftc_as_of_date: Optional[str] = None                 # YYYY-MM-DD of latest Tuesday report
+    cftc_open_interest: Optional[int] = None              # contracts (1000 bbl each)
+    cftc_mm_net: Optional[int] = None                     # managed-money net position
+    cftc_producer_net: Optional[int] = None               # producer/merchant/user net
+    cftc_swap_net: Optional[int] = None                   # swap-dealer net
+    cftc_mm_zscore_3y: Optional[float] = None             # Z-score of MM net vs ~3y
+    cftc_mm_pctile_3y: Optional[float] = None             # percentile 0..100 of MM net
+
     def to_dict(self) -> dict:
         return asdict(self)
 
