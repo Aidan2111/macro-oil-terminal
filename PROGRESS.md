@@ -421,7 +421,62 @@ The warm path — the everyday user experience — is **11x faster to interactiv
 - Fixes along the way: wait for tab role before asserting tabs; loosened the "Z-Score" absence check to "Dislocation ≥ Z-score" because a few tooltip strings still contain the technical term; "Requests this hour" used as the stable sentinel for "AI tab content has rendered".
 - **13/13 e2e green in 84s locally.**
 
-### 13:55Z — Housekeeping
+---
+
+## Ninth autonomous block — desk-quant review + Tier A+B (2026-04-22 20:30Z)
+
+### 20:30Z — Quant desk review doc
+- `docs/quant_review_2026-04-22.md` — signed "K. Nikolic", 15y Brent-WTI RV desk persona. 17 ranked items, subtle-bug audit (roll/expiry leakage, holiday handling, look-ahead — clean), data-pipeline gap table, desk-UX wishlist, final sizing verdict.
+
+### 20:33Z — Q2a: Cointegration (`cointegration.py`)
+- Engle-Granger: OLS on Brent = α + β·WTI, ADF on residual, AR(1)-derived half-life.
+- `rolling_engle_granger()` for structural-break spotting.
+- 6 unit tests; **88% coverage** on the module.
+
+### 20:37Z — Q2b: Vol-normalized dislocation
+- `Spread_EwmaStd` (λ=0.94 RiskMetrics) + `Z_Vol` now emitted by `compute_spread_zscore` alongside `Z_Score`.
+- `vol_models.py` wraps `arch` GARCH(1,1) defensively (ok=False when fit fails or series too short). **95% coverage.**
+
+### 20:41Z — Q2c: Cushing inventory
+- `providers/_eia.py` pulls `W_EPC0_SAX_YCUOK_MBBL` (Cushing, OK stocks) as a third series; now part of the inventory frame. Fixture file `eia_W_EPC0_SAX_YCUOK_MBBL.html` checked in (122 KB) for offline tests.
+- Tab 2 renders a 3-tile row: level (Mbbl) · 4-week drawdown · 5-year percentile.
+
+### 20:44Z — Q2d: 3-2-1 crack spread
+- `crack_spread.py` pulls RB=F + HO=F + CL=F via yfinance, computes crack = (2·RBOB + HO)/3 × 42 − WTI (USD/bbl), plus 30d rolling corr vs Brent-WTI. Graceful ok=False on offline.
+- Tile on Tab 1 shows level + correlation badge.
+
+### 20:47Z — Q2e: Extended risk metrics
+- Backtest result dict gains `sortino`, `calmar`, `var_95`, `es_95`, `rolling_12m_sharpe`. Empty-frame branch seeds the keys to zero.
+- Tab 1 row renders 5 new desk-grade tiles with plain-language labels and technical escape hatches under the Advanced toggle.
+
+### 20:50Z — Thesis context + guardrail integration
+- `ThesisContext` gains 8 optional fields (coint p/verdict/β/half-life, Cushing current + 4w slope, crack + 30d corr) — defaults to NaN/None so older audit-log records still deserialize.
+- `_apply_guardrails` adds a fourth clamp: `not_cointegrated` → conviction capped at 5/10 with a caveat. Exactly the "don't trade mean reversion when the pair isn't cointegrated" rule the review called for.
+- Tab 1 amber warning when Engle-Granger rejects; blue info on weak pair.
+
+### 20:53Z — Q4: Twelve Data + Polygon + Data Sources health panel
+- `providers/_twelvedata.py` — keyed on `TWELVE_DATA_API_KEY` / `TWELVEDATA_API_KEY`. Daily + intraday paths + `health_check()`. 88% coverage.
+- `providers/_polygon.py` — keyed on `POLYGON_API_KEY`. 90% coverage.
+- `providers/health.py` — aggregates health pings across yfinance, Twelve Data, Polygon, EIA dnav, FRED, aisstream. Sidebar "Data sources (health)" expander renders 🟢/🔴/⚪ + latency + note.
+- `providers/pricing.py::fetch_pricing_daily` now tries yfinance → Twelve Data → Polygon in order when keys are present. 91% coverage.
+
+### 20:58Z — Q5: Desk UX
+- Pinned risk bar above the tabs: stance pill (BUY/SELL/STAND ASIDE) + confidence + Brent + WTI + spread + dislocation (with ⚠ at threshold) + "next EIA in Xh Ym" countdown.
+- Keyboard shortcuts (via an inline module script): **1/2/3/4** switch tabs, **R** regenerates thesis, **?** toggles a corner cheat sheet.
+
+### 21:01Z — Q6: Ops polish
+- `.github/ISSUE_TEMPLATE/bug_report.md` + `feature_request.md` + `config.yml` (security advisory contact link, blank issues disabled).
+- `docs/adr/` ADR log: README + template + 0001 "dislocation terminology", 0002 "dual-model Trade Thesis", 0003 "OIDC CD, no client secret".
+
+### 21:03Z — Q3: Coverage push
+- `tests/unit/test_coverage_gaps.py` + `test_alt_providers.py` — 25 new tests covering pricing fall-through, Polygon/Twelve Data happy+error paths, yfinance health check, materiality thresholds across all 5 signal types, diff_theses new-catalyst branch, audit-log read+missing-file, Cushing fetch, EIA missing-SPR fall-through, crack short-panel corr guard.
+- Overall coverage **79.46%** (fail_under bumped from 70 → 75). **Core modules all ≥85%**:
+  - `quantitative_models.py` 85% · `trade_thesis.py` 86% · `thesis_context.py` 85%
+  - `cointegration.py` 88% · `vol_models.py` 95% · `crack_spread.py` 68%
+  - `providers/pricing.py` 91% · `_fred` 89% · `_twelvedata` 88% · `_polygon` 90%
+- **122 unit tests green, smoke test green.**
+
+### 21:05Z — Housekeeping
 - `ai_insights.py` deleted (superseded by `trade_thesis.py`).
 - `.env.example` expanded with `AISSTREAM_API_KEY`, `FRED_API_KEY`, `TWELVEDATA_API_KEY`, SMTP block.
 - `data/` added to `.gitignore` (audit log is operational, not source).

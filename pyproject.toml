@@ -33,6 +33,9 @@ source = [
     "data_ingestion",
     "webgpu_components",
     "observability",
+    "cointegration",
+    "crack_spread",
+    "vol_models",
 ]
 omit = [
     "tests/*",
@@ -50,7 +53,7 @@ exclude_lines = [
 ]
 skip_covered = false
 show_missing = true
-fail_under = 70
+fail_under = 75
 
 [tool.ruff]
 line-length = 100

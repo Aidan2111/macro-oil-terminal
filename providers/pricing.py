@@ -33,20 +33,43 @@ class PricingResult:
 
 
 def fetch_pricing_daily(years: int = 5) -> PricingResult:
+    """Try yfinance → Twelve Data → Polygon.io in order, each gated on availability."""
     errors: list[str] = []
-    # Currently one provider, but keep the orchestrator shape for the next one.
     try:
         from . import _yfinance
         df = _yfinance.fetch_daily(years=years)
         return PricingResult(
-            frame=df,
-            source="yfinance",
-            kind="daily",
+            frame=df, source="yfinance", kind="daily",
             source_url="https://finance.yahoo.com/quote/BZ=F",
             fetched_at=pd.Timestamp.utcnow(),
         )
     except Exception as exc:
         errors.append(f"yfinance: {exc!r}")
+
+    if os.environ.get("TWELVE_DATA_API_KEY") or os.environ.get("TWELVEDATA_API_KEY"):
+        try:
+            from . import _twelvedata
+            df = _twelvedata.fetch_daily(years=years)
+            return PricingResult(
+                frame=df, source="Twelve Data", kind="daily",
+                source_url="https://twelvedata.com/",
+                fetched_at=pd.Timestamp.utcnow(),
+            )
+        except Exception as exc:
+            errors.append(f"twelvedata: {exc!r}")
+
+    if os.environ.get("POLYGON_API_KEY"):
+        try:
+            from . import _polygon
+            df = _polygon.fetch_daily(years=years)
+            return PricingResult(
+                frame=df, source="Polygon.io", kind="daily",
+                source_url="https://polygon.io/",
+                fetched_at=pd.Timestamp.utcnow(),
+            )
+        except Exception as exc:
+            errors.append(f"polygon: {exc!r}")
+
     raise PricingUnavailable(
         "No pricing provider returned daily data:\n- " + "\n- ".join(errors)
     )

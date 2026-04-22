@@ -155,6 +155,31 @@ st.sidebar.caption(
     f"AIS: aisstream.io if `AISSTREAM_API_KEY` set, else labeled Q3 2024 snapshot."
 )
 
+
+@st.cache_data(show_spinner=False, ttl=60 * 3)
+def _health_cached():
+    from providers.health import providers_health
+    return providers_health()
+
+
+with st.sidebar.expander("Data sources (health)"):
+    try:
+        rows = _health_cached()
+    except Exception as exc:
+        rows = []
+        st.caption(f":red[health check failed: {exc!r}]")
+    for r in rows:
+        ok = r.get("ok")
+        if ok is True:
+            icon = "🟢"
+        elif ok is False:
+            icon = "🔴"
+        else:
+            icon = "⚪"
+        lat = r.get("latency_ms", 0)
+        note = r.get("note") or ""
+        st.caption(f"{icon} **{r['label']}** — {lat} ms · {note}")
+
 alert_on = st.sidebar.toggle(
     "Email me on Z-score breach",
     value=False,
@@ -443,6 +468,119 @@ def _ticker_strip() -> None:
 
 
 _ticker_strip()
+
+# --- Desk-style risk summary pinned above the tabs -----------------------
+try:
+    _latest_brent = float(prices["Brent"].iloc[-1])
+    _latest_wti = float(prices["WTI"].iloc[-1])
+    _latest_spread = _latest_brent - _latest_wti
+    _z = float(spread_df["Z_Score"].dropna().iloc[-1]) if spread_df["Z_Score"].notna().any() else 0.0
+    _alert = abs(_z) >= z_threshold
+    _last_thesis = st.session_state.get("_thesis_obj")
+    _stance = (_last_thesis.raw.get("stance") if _last_thesis else "—")
+    _stance_display = {
+        "long_spread": "BUY spread",
+        "short_spread": "SELL spread",
+        "flat": "STAND ASIDE",
+        "—": "thesis not yet generated",
+    }.get(_stance, str(_stance))
+    _conf = float(_last_thesis.raw.get("conviction_0_to_10", 0.0)) if _last_thesis else 0.0
+
+    # Countdown to the next EIA Wednesday 10:30 ET (14:30 UTC).
+    _now = pd.Timestamp.utcnow().tz_localize(None)
+    _days_ahead = (2 - _now.weekday()) % 7
+    if _days_ahead == 0 and _now.hour >= 15:
+        _days_ahead = 7
+    _next_eia = (_now + pd.Timedelta(days=_days_ahead)).replace(hour=14, minute=30, second=0, microsecond=0)
+    _delta = _next_eia - _now
+    _h_left = int(_delta.total_seconds() // 3600)
+    _m_left = int((_delta.total_seconds() % 3600) // 60)
+
+    _pill_bg = "#e74c3c" if _alert else "#1b2838"
+    _stance_bg = {
+        "BUY spread": "#2ecc71",
+        "SELL spread": "#e74c3c",
+        "STAND ASIDE": "#95a5a6",
+    }.get(_stance_display, "#444a54")
+    st.markdown(
+        f"""
+        <div style="display:flex; gap:14px; align-items:center;
+                    padding:8px 14px; margin-bottom:10px;
+                    border-radius:8px; background:#111821;
+                    border-left:4px solid {_pill_bg};
+                    font-family: ui-monospace, Menlo, monospace;
+                    font-size:0.92rem; color:#e7ecf3;">
+          <span style="background:{_stance_bg}; color:#0b0f14;
+                       padding:2px 10px; border-radius:4px; font-weight:700;">
+            {_stance_display}
+          </span>
+          <span>conf <b>{_conf:.1f}/10</b></span>
+          <span>·  Brent <b>${_latest_brent:,.2f}</b></span>
+          <span>WTI <b>${_latest_wti:,.2f}</b></span>
+          <span>spread <b>{_latest_spread:+.2f}</b></span>
+          <span>dislocation <b>{_z:+.2f}</b>{' ⚠' if _alert else ''}</span>
+          <span style="margin-left:auto; opacity:0.85;">
+            next EIA in <b>{_h_left}h {_m_left}m</b>
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+except Exception:
+    pass
+
+
+# --- Global keyboard shortcuts (1/2/3/4 tabs, R regen, / filter, ? help) --
+st.markdown(
+    """
+    <script>
+    (function () {
+      if (window.__oilTermHotkeysBound) return;
+      window.__oilTermHotkeysBound = true;
+      const root = () => window.parent.document;
+      function clickTab(i) {
+        const tabs = root().querySelectorAll('button[role="tab"]');
+        if (tabs && tabs.length > i) tabs[i].click();
+      }
+      function clickByText(text) {
+        const btns = root().querySelectorAll('button');
+        for (const b of btns) { if (b.innerText.trim() === text) { b.click(); return true; } }
+        return false;
+      }
+      function toggleCheatsheet() {
+        const d = root().getElementById('oil-cheatsheet');
+        if (!d) return;
+        d.style.display = d.style.display === 'none' ? 'block' : 'none';
+      }
+      const handler = (ev) => {
+        if (ev.target && ['INPUT','TEXTAREA','SELECT'].includes(ev.target.tagName)) return;
+        if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+        switch (ev.key) {
+          case '1': case '2': case '3': case '4':
+            clickTab(parseInt(ev.key, 10) - 1); ev.preventDefault(); break;
+          case 'r': case 'R':
+            clickByText('Regenerate'); break;
+          case '?':
+            toggleCheatsheet(); ev.preventDefault(); break;
+        }
+      };
+      root().addEventListener('keydown', handler, true);
+    })();
+    </script>
+    <div id="oil-cheatsheet" style="display:none; position:fixed; top:80px; right:24px;
+         z-index: 9999; background:#111821; color:#e7ecf3; padding:14px 18px;
+         border:1px solid #2a3442; border-radius:8px;
+         font-family: ui-monospace, Menlo, monospace; font-size:0.88rem; line-height:1.55;
+         box-shadow: 0 8px 24px rgba(0,0,0,0.45);">
+      <b>Keyboard shortcuts</b><br/>
+      <b>1 2 3 4</b> — switch tabs<br/>
+      <b>R</b> — regenerate thesis<br/>
+      <b>?</b> — toggle this cheat sheet
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 render_hero_banner(height=220)
 

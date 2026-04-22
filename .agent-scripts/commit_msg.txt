@@ -1,60 +1,42 @@
-feat(quant): top-5 desk review items — cointegration, GARCH, Cushing, crack, extended risk
+feat(quant+ops): Tier A+B desk review items + alt providers + desk UX + ADRs
 
-New modules:
-* cointegration.py — Engle-Granger test + ADF on residual + AR(1)-derived
-  half-life. Returns "cointegrated" / "weak" / "not_cointegrated" /
-  "inconclusive" + hedge ratio (β) + alpha. rolling_engle_granger()
-  slides the test for structural-break spotting.
-* vol_models.py — GARCH(1,1) wrapper via `arch`. Defensive: returns
-  ok=False on fit failure or short series, never raises. Exposes
-  conditional σ, Z, persistence (α+β).
-* crack_spread.py — pulls RB=F + HO=F + CL=F via yfinance, computes
-  3-2-1 crack in USD/bbl (2·RBOB + HO)/3 × 42 − WTI, plus 30d rolling
-  correlation vs Brent-WTI. Graceful ok=False on offline.
+Alt pricing providers (Tier Q4):
+* providers/_twelvedata.py — TWELVE_DATA_API_KEY gated; daily +
+  intraday + health_check(). Orchestrator falls through when yfinance
+  is down.
+* providers/_polygon.py — POLYGON_API_KEY gated; daily + health_check().
+* providers/_yfinance.py adds health_check() probe (BZ=F 2d history).
+* providers/health.py aggregates all five provider probes for the
+  sidebar. Sidebar "Data sources (health)" expander renders 🟢/🔴/⚪
+  with latency + note each.
 
-quantitative_models.py:
-* compute_spread_zscore now emits Spread_EwmaStd + Z_Vol alongside the
-  rolling-window Z_Score. λ=0.94 RiskMetrics EWMA — reacts to regime
-  change faster than the rolling std.
-* backtest_zscore_meanreversion now returns sortino, calmar, var_95,
-  es_95, rolling_12m_sharpe. Empty-frame branch seeds all keys to 0.
+Desk UX (Tier Q5):
+* Pinned risk bar above the tabs: stance pill + confidence + Brent +
+  WTI + spread + dislocation (⚠ at threshold) + EIA countdown.
+* Keyboard shortcuts: 1/2/3/4 tabs, R regenerate, ? cheat sheet.
 
-providers/_eia.py:
-* Pulls WCESTCUS1 (Cushing, OK) as a third series, now part of the
-  inventory frame. Cushing is the physical delivery hub for WTI and is
-  the dominant driver of the Brent-WTI spread.
+Ops polish (Tier Q6):
+* .github/ISSUE_TEMPLATE/ bug + feature + config (security advisory
+  link, blank issues disabled).
+* docs/adr/ — README, template, 0001 plain-language labels, 0002
+  dual-model Trade Thesis, 0003 OIDC for CD.
 
-trade_thesis.py / thesis_context.py:
-* ThesisContext adds coint_p_value, coint_verdict, coint_hedge_ratio,
-  coint_half_life_days, cushing_current_bbls, cushing_4w_slope,
-  crack_321_usd, crack_corr_30d. All optional (default NaN/None) so
-  older audit-log records still load.
-* build_context now takes coint_info + crack_info kwargs, computes
-  Cushing slope over trailing 4 weekly observations.
-* _apply_guardrails adds a fourth clamp: when Brent-WTI fails
-  Engle-Granger (verdict == "not_cointegrated"), conviction is clamped
-  at 5/10 and a caveat is appended. Exactly the "don't trade mean
-  reversion when the pair isn't cointegrated" guardrail the desk wanted.
+Test coverage push (Q3):
+* tests/unit/test_alt_providers.py + test_coverage_gaps.py — 25 new
+  unit tests. Covers: pricing fall-through error path, Polygon +
+  Twelve Data happy + error + health, yfinance health, materiality
+  thresholds across all 5 signal types, diff_theses catalyst branch,
+  audit log read + missing-file, Cushing fetch, EIA missing-SPR
+  resilience, crack short-panel corr guard.
+* Coverage source adds cointegration, crack_spread, vol_models.
+* pyproject.toml fail_under bumped 70 → 75. Overall 79.46%. Core
+  modules all ≥85%: quant_models 85, trade_thesis 86, thesis_context 85,
+  cointegration 88, vol_models 95, pricing 91, fred 89, twelvedata 88,
+  polygon 90.
 
-app.py (Tab 1 + Tab 2):
-* Cointegration tile row: strength badge + half-life + hedge ratio +
-  3-2-1 crack tile + 30d corr delta.
-* Amber warning when verdict=="not_cointegrated", blue info when "weak".
-* Cushing tile row on the depletion tab: level + 4-week drawdown +
-  5-year percentile.
-* Extended risk row below the backtest card: Sortino, Calmar, VaR-95,
-  ES-95, 12m rolling Sharpe — each with a plain-language label and
-  the technical name exposed via the Advanced toggle.
+Docs:
+* PROGRESS.md ninth-block log with timestamps for each sub-step.
 
-Tests:
-* 6 cointegration tests (synthetic cointegrated / independent random
-  walks / short-series inconclusive / to_dict shape / rolling /
-  positive half-life).
-* 4 GARCH tests (synthetic GARCH recoverable persistence / too-short
-  returns ok=False / zero input graceful / Z_Vol emitted).
-* 3 crack-spread tests (offline → ok=False / mocked happy path with
-  correlation finite / no-brent-wti panel path).
-* Cushing tile assertion + empty-backtest risk zeroes.
-* Cointegration guardrail: broken verdict clamps conviction ≤ 5 and
-  logs the calibration note.
-* **89/89 unit tests green, smoke test green.**
+requirements.txt adds statsmodels>=0.14.0 and arch>=7.0.0 (Tier-A deps).
+
+122 unit tests green locally; smoke-test clean.

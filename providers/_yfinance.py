@@ -80,3 +80,22 @@ def fetch_intraday(interval: str = "1m", period: str = "2d") -> pd.DataFrame:
         raise RuntimeError("no overlapping intraday bars")
     df.index.name = "Datetime"
     return df
+
+
+def health_check(timeout: float = 6.0) -> dict:
+    """Return a health dict: probes a 1-day window for BZ=F."""
+    if yf is None:
+        return {"ok": False, "latency_ms": 0, "note": "yfinance not installed"}
+    import time
+    t0 = time.monotonic()
+    try:
+        t = yf.Ticker("BZ=F")
+        hist = t.history(period="2d", interval="1d", auto_adjust=False)
+        ok = hist is not None and not hist.empty
+        return {
+            "ok": bool(ok),
+            "latency_ms": int((time.monotonic() - t0) * 1000),
+            "note": "" if ok else "empty response",
+        }
+    except Exception as exc:
+        return {"ok": False, "latency_ms": int((time.monotonic() - t0) * 1000), "note": repr(exc)[:120]}
