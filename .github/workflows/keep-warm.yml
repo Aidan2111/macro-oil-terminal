@@ -1,0 +1,34 @@
+name: keep-warm
+
+on:
+  schedule:
+    # Every 5 minutes during waking hours (UTC)
+    - cron: "*/5 7-22 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /_stcore/health
+        run: |
+          set -eu
+          URL="https://oil-tracker-app-4281.azurewebsites.net/_stcore/health"
+          for attempt in 1 2 3; do
+            if curl -fsS --max-time 20 "$URL"; then
+              echo "  warm on attempt $attempt"
+              exit 0
+            fi
+            echo "  attempt $attempt failed, retrying..."
+            sleep 10
+          done
+          echo "Health endpoint cold after 3 attempts" >&2
+          exit 1

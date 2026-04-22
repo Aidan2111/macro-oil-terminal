@@ -55,6 +55,9 @@ st.set_page_config(
 
 st.markdown(
     """
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://threejs.org" crossorigin>
     <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
     .stTabs [data-baseweb="tab-list"] { gap: 2rem; }
@@ -154,10 +157,33 @@ prices = pricing_res.frame
 inventory = inventory_res.frame
 ais_df = ais_res.frame
 
-spread_df = compute_spread_zscore(prices, window=90)
-depletion = forecast_depletion(
-    inventory, floor_bbls=floor_bbls, lookback_weeks=depletion_weeks
-)
+
+# --- Compute-heavy models cached by their inputs (5y spread, backtest,
+# depletion regression) so slider moves don't re-run them. Each helper
+# takes only hashable primitives + the fingerprint of its input frame.
+@st.cache_data(show_spinner=False, ttl=60 * 60)
+def _spread_cached(price_fingerprint: str, window: int) -> pd.DataFrame:
+    return compute_spread_zscore(prices, window=window)
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60)
+def _depletion_cached(inv_fingerprint: str, floor: float, weeks: int) -> dict:
+    return forecast_depletion(inventory, floor_bbls=floor, lookback_weeks=weeks)
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60)
+def _backtest_cached(spread_fingerprint: str, entry_z: float, exit_z: float) -> dict:
+    return backtest_zscore_meanreversion(
+        spread_df, entry_z=entry_z, exit_z=exit_z, notional_bbls=10_000.0
+    )
+
+
+def _fp(df: pd.DataFrame) -> str:
+    return f"{len(df)}-{df.index[-1] if len(df) else 'empty'}"
+
+
+spread_df = _spread_cached(_fp(prices), 90)
+depletion = _depletion_cached(_fp(inventory), floor_bbls, depletion_weeks)
 ais_with_cat, ais_agg = categorize_flag_states(ais_df)
 
 
@@ -359,9 +385,7 @@ with tab_arb:
         "slippage, and financing, so treat the PnL as a signal-quality "
         "indicator rather than a P&L forecast."
     )
-    bt = backtest_zscore_meanreversion(
-        spread_df, entry_z=z_threshold, exit_z=0.2, notional_bbls=10_000.0
-    )
+    bt = _backtest_cached(_fp(spread_df), float(z_threshold), 0.2)
     bt_c1, bt_c2, bt_c3, bt_c4, bt_c5, bt_c6 = st.columns(6)
     bt_c1.metric("Trades", f"{bt['n_trades']:,}")
     bt_c2.metric(

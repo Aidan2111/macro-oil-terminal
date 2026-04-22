@@ -1,20 +1,20 @@
 {
   "url": "https://oil-tracker-app-4281.azurewebsites.net",
-  "timestamp_utc": "2026-04-22T01:48:22Z",
+  "timestamp_utc": "2026-04-22T02:06:53Z",
   "cold": {
     "label": "cold",
     "url": "https://oil-tracker-app-4281.azurewebsites.net",
-    "ttfb_s": 0.609,
-    "tti_title_s": 0.943,
-    "t_first_chart_s": 3.582,
-    "total_s": 3.582,
-    "playwright_response_count": 87,
-    "playwright_body_bytes": 10075624,
+    "ttfb_s": 1.435,
+    "tti_title_s": 2.254,
+    "t_first_chart_s": 5.292,
+    "total_s": 5.292,
+    "playwright_response_count": 99,
+    "playwright_body_bytes": 17312900,
     "nav_timing": {
       "name": "https://oil-tracker-app-4281.azurewebsites.net/",
       "entryType": "navigation",
       "startTime": 0,
-      "duration": 605.5,
+      "duration": 1431,
       "initiatorType": "navigation",
       "deliveryType": "",
       "nextHopProtocol": "h2",
@@ -27,17 +27,17 @@
       "workerFinalSourceType": "",
       "redirectStart": 0,
       "redirectEnd": 0,
-      "fetchStart": 0.09999990463256836,
-      "domainLookupStart": 7.400000095367432,
-      "domainLookupEnd": 63.09999990463257,
-      "connectStart": 63.09999990463257,
-      "secureConnectionStart": 103.5,
-      "connectEnd": 207.79999995231628,
-      "requestStart": 208.20000004768372,
-      "responseStart": 253.70000004768372,
+      "fetchStart": 0.20000004768371582,
+      "domainLookupStart": 5,
+      "domainLookupEnd": 6.599999904632568,
+      "connectStart": 6.599999904632568,
+      "secureConnectionStart": 48.39999985694885,
+      "connectEnd": 153.59999990463257,
+      "requestStart": 153.89999985694885,
+      "responseStart": 281.7000000476837,
       "firstInterimResponseStart": 0,
-      "finalResponseHeadersStart": 253.70000004768372,
-      "responseEnd": 255,
+      "finalResponseHeadersStart": 281.7000000476837,
+      "responseEnd": 285,
       "transferSize": 1822,
       "encodedBodySize": 1522,
       "decodedBodySize": 4876,
@@ -45,119 +45,12 @@
       "serverTiming": [],
       "unloadEventStart": 0,
       "unloadEventEnd": 0,
-      "domInteractive": 271.2999999523163,
-      "domContentLoadedEventStart": 605.4000000953674,
-      "domContentLoadedEventEnd": 605.4000000953674,
-      "domComplete": 605.5,
-      "loadEventStart": 605.5,
-      "loadEventEnd": 605.5,
-      "type": "navigate",
-      "redirectCount": 0,
-      "activationStart": 0,
-      "criticalCHRestart": 0,
-      "notRestoredReasons": null,
-      "confidence": {
-        "randomizedTriggerRate": 0.4994798,
-        "value": "high"
-      }
-    },
-    "resource_timing": {
-      "count": 86,
-      "total_bytes": 3230749,
-      "largest": [
-        {
-          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/PlotlyChart.CBOrhmVc.js",
-          "size": 1383226,
-          "duration_ms": 501
-        },
-        {
-          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/MaterialSymbols-Rounded.BK8hQpFn.woff2",
-          "size": 364160,
-          "duration_ms": 321
-        },
-        {
-          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/embed.BwU7eQR9.js",
-          "size": 267542,
-          "duration_ms": 346
-        },
-        {
-          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/src.BnXM6qiK.js",
-          "size": 211730,
-          "duration_ms": 285
-        },
-        {
-          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/SourceSansVF-Upright.ttf.BsWL4Kly.woff2",
-          "size": 170488,
-          "duration_ms": 249
-        },
-        {
-          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/DataFrame.BgahE5yf.js",
-          "size": 137111,
-          "duration_ms": 82
-        },
-        {
-          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/SourceCodeVF-Upright.ttf.BjWn63N-.woff2",
-          "size": 90424,
-          "duration_ms": 53
-        },
-        {
-          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/index.k-9rUdPI.js",
-          "size": 75138,
-          "duration_ms": 135
-        }
-      ]
-    }
-  },
-  "warm": {
-    "label": "warm",
-    "url": "https://oil-tracker-app-4281.azurewebsites.net",
-    "ttfb_s": 0.513,
-    "tti_title_s": 1.326,
-    "t_first_chart_s": 3.625,
-    "total_s": 3.625,
-    "playwright_response_count": 97,
-    "playwright_body_bytes": 16281522,
-    "nav_timing": {
-      "name": "https://oil-tracker-app-4281.azurewebsites.net/",
-      "entryType": "navigation",
-      "startTime": 0,
-      "duration": 512.2999999523163,
-      "initiatorType": "navigation",
-      "deliveryType": "",
-      "nextHopProtocol": "h2",
-      "renderBlockingStatus": "non-blocking",
-      "contentEncoding": "gzip",
-      "workerStart": 0,
-      "workerRouterEvaluationStart": 0,
-      "workerCacheLookupStart": 0,
-      "workerMatchedSourceType": "",
-      "workerFinalSourceType": "",
-      "redirectStart": 0,
-      "redirectEnd": 0,
-      "fetchStart": 0.10000014305114746,
-      "domainLookupStart": 0.7999999523162842,
-      "domainLookupEnd": 2.1000001430511475,
-      "connectStart": 2.1000001430511475,
-      "secureConnectionStart": 42.90000009536743,
-      "connectEnd": 145.70000004768372,
-      "requestStart": 145.90000009536743,
-      "responseStart": 192.60000014305115,
-      "firstInterimResponseStart": 0,
-      "finalResponseHeadersStart": 192.60000014305115,
-      "responseEnd": 192.90000009536743,
-      "transferSize": 1822,
-      "encodedBodySize": 1522,
-      "decodedBodySize": 4876,
-      "responseStatus": 200,
-      "serverTiming": [],
-      "unloadEventStart": 0,
-      "unloadEventEnd": 0,
-      "domInteractive": 196.90000009536743,
-      "domContentLoadedEventStart": 512.2999999523163,
-      "domContentLoadedEventEnd": 512.2999999523163,
-      "domComplete": 512.2999999523163,
-      "loadEventStart": 512.2999999523163,
-      "loadEventEnd": 512.2999999523163,
+      "domInteractive": 303.7999999523163,
+      "domContentLoadedEventStart": 1431,
+      "domContentLoadedEventEnd": 1431,
+      "domComplete": 1431,
+      "loadEventStart": 1431,
+      "loadEventEnd": 1431,
       "type": "navigate",
       "redirectCount": 0,
       "activationStart": 0,
@@ -170,47 +63,154 @@
     },
     "resource_timing": {
       "count": 90,
-      "total_bytes": 3294298,
+      "total_bytes": 3232225,
       "largest": [
         {
           "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/PlotlyChart.CBOrhmVc.js",
           "size": 1383226,
-          "duration_ms": 294
+          "duration_ms": 536
         },
         {
           "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/MaterialSymbols-Rounded.BK8hQpFn.woff2",
           "size": 364160,
-          "duration_ms": 252
+          "duration_ms": 145
         },
         {
           "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/embed.BwU7eQR9.js",
           "size": 267542,
-          "duration_ms": 82
+          "duration_ms": 272
         },
         {
           "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/src.BnXM6qiK.js",
           "size": 211730,
-          "duration_ms": 282
+          "duration_ms": 1005
         },
         {
           "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/SourceSansVF-Upright.ttf.BsWL4Kly.woff2",
           "size": 170488,
-          "duration_ms": 165
+          "duration_ms": 775
         },
         {
           "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/DataFrame.BgahE5yf.js",
           "size": 137111,
-          "duration_ms": 291
+          "duration_ms": 69
         },
         {
           "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/SourceCodeVF-Upright.ttf.BjWn63N-.woff2",
           "size": 90424,
-          "duration_ms": 139
+          "duration_ms": 75
         },
         {
           "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/index.k-9rUdPI.js",
           "size": 75138,
-          "duration_ms": 245
+          "duration_ms": 438
+        }
+      ]
+    }
+  },
+  "warm": {
+    "label": "warm",
+    "url": "https://oil-tracker-app-4281.azurewebsites.net",
+    "ttfb_s": 0.826,
+    "tti_title_s": 12.149,
+    "t_first_chart_s": 14.613,
+    "total_s": 14.613,
+    "playwright_response_count": 89,
+    "playwright_body_bytes": 10340259,
+    "nav_timing": {
+      "name": "https://oil-tracker-app-4281.azurewebsites.net/",
+      "entryType": "navigation",
+      "startTime": 0,
+      "duration": 824.5999999046326,
+      "initiatorType": "navigation",
+      "deliveryType": "",
+      "nextHopProtocol": "h2",
+      "renderBlockingStatus": "non-blocking",
+      "contentEncoding": "gzip",
+      "workerStart": 0,
+      "workerRouterEvaluationStart": 0,
+      "workerCacheLookupStart": 0,
+      "workerMatchedSourceType": "",
+      "workerFinalSourceType": "",
+      "redirectStart": 0,
+      "redirectEnd": 0,
+      "fetchStart": 0,
+      "domainLookupStart": 0.5999999046325684,
+      "domainLookupEnd": 1.7000000476837158,
+      "connectStart": 1.7000000476837158,
+      "secureConnectionStart": 41.299999952316284,
+      "connectEnd": 142.5,
+      "requestStart": 142.59999990463257,
+      "responseStart": 187.5,
+      "firstInterimResponseStart": 0,
+      "finalResponseHeadersStart": 187.5,
+      "responseEnd": 191,
+      "transferSize": 1822,
+      "encodedBodySize": 1522,
+      "decodedBodySize": 4876,
+      "responseStatus": 200,
+      "serverTiming": [],
+      "unloadEventStart": 0,
+      "unloadEventEnd": 0,
+      "domInteractive": 191.70000004768372,
+      "domContentLoadedEventStart": 824.3999998569489,
+      "domContentLoadedEventEnd": 824.5,
+      "domComplete": 824.5999999046326,
+      "loadEventStart": 824.5999999046326,
+      "loadEventEnd": 824.5999999046326,
+      "type": "navigate",
+      "redirectCount": 0,
+      "activationStart": 0,
+      "criticalCHRestart": 0,
+      "notRestoredReasons": null,
+      "confidence": {
+        "randomizedTriggerRate": 0.4994798,
+        "value": "high"
+      }
+    },
+    "resource_timing": {
+      "count": 88,
+      "total_bytes": 3296137,
+      "largest": [
+        {
+          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/PlotlyChart.CBOrhmVc.js",
+          "size": 1383226,
+          "duration_ms": 482
+        },
+        {
+          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/MaterialSymbols-Rounded.BK8hQpFn.woff2",
+          "size": 364160,
+          "duration_ms": 85
+        },
+        {
+          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/embed.BwU7eQR9.js",
+          "size": 267542,
+          "duration_ms": 108
+        },
+        {
+          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/src.BnXM6qiK.js",
+          "size": 211730,
+          "duration_ms": 558
+        },
+        {
+          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/SourceSansVF-Upright.ttf.BsWL4Kly.woff2",
+          "size": 170488,
+          "duration_ms": 196
+        },
+        {
+          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/DataFrame.BgahE5yf.js",
+          "size": 137111,
+          "duration_ms": 162
+        },
+        {
+          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/media/SourceCodeVF-Upright.ttf.BjWn63N-.woff2",
+          "size": 90424,
+          "duration_ms": 73
+        },
+        {
+          "name": "https://oil-tracker-app-4281.azurewebsites.net/static/js/index.k-9rUdPI.js",
+          "size": 75138,
+          "duration_ms": 605
         }
       ]
     }
