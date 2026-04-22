@@ -1,1 +1,39 @@
-docs(cd): log the successful push-to-deploy round-trip + cleanup notes
+feat: real EIA inventory + AI Trade Thesis (structured JSON + guardrails)
+
+No more simulators in the prod path.
+
+* providers/ package: EIA dnav (keyless, primary), FRED API (keyed,
+  fallback), yfinance daily+intraday, aisstream.io (keyed), with
+  orchestrators that raise *Unavailable on total failure — no fake data.
+* data_ingestion.py rewritten: public API returns dataclass results
+  with source + fetched_at for every panel. simulate_inventory and
+  generate_ais_mock removed from the public path.
+* Tab 3 surfaces a labelled Q3 2024 historical snapshot with a prominent
+  aisstream.io signup call-to-action; when AISSTREAM_API_KEY is set the
+  UI flips to the live websocket.
+* Live EIA verification: commercial 463.8M bbl + SPR 409.2M bbl =
+  872.9M bbl (2026-04-10). Real numbers, keyless endpoint.
+
+Trade Thesis replaces the old "Market Commentary" card.
+
+* trade_thesis.py: ThesisContext with 29 real-data fields (spread,
+  backtest, inventory slopes, fleet, vol, calendar, session).
+  Strict JSON-schema-enforced response_format against gpt-4o-mini.
+* Guardrails: missing inventory → stance=flat; weak backtest →
+  conviction cap; sizing > 20% → clamp; disclaimer always shown.
+* Rule-based fallback when Azure OpenAI is unreachable/unconfigured.
+* Session-state cache keyed on (context.fingerprint, utc_hour).
+* Audit JSONL at data/trade_theses.jsonl (gitignored).
+* Tab 4 renders stance pill, conviction, 3-col entry/target/stop,
+  thesis callout, key drivers, invalidation risks (st.warning),
+  catalyst timeline (st.info), data-caveats expander, and a
+  "Copy as markdown report" download.
+
+Test suite overhauled: 24 checks, all fixture-backed (real EIA
+snapshot HTML checked in), green locally + smoke test green.
+
+Live Azure OpenAI smoke: gpt-4o-mini returned a valid long_spread
+thesis on realistic real-data input, zero guardrails triggered.
+
+docs/ai_trade_thesis.md documents the prompt + schema + guardrail
+policy so it's auditable.

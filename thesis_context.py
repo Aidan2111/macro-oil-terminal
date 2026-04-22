@@ -1,0 +1,174 @@
+"""Assemble a :class:`ThesisContext` from the dashboard's current state."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone, timedelta
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from trade_thesis import ThesisContext
+
+
+def _percentile_rank(series: pd.Series, value: float) -> float:
+    s = series.dropna()
+    if s.empty:
+        return 50.0
+    return float((s <= value).mean() * 100.0)
+
+
+def _days_since_last_abs_z_over(series: pd.Series, threshold: float = 2.0) -> int:
+    s = series.dropna()
+    if s.empty:
+        return -1
+    mask = s.abs() >= threshold
+    if not mask.any():
+        return len(s)
+    last_idx = s.index[mask][-1]
+    now = s.index[-1]
+    return int((now - last_idx).days)
+
+
+def _linear_slope_per_day(series: pd.Series) -> float:
+    s = series.dropna()
+    if len(s) < 2:
+        return 0.0
+    x = np.array([(d - s.index[0]).days for d in s.index], dtype=float)
+    y = s.values.astype(float)
+    slope, _ = np.polyfit(x, y, 1)
+    return float(slope)
+
+
+def _realized_vol_pct(prices: pd.Series, window: int = 30) -> float:
+    s = prices.dropna()
+    if len(s) < window + 2:
+        return 0.0
+    rets = np.log(s / s.shift(1)).dropna().tail(window)
+    if rets.empty:
+        return 0.0
+    return float(rets.std(ddof=0) * np.sqrt(252) * 100.0)
+
+
+def _realized_vol_series_pct(prices: pd.Series, window: int = 30) -> pd.Series:
+    s = prices.dropna()
+    rets = np.log(s / s.shift(1)).dropna()
+    return rets.rolling(window).std(ddof=0) * np.sqrt(252) * 100.0
+
+
+def _next_wednesday(today: pd.Timestamp) -> pd.Timestamp:
+    # EIA weekly petroleum status report is released Wednesdays at 10:30 ET.
+    days_ahead = (2 - today.weekday()) % 7   # Monday=0, Wednesday=2
+    if days_ahead == 0:
+        days_ahead = 7
+    return today + pd.Timedelta(days=days_ahead)
+
+
+def build_context(
+    *,
+    pricing_res,
+    inventory_res,
+    spread_df: pd.DataFrame,
+    backtest: dict,
+    depletion: dict,
+    ais_agg: pd.DataFrame,
+    ais_with_cat: pd.DataFrame,
+    z_threshold: float,
+    floor_bbls: float,
+) -> ThesisContext:
+    latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
+    latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
+    latest_spread = latest_brent - latest_wti
+
+    z_series = spread_df["Z_Score"].dropna() if "Z_Score" in spread_df.columns else pd.Series(dtype=float)
+    current_z = float(z_series.iloc[-1]) if not z_series.empty else 0.0
+    rolling_mean_90d = float(spread_df["Spread_Mean"].iloc[-1]) if "Spread_Mean" in spread_df and spread_df["Spread_Mean"].notna().any() else 0.0
+    rolling_std_90d = float(spread_df["Spread_Std"].iloc[-1]) if "Spread_Std" in spread_df and spread_df["Spread_Std"].notna().any() else 0.0
+    z_percentile = _percentile_rank(z_series, current_z) if not z_series.empty else 50.0
+    days_since = _days_since_last_abs_z_over(z_series, 2.0)
+
+    inventory_source = "unavailable"
+    inv_current = float("nan")
+    slope_4w = 0.0
+    slope_52w = 0.0
+    proj_date = None
+    days_of_supply: float | None = None
+
+    if inventory_res is not None and getattr(inventory_res, "frame", None) is not None and not inventory_res.frame.empty:
+        inventory_source = inventory_res.source
+        inv = inventory_res.frame["Total_Inventory_bbls"].dropna()
+        if not inv.empty:
+            inv_current = float(inv.iloc[-1])
+            slope_4w = _linear_slope_per_day(inv.tail(4))
+            slope_52w = _linear_slope_per_day(inv.tail(52))
+            # US crude demand ~20 Mbbl/d — rough days-of-supply at 4w slope pace
+            if slope_4w < 0:
+                # If drawing down at |slope| bbls/day, days until floor breach
+                floor_gap = inv_current - floor_bbls
+                if floor_gap > 0:
+                    days_of_supply = float(floor_gap / abs(slope_4w))
+        proj_date = depletion.get("projected_floor_date")
+        if proj_date is not None and hasattr(proj_date, "strftime"):
+            proj_date = proj_date.strftime("%Y-%m-%d")
+
+    # Fleet
+    jones = float(ais_agg.loc[ais_agg["Category"] == "Jones Act / Domestic", "Total_Cargo_Mbbl"].sum()) if "Category" in ais_agg else 0.0
+    shadow = float(ais_agg.loc[ais_agg["Category"] == "Shadow Risk", "Total_Cargo_Mbbl"].sum()) if "Category" in ais_agg else 0.0
+    sanctioned = float(ais_agg.loc[ais_agg["Category"] == "Sanctioned", "Total_Cargo_Mbbl"].sum()) if "Category" in ais_agg else 0.0
+    total_fleet = float(ais_with_cat["Cargo_Volume_bbls"].sum() / 1e6) if "Cargo_Volume_bbls" in ais_with_cat else (jones + shadow + sanctioned)
+
+    # Volatility
+    vol_brent = _realized_vol_pct(pricing_res.frame["Brent"], 30)
+    vol_wti = _realized_vol_pct(pricing_res.frame["WTI"], 30)
+    spread_series = pricing_res.frame["Brent"] - pricing_res.frame["WTI"]
+    vol_spread = _realized_vol_pct(spread_series, 30)
+    vol_spread_series = _realized_vol_series_pct(spread_series, 30).tail(252).dropna()
+    vol_percentile = _percentile_rank(vol_spread_series, vol_spread) if not vol_spread_series.empty else 50.0
+
+    # Calendar
+    today = pd.Timestamp.utcnow().tz_localize(None).normalize()
+    eia_next = _next_wednesday(today).strftime("%Y-%m-%d")
+
+    # NYMEX crude session: roughly 6pm ET Sunday through 5pm ET Friday. We approximate.
+    now_utc = datetime.now(timezone.utc)
+    dow = now_utc.weekday()   # 0=Mon, 5=Sat, 6=Sun
+    hour = now_utc.hour       # UTC
+    weekend = dow in (5,) or (dow == 6 and hour < 23) or (dow == 4 and hour >= 21)
+    session_open = not weekend
+
+    return ThesisContext(
+        latest_brent=latest_brent,
+        latest_wti=latest_wti,
+        latest_spread=latest_spread,
+        rolling_mean_90d=rolling_mean_90d,
+        rolling_std_90d=rolling_std_90d,
+        current_z=current_z,
+        z_percentile_5y=z_percentile,
+        days_since_last_abs_z_over_2=int(days_since if days_since is not None and days_since >= 0 else -1),
+        bt_hit_rate=float(backtest.get("win_rate", 0.0)),
+        bt_avg_hold_days=float(backtest.get("avg_days_held", 0.0)),
+        bt_avg_pnl_per_bbl=float(backtest.get("avg_pnl_per_bbl", 0.0)),
+        bt_max_drawdown_usd=float(backtest.get("max_drawdown_usd", 0.0)),
+        bt_sharpe=float(backtest.get("sharpe", 0.0)),
+        inventory_source=str(inventory_source),
+        inventory_current_bbls=float(inv_current) if inv_current == inv_current else 0.0,
+        inventory_4w_slope_bbls_per_day=float(slope_4w),
+        inventory_52w_slope_bbls_per_day=float(slope_52w),
+        inventory_floor_bbls=float(floor_bbls),
+        inventory_projected_floor_date=proj_date if isinstance(proj_date, str) else None,
+        days_of_supply=days_of_supply,
+        fleet_total_mbbl=float(total_fleet),
+        fleet_jones_mbbl=float(jones),
+        fleet_shadow_mbbl=float(shadow),
+        fleet_sanctioned_mbbl=float(sanctioned),
+        fleet_source="",  # filled by caller
+        fleet_delta_vs_30d_mbbl=None,
+        vol_brent_30d_pct=float(vol_brent),
+        vol_wti_30d_pct=float(vol_wti),
+        vol_spread_30d_pct=float(vol_spread),
+        vol_spread_1y_percentile=float(vol_percentile),
+        next_eia_release_date=eia_next,
+        session_is_open=bool(session_open),
+        weekend_or_holiday=bool(weekend),
+        user_z_threshold=float(z_threshold),
+    )

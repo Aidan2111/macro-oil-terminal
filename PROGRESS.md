@@ -197,7 +197,58 @@ Timestamps are UTC (sandbox time).
 - Run `24755592248`, duration **2m17s**. Every step green, including the health-check retry loop which returned `ok` first try.
 - Live site post-run: `root=200` in 570ms warm, `/_stcore/health=ok`. Push-to-deploy is proven end-to-end.
 
-### CD resources summary (for cleanup awareness)
+---
+
+## Fourth autonomous block — real data + Trade Thesis (2026-04-22 02:00Z)
+
+### 02:00Z — Data source investigation
+- FRED `fredgraph.csv?id=WCRSTUS1` / `WCESTUS1` → 404 consistently (FRED dropped keyless CSV for petroleum series).
+- FRED `/fred/series/observations` → requires `FRED_API_KEY` (documented as upgrade path).
+- EIA v2 `api.eia.gov/v2/petroleum/stoc/wstk/data/` → empty without key.
+- EIA v1 `api.eia.gov/series/` → 403 `API_KEY_MISSING`.
+- **EIA dnav `LeafHandler.ashx` → 200 with real weekly data** (~241KB HTML, keyless, stable for ~20 years). This is the primary source.
+- yfinance 1-min intraday for BZ=F/CL=F → 1742 rows over 2 days, freshest bar seconds old. Real, keyless.
+
+### 02:05Z — `providers/` package
+- `providers/_eia.py` — parses the EIA dnav HTML table (pandas.read_html + lxml/bs4) into a weekly Series. Pulls both WCESTUS1 (commercial ex-SPR) and WCSSTUS1 (SPR). Converts thousand-barrels → barrels.
+- `providers/_fred.py` — `/fred/series/observations` JSON path behind `FRED_API_KEY`. Included as documented upgrade; not default.
+- `providers/_yfinance.py` — daily (5y) + intraday (1-min, 2d).
+- `providers/_aisstream.py` — websocket consumer for aisstream.io, gated on `AISSTREAM_API_KEY`, MID-prefix → flag lookup.
+- `providers/pricing.py`, `providers/inventory.py`, `providers/ais.py` — orchestrators. **No simulator fallback in production paths.** Both pricing and inventory raise `*Unavailable` exceptions if every provider fails; `app.py` catches and renders `st.error` with retry buttons.
+
+### 02:10Z — `data_ingestion.py` rewritten
+- `simulate_inventory` and `generate_ais_mock` **removed from the public API** entirely.
+- New public API returns dataclass results with `source`, `source_url`, `fetched_at` fields so every panel can cite its source inline.
+- `fetch_ais_data` keeps a **labelled historical snapshot** (Q3 2024 real flag-weight distribution) as a placeholder — not random numbers — and surfaces the aisstream.io signup call-to-action when no key is set.
+- EIA verification (host): commercial 463.8M bbl, SPR 409.2M bbl, total 872.9M bbl as of 2026-04-10. Realistic current-era numbers. 432 weekly rows from 2018.
+
+### 02:15Z — Trade Thesis (Tab 4 replaces "Market Commentary")
+- `trade_thesis.py` — `ThesisContext` dataclass with 29 real-data fields (spread state, z percentile, backtest Sharpe/hit rate, inventory slopes, days of supply, fleet mix by category, 30d realised vol + 1y percentile, session flags, EIA calendar).
+- `THESIS_JSON_SCHEMA` — strict JSON schema enforced via `response_format={"type":"json_schema", "strict": true}` on the Azure OpenAI call. Required fields: stance, conviction, time_horizon, entry/exit/sizing, thesis_summary, key_drivers, invalidation_risks, catalyst_watchlist, data_caveats, disclaimer_shown.
+- **Guardrails** (`_apply_guardrails`): inventory missing → force stance=flat (cap conviction ≤ 3); conviction > 7 with backtest hit rate < 55% → downgrade to 5; sizing > 20% → cap; disclaimer always true.
+- Malformed JSON → one retry with a targeted nudge, then rule-based fallback.
+- `thesis_context.build_context()` assembles everything from the Streamlit session state.
+- Tab 4 renders a **stance pill** (LONG / SHORT / FLAT), conviction score, horizon, 3-column entry/target/stop, thesis callout, key drivers, st.warning risks, st.info catalyst timeline, data-caveats expander, "Copy as markdown report" download. Session-state cache keyed on `(context.fingerprint(), utc_hour, regen_tick)` — slider wiggles don't re-burn tokens.
+- `data/trade_theses.jsonl` audit log (gitignored) — every call appends one line with the full context + thesis + guardrail notes.
+
+### 02:25Z — Test suite overhaul
+- `tests/fixtures/eia_WCESTUS1.html` + `eia_WCSSTUS1.html` checked in (real snapshots, ~241KB each) so the runner is fully offline-deterministic.
+- `test_runner.py` rewritten: 24 checks across data_ingestion (with fixture), quant_models (including backtest Sharpe/drawdown), webgpu (template placeholders), trade_thesis (schema, guardrails, fallback, fingerprint stability), thesis_context (percentile/slope/vol math), alerts.
+- **24/24 green locally, Streamlit smoke test green** on port 8780.
+
+### 02:30Z — Live Azure OpenAI smoke
+- `.agent-scripts/live_thesis_test.py` — hands a realistic ThesisContext to gpt-4o-mini and validates the returned JSON against the schema.
+- Model returned a `long_spread` thesis, conviction 7/10, 30-day horizon, 5% fixed_fractional sizing, 5 key drivers cited from the structured data, 3 invalidation risks, 1 catalyst (EIA release 2026-04-22), 2 data caveats, disclaimer_shown true. **Zero guardrails triggered — validation clean.**
+
+### 02:35Z — Housekeeping
+- `ai_insights.py` deleted (superseded by `trade_thesis.py`).
+- `.env.example` expanded with `AISSTREAM_API_KEY`, `FRED_API_KEY`, `TWELVEDATA_API_KEY`, SMTP block.
+- `data/` added to `.gitignore` (audit log is operational, not source).
+- **aisstream.io signup page opened** in Aidan's default browser via `open https://aisstream.io/signup`. Env var: `AISSTREAM_API_KEY`. Set in `.env` for local or `az webapp config appsettings set` for Azure. When present, Tab 3 flips from the Q3 2024 snapshot to a live websocket.
+
+---
+
+## CD resources summary (for cleanup awareness)
 - **Entra app registration:** `macro-oil-terminal-cd` / appId `9d8ae4e7-d5f1-49cc-b6e3-b62cf1ad23a8`
 - **Service principal object ID:** `6556aad8-7eda-44c5-b5ad-09757b5edf47`
 - **Role assignment:** Contributor on `/subscriptions/5ae389ef-.../resourceGroups/oil-price-tracker` (SP has nothing outside that RG).

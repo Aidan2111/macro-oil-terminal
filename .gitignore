@@ -10,6 +10,8 @@ venv/
 .agent-scripts/aoai_endpoint.txt
 *.log
 .DS_Store
+data/trade_theses.jsonl
+data/
 .streamlit/secrets.toml
 .idea/
 .vscode/

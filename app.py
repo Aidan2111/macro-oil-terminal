@@ -21,7 +21,19 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from data_ingestion import fetch_pricing_data, simulate_inventory, generate_ais_mock
+from data_ingestion import (
+    fetch_pricing_data,
+    fetch_pricing_intraday_data,
+    fetch_inventory_data,
+    fetch_ais_data,
+    PricingResult,
+    InventoryResult,
+    AISResult,
+    PricingUnavailable,
+    InventoryUnavailable,
+    active_pricing_provider,
+    active_inventory_provider,
+)
 from quantitative_models import (
     compute_spread_zscore,
     forecast_depletion,
@@ -29,7 +41,6 @@ from quantitative_models import (
     backtest_zscore_meanreversion,
 )
 from webgpu_components import render_hero_banner, render_fleet_globe
-from ai_insights import InsightContext, generate_commentary
 from alerts import maybe_send_zscore_alert
 
 
@@ -72,8 +83,9 @@ depletion_weeks = st.sidebar.slider(
 
 st.sidebar.markdown("---")
 st.sidebar.caption(
-    "Pricing: yfinance (5y daily, BZ=F / CL=F). Inventory: simulated 2y. "
-    "AIS: mock 500-vessel fleet."
+    f"Pricing: {active_pricing_provider('daily')}  \n"
+    f"Inventory: {active_inventory_provider()}  \n"
+    f"AIS: aisstream.io if `AISSTREAM_API_KEY` set, else labeled Q3 2024 snapshot."
 )
 
 alert_on = st.sidebar.toggle(
@@ -88,24 +100,59 @@ alert_on = st.sidebar.toggle(
 # Data loading (cached)
 # ---------------------------------------------------------------------------
 @st.cache_data(show_spinner=False, ttl=60 * 60)
-def _load_pricing() -> pd.DataFrame:
+def _load_pricing_cached() -> PricingResult:
     return fetch_pricing_data(years=5)
 
 
-@st.cache_data(show_spinner=False, ttl=60 * 60)
-def _load_inventory() -> pd.DataFrame:
-    return simulate_inventory(years=2)
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 4)  # EIA publishes weekly
+def _load_inventory_cached() -> InventoryResult:
+    return fetch_inventory_data()
 
 
-@st.cache_data(show_spinner=False, ttl=60 * 60)
-def _load_ais() -> pd.DataFrame:
-    return generate_ais_mock(n_vessels=500)
+@st.cache_data(show_spinner=False, ttl=60 * 30)
+def _load_ais_cached() -> AISResult:
+    return fetch_ais_data(n_vessels=500)
 
 
-with st.spinner("Loading market data..."):
-    prices = _load_pricing()
-    inventory = _load_inventory()
-    ais_df = _load_ais()
+# --- Defensive fetch: surface clear error states instead of fake data ---
+pricing_res: PricingResult | None = None
+inventory_res: InventoryResult | None = None
+ais_res: AISResult | None = None
+
+with st.spinner("Loading live market data..."):
+    try:
+        pricing_res = _load_pricing_cached()
+    except PricingUnavailable as exc:
+        st.error(
+            "Pricing feed unavailable — yfinance returned no data. "
+            f"`{exc}`  Click below to retry."
+        )
+        if st.button("Retry pricing fetch", key="retry_pricing"):
+            _load_pricing_cached.clear()
+            st.rerun()
+        st.stop()
+
+    try:
+        inventory_res = _load_inventory_cached()
+    except InventoryUnavailable as exc:
+        st.error(
+            "Inventory feed unavailable — EIA dnav and FRED both failed. "
+            f"`{exc}`  Click below to retry."
+        )
+        if st.button("Retry inventory fetch", key="retry_inventory"):
+            _load_inventory_cached.clear()
+            st.rerun()
+        st.stop()
+
+    try:
+        ais_res = _load_ais_cached()
+    except Exception as exc:
+        st.error(f"AIS fetch raised unexpectedly: `{exc!r}`")
+        st.stop()
+
+prices = pricing_res.frame
+inventory = inventory_res.frame
+ais_df = ais_res.frame
 
 spread_df = compute_spread_zscore(prices, window=90)
 depletion = forecast_depletion(
@@ -186,6 +233,10 @@ tab_arb, tab_depl, tab_fleet, tab_ai = st.tabs(
 # ---- Tab 1 --------------------------------------------------------------
 with tab_arb:
     st.subheader("Brent vs WTI — Price + Spread Z-Score")
+    st.caption(
+        f"Source: **{pricing_res.source}** (daily, ~15-min delayed futures) · "
+        f"fetched {pricing_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')}"
+    )
 
     latest_spread = float(spread_df["Spread"].dropna().iloc[-1]) if not spread_df["Spread"].dropna().empty else 0.0
     latest_z = float(spread_df["Z_Score"].dropna().iloc[-1]) if not spread_df["Z_Score"].dropna().empty else 0.0
@@ -389,6 +440,11 @@ with tab_arb:
 # ---- Tab 2 --------------------------------------------------------------
 with tab_depl:
     st.subheader("Inventory Depletion Forecaster")
+    st.caption(
+        f"Source: **EIA (dnav, keyless)** via {inventory_res.source} · "
+        f"fetched {inventory_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')} · "
+        f"[{inventory_res.source_url}]({inventory_res.source_url})"
+    )
 
     daily_rate = depletion["daily_depletion_bbls"]
     weekly_rate = depletion["weekly_depletion_bbls"]
@@ -486,6 +542,11 @@ with tab_depl:
 # ---- Tab 3 --------------------------------------------------------------
 with tab_fleet:
     st.subheader("Global Tanker Fleet — Flag-State Exposure")
+    st.caption(
+        f"Source: **{ais_res.source}** · fetched {ais_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')}"
+    )
+    if ais_res.snapshot_notice:
+        st.info(ais_res.snapshot_notice)
 
     category_colors = {
         "Jones Act / Domestic": "#2ca02c",
@@ -606,9 +667,17 @@ with tab_fleet:
         )
 
 
-# ---- Tab 4 — AI Insights -------------------------------------------------
+# ---- Tab 4 — AI Trade Thesis ---------------------------------------------
 with tab_ai:
-    st.subheader("AI-Generated Market Commentary")
+    from trade_thesis import generate_thesis
+    from thesis_context import build_context
+
+    st.subheader("AI Trade Thesis")
+    st.caption(
+        "Structured trade guidance grounded in real current state — spread "
+        "Z, mean-reversion backtest, EIA inventory, fleet composition, vol "
+        "regime. Educational research only."
+    )
 
     endpoint_set = bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
     key_set = bool(os.environ.get("AZURE_OPENAI_KEY"))
@@ -620,69 +689,163 @@ with tab_ai:
     status_cols[2].metric("Deployment", deployment)
     status_cols[3].metric(
         "Mode",
-        "Azure OpenAI" if (endpoint_set and key_set) else "Canned fallback",
+        "Azure OpenAI (JSON schema)" if (endpoint_set and key_set) else "Rule-based fallback",
     )
 
-    jones_mbbl = float(
-        headline.loc[headline["Category"] == "Jones Act / Domestic", "Total_Cargo_Mbbl"].sum()
-    )
-    shadow_mbbl = float(
-        headline.loc[headline["Category"] == "Shadow Risk", "Total_Cargo_Mbbl"].sum()
-    )
-    sanctioned_mbbl = float(
-        headline.loc[headline["Category"] == "Sanctioned", "Total_Cargo_Mbbl"].sum()
-    )
-
-    ctx = InsightContext(
-        latest_brent=float(prices["Brent"].iloc[-1]),
-        latest_wti=float(prices["WTI"].iloc[-1]),
-        latest_spread=latest_spread,
-        latest_z=latest_z,
+    ctx_obj = build_context(
+        pricing_res=pricing_res,
+        inventory_res=inventory_res,
+        spread_df=spread_df,
+        backtest=bt,
+        depletion=depletion,
+        ais_agg=ais_agg,
+        ais_with_cat=ais_with_cat,
         z_threshold=z_threshold,
-        current_inventory_bbls=current_inv,
         floor_bbls=floor_bbls,
-        daily_depletion_bbls=daily_rate,
-        projected_floor_date=proj_date,
-        r_squared=r2,
-        jones_mbbl=jones_mbbl,
-        shadow_mbbl=shadow_mbbl,
-        sanctioned_mbbl=sanctioned_mbbl,
-        total_fleet_mbbl=total_mbbl,
-        total_vessels=total_vessels,
     )
+    ctx_obj.fleet_source = ais_res.source
 
-    regenerate = st.button("Regenerate commentary", type="primary")
+    regenerate = st.button("Regenerate thesis", type="primary", key="regen_thesis")
+    # Cache key: params hash + date-hour so sliders don't re-burn tokens but
+    # the thesis refreshes at least once per hour.
     cache_key = (
-        round(latest_z, 2),
-        round(current_inv / 1e6, 1),
-        round(daily_rate / 1e3, 1),
-        proj_date.strftime("%Y-%m-%d") if proj_date is not None else "",
-        round(jones_mbbl, 1),
-        round(shadow_mbbl, 1),
-        round(sanctioned_mbbl, 1),
-        round(z_threshold, 2),
+        ctx_obj.fingerprint(),
+        pd.Timestamp.utcnow().strftime("%Y-%m-%d-%H"),
         regenerate,
     )
+    if "_thesis_key" not in st.session_state or st.session_state["_thesis_key"] != cache_key:
+        with st.spinner("Generating trade thesis..."):
+            try:
+                thesis = generate_thesis(ctx_obj)
+            except Exception as exc:
+                st.error(f"Thesis generation failed: `{exc!r}`")
+                st.stop()
+        st.session_state["_thesis_obj"] = thesis
+        st.session_state["_thesis_key"] = cache_key
+    thesis = st.session_state["_thesis_obj"]
+    raw = thesis.raw
 
-    # Use session_state as a simple memo keyed by the tuple above to avoid
-    # hashing the dataclass itself.
-    if (
-        "_ai_key" not in st.session_state
-        or st.session_state["_ai_key"] != cache_key
-    ):
-        with st.spinner("Asking Azure OpenAI..."):
-            st.session_state["_ai_commentary"] = generate_commentary(ctx)
-            st.session_state["_ai_key"] = cache_key
-    commentary = st.session_state["_ai_commentary"]
+    # Stance pill
+    stance = raw.get("stance", "flat")
+    stance_color = {"long_spread": "#2ecc71", "short_spread": "#e74c3c", "flat": "#95a5a6"}[stance]
+    stance_label = {"long_spread": "LONG SPREAD", "short_spread": "SHORT SPREAD", "flat": "FLAT"}[stance]
+    conviction = float(raw.get("conviction_0_to_10", 0.0))
+    horizon = int(raw.get("time_horizon_days", 0))
 
-    st.markdown(commentary)
+    st.markdown(
+        f"""
+        <div style="display:flex; gap:18px; align-items:center; margin-top:6px; margin-bottom:10px;">
+          <span style="background:{stance_color}; color:#0b0f14; padding:10px 18px; border-radius:8px;
+                       font-weight:700; letter-spacing:1.2px; font-size:1.15rem;">
+            {stance_label}
+          </span>
+          <span style="color:#e7ecf3; font-family:ui-monospace,Menlo,monospace;">
+            conviction <b>{conviction:.1f}/10</b>
+            &nbsp;·&nbsp; horizon <b>{horizon}d</b>
+            &nbsp;·&nbsp; source <b>{thesis.source}</b>
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with st.expander("Snapshot sent to the model"):
-        st.code(ctx.prompt_snapshot(), language="text")
+    entry = raw.get("entry", {}) or {}
+    exit_ = raw.get("exit", {}) or {}
+    sizing = raw.get("position_sizing", {}) or {}
+
+    tri_cols = st.columns(3)
+    tri_cols[0].markdown(
+        f"**Entry**\n\n"
+        f"- Trigger: {entry.get('trigger_condition','—')}\n"
+        f"- Suggested Z: `{entry.get('suggested_z_level','—')}σ`\n"
+        f"- Suggested spread: `${entry.get('suggested_spread_usd','—')}`"
+    )
+    tri_cols[1].markdown(
+        f"**Target**\n\n"
+        f"- Condition: {exit_.get('target_condition','—')}\n"
+        f"- Target Z: `{exit_.get('target_z_level','—')}σ`"
+    )
+    tri_cols[2].markdown(
+        f"**Stop**\n\n"
+        f"- Condition: {exit_.get('stop_loss_condition','—')}\n"
+        f"- Stop Z: `{exit_.get('stop_z_level','—')}σ`"
+    )
+
+    st.markdown("#### Thesis")
+    st.markdown(f"> {raw.get('thesis_summary','(no summary)')}")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("#### Key drivers")
+        for d in (raw.get("key_drivers") or []):
+            st.markdown(f"- {d}")
+        st.markdown(
+            f"**Sizing** — {sizing.get('method','?')} · "
+            f"suggested **{sizing.get('suggested_pct_of_capital',0):.1f}% of capital**"
+        )
+        st.caption(sizing.get("rationale", ""))
+    with col_b:
+        st.markdown("#### Invalidation risks")
+        with st.container(border=True):
+            for r in (raw.get("invalidation_risks") or []):
+                st.warning(r)
+
+    if raw.get("catalyst_watchlist"):
+        st.markdown("#### Catalyst watchlist")
+        for c in raw["catalyst_watchlist"]:
+            st.info(f"**{c.get('event','?')}** — {c.get('date','?')} · {c.get('expected_impact','')}")
+
+    with st.expander("Data caveats & guardrails"):
+        if thesis.guardrails_applied:
+            st.markdown("**Guardrails applied this run:**")
+            for g in thesis.guardrails_applied:
+                st.markdown(f"- {g}")
+        if raw.get("data_caveats"):
+            st.markdown("**Model-reported caveats:**")
+            for c in raw["data_caveats"]:
+                st.markdown(f"- {c}")
+
+    # Copy-as-markdown report
+    md_report_lines = [
+        f"# Trade Thesis — {thesis.generated_at}",
+        f"**Stance:** {stance_label}  \n**Conviction:** {conviction:.1f}/10  \n"
+        f"**Horizon:** {horizon}d  \n**Source:** {thesis.source}",
+        "",
+        f"## Thesis\n\n{raw.get('thesis_summary','')}",
+        "",
+        f"### Entry\n- {entry.get('trigger_condition','')}\n- Z: {entry.get('suggested_z_level','')}σ\n- Spread: ${entry.get('suggested_spread_usd','')}",
+        f"\n### Target\n- {exit_.get('target_condition','')}\n- Z: {exit_.get('target_z_level','')}σ",
+        f"\n### Stop\n- {exit_.get('stop_loss_condition','')}\n- Z: {exit_.get('stop_z_level','')}σ",
+        "",
+        f"### Sizing\n{sizing.get('method','?')} — {sizing.get('suggested_pct_of_capital',0):.1f}% of capital\n\n{sizing.get('rationale','')}",
+        "",
+        "### Key drivers\n" + "\n".join(f"- {d}" for d in (raw.get("key_drivers") or [])),
+        "\n### Invalidation risks\n" + "\n".join(f"- {r}" for r in (raw.get("invalidation_risks") or [])),
+    ]
+    if raw.get("data_caveats"):
+        md_report_lines.append("\n### Data caveats\n" + "\n".join(f"- {c}" for c in raw["data_caveats"]))
+    md_report = "\n".join(md_report_lines)
+
+    st.download_button(
+        "Copy as markdown report",
+        data=md_report.encode(),
+        file_name=f"trade_thesis_{thesis.context_fingerprint}.md",
+        mime="text/markdown",
+        key="dl_thesis_md",
+    )
+
+    st.caption(
+        "**Research / education only. Not personalised financial advice. "
+        "Executing trades carries risk of material loss.**"
+    )
+
+    with st.expander("Context sent to the model"):
+        st.json(ctx_obj.to_dict())
 
 
 st.markdown("---")
 st.caption(
-    "Streamlit + Plotly + Three.js/WebGPU + Azure OpenAI. Pricing via yfinance, "
-    "inventory simulated, AIS mocked. Not investment advice."
+    "Streamlit + Plotly + Three.js/WebGPU + Azure OpenAI. Pricing via Yahoo Finance "
+    "(15-min delayed futures). Inventory via EIA dnav (keyless). AIS placeholder with "
+    "aisstream.io upgrade path. Not investment advice."
 )
