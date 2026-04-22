@@ -339,6 +339,14 @@ ais_with_cat, ais_agg = categorize_flag_states(ais_df)
 coint_info = _cointegration_cached(_fp(prices))
 crack_info = _crack_cached(_fp(prices))
 
+# Backtest summary — promoted above the tabs so the hero band can use it
+# to build the ThesisContext before the first tab renders. Tab 1 still
+# displays the full backtest detail panel below; this is the same call.
+bt = _backtest_cached(
+    _fp(spread_df), float(z_threshold), 0.2,
+    float(slippage_per_bbl), float(commission_per_trade),
+)
+
 
 # ---------------------------------------------------------------------------
 # Header + WebGPU hero
@@ -586,6 +594,247 @@ render_hero_banner(height=220)
 
 
 # ---------------------------------------------------------------------------
+# Hero thesis band (Task 6a/b) — rendered above the tabs on every page.
+# Uses trade_thesis.decorate_thesis_for_execution(thesis, ctx) to build
+# the three instrument tiers + the pre-trade checklist. The audit log for
+# checklist ticks is appended to data/trade_executions.jsonl (gitignored).
+# ---------------------------------------------------------------------------
+_HERO_BROKER_LINKS = {
+    "IBKR": "https://www.ibkr.com/research/stocks",
+    "Schwab": "https://www.schwab.com/research",
+    "Fidelity": "https://www.fidelity.com/research",
+    "TastyTrade": "https://tastytrade.com/",
+}
+_HERO_DISCLAIMER = (
+    "Research & education only. Not personalized financial advice. "
+    "Futures and options can lose more than the initial investment. "
+    "Past performance does not predict future results. Consult a licensed "
+    "advisor before executing. Data may be 15-min delayed."
+)
+def _hero_audit_log(thesis_fingerprint: str, checklist_key: str, checked_by_user: bool, auto_check_value) -> None:
+    """Append one checklist-tick row to data/trade_executions.jsonl.
+
+    Failures are swallowed — the UI must never raise from a checkbox click.
+    """
+    try:
+        import json as _json
+        import pathlib as _pl
+        from datetime import datetime as _dt, timezone as _tz
+        path = _pl.Path("data/trade_executions.jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "ts_utc": _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "thesis_fingerprint": thesis_fingerprint,
+            "checklist_key": checklist_key,
+            "checked_by_user": bool(checked_by_user),
+            "auto_check_value": auto_check_value,
+        }
+        with path.open("a") as fh:
+            fh.write(_json.dumps(row, default=str) + "\n")
+    except Exception:
+        pass  # log-but-continue; never raise
+
+
+def _hero_stance_label(stance: str) -> tuple[str, str]:
+    """Return (display_label, bg_color) for a stance string."""
+    mapping = {
+        "long_spread":  ("BUY SPREAD",   "#2ecc71"),
+        "short_spread": ("SELL SPREAD",  "#e74c3c"),
+        "flat":         ("STAND ASIDE",  "#95a5a6"),
+    }
+    return mapping.get(stance, ("STAND ASIDE", "#95a5a6"))
+
+
+def _render_thesis_mini(decorated) -> None:
+    """Render the stance pill / confidence / horizon / 2-line summary."""
+    raw = decorated.raw or {}
+    stance = raw.get("stance", "flat")
+    label, color = _hero_stance_label(stance)
+    conv = float(raw.get("conviction_0_to_10", 0.0))
+    horizon = int(raw.get("time_horizon_days", 0))
+    summary = raw.get("thesis_summary", "")
+    st.markdown(
+        f"""
+        <div style="display:flex; gap:14px; align-items:center; margin:4px 0 8px 0;">
+          <span style="background:{color}; color:#0b0f14; padding:6px 14px;
+                       border-radius:6px; font-weight:700; letter-spacing:1px;
+                       font-size:0.95rem;">{label}</span>
+          <span style="color:#e7ecf3; font-family:ui-monospace,Menlo,monospace;
+                       font-size:0.88rem;">
+            confidence <b>{conv:.1f}/10</b> &nbsp;·&nbsp; horizon <b>{horizon} days</b>
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if summary:
+        # Two-line summary — cap at ~280 chars to keep the band compact.
+        short = summary if len(summary) <= 280 else summary[:277] + "..."
+        st.caption(short)
+
+
+def _render_portfolio_input() -> float:
+    """Render the portfolio-sizing number_input and return its current value."""
+    return float(st.number_input(
+        "Portfolio (USD)",
+        min_value=0, value=100_000, step=1_000,
+        key="hero_portfolio_usd",
+        help="Dollar sizing in the tiles below is percent × this portfolio value.",
+    ))
+
+
+def _render_tier_tile(col, inst, portfolio_usd: float) -> None:
+    """Render a single instrument tile into the given column."""
+    pct = float(getattr(inst, "suggested_size_pct", 0.0) or 0.0)
+    dollars = portfolio_usd * pct / 100.0
+    symbol = inst.symbol or "—"
+    tier_color = {1: "#6c7a89", 2: "#3498db", 3: "#9b59b6"}.get(inst.tier, "#6c7a89")
+    broker_bits = " · ".join(
+        f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
+        f'style="color:#7fb4ff; text-decoration:none;">{name}</a>'
+        for name, url in _HERO_BROKER_LINKS.items()
+    )
+    col.markdown(
+        f"""
+        <div style="border:1px solid #2a3442; border-radius:8px; padding:10px 12px;
+                    background:#111821; height:100%;">
+          <div>
+            <span style="background:{tier_color}; color:#0b0f14; padding:2px 8px;
+                         border-radius:4px; font-weight:700; font-size:0.75rem;
+                         letter-spacing:0.5px;">TIER {inst.tier}</span>
+            <span style="color:#e7ecf3; font-weight:600; margin-left:8px;">{inst.name}</span>
+            <span style="color:#95a5a6; margin-left:6px; font-family:ui-monospace,Menlo,monospace;
+                         font-size:0.82rem;">{symbol}</span>
+          </div>
+          <div style="color:#c7cdd4; font-size:0.84rem; margin-top:6px;">{inst.rationale}</div>
+          <div style="color:#e7ecf3; font-size:0.85rem; margin-top:6px;
+                      font-family:ui-monospace,Menlo,monospace;">
+            size <b>{pct:.1f}%</b> &nbsp;·&nbsp; <b>${dollars:,.0f}</b>
+          </div>
+          <div style="font-size:0.78rem; margin-top:6px;">{broker_bits}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if inst.tier == 2:
+        col.caption("Defined-risk alt: ATM \u00b1 2 strikes on BNO/USO, 30\u201360 DTE, OI > 100.")
+
+
+def _render_checklist(checklist, thesis_fingerprint: str) -> None:
+    """Render the 5-item pre-trade checklist inside a bordered container."""
+    with st.container(border=True):
+        st.markdown("**Pre-trade checklist**")
+        for item in checklist:
+            auto_val = item.auto_check
+            default = bool(auto_val) if auto_val is not None else False
+            st.checkbox(
+                item.prompt,
+                value=default,
+                key=f"hero_check_{item.key}",
+                on_change=_hero_audit_log,
+                args=(thesis_fingerprint, item.key, True, auto_val),
+                help=("Auto-checked from today's data." if auto_val is not None
+                      else "User must tick before executing."),
+            )
+
+
+def _render_hero_band(thesis, ctx, decorated) -> None:
+    """Render the hero thesis band above the tabs (every page, every tab).
+
+    Emits an outermost div with data-testid="hero-band" so Playwright can
+    find it by role. Flat-with-no-instruments collapses the tier row +
+    checklist into a single caption but still renders the div and the
+    portfolio input + disclaimer.
+    """
+    # Open the hero wrapper — the e2e test asserts on this data-testid.
+    st.markdown('<div data-testid="hero-band">', unsafe_allow_html=True)
+
+    with st.container():
+        if thesis is None or decorated is None:
+            # Initial load before the LLM call fires. Show a placeholder flat
+            # hero so the Playwright test's hero-band selector still resolves.
+            st.markdown(
+                '<span style="background:#95a5a6; color:#0b0f14; padding:6px 14px; '
+                'border-radius:6px; font-weight:700;">STAND ASIDE</span>'
+                '<span style="margin-left:10px; color:#c7cdd4;">Thesis pending\u2026</span>',
+                unsafe_allow_html=True,
+            )
+            _render_portfolio_input()
+            st.caption(_HERO_DISCLAIMER)
+            st.markdown('</div>', unsafe_allow_html=True)
+            return
+
+        raw = decorated.raw or {}
+        _render_thesis_mini(decorated)
+
+        portfolio_usd = _render_portfolio_input()
+
+        materiality_flat = (
+            raw.get("stance") == "flat" and not (decorated.instruments or [])
+        )
+        if materiality_flat:
+            hrs = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
+            hrs_txt = f"{hrs:.0f}" if isinstance(hrs, (int, float)) else "??"
+            st.caption(
+                f"No tradeable dislocation today. Next EIA release in {hrs_txt}h."
+            )
+        else:
+            cols = st.columns(3)
+            for col, inst in zip(cols, decorated.instruments):
+                _render_tier_tile(col, inst, portfolio_usd)
+            _render_checklist(
+                decorated.checklist or [],
+                decorated.context_fingerprint or "",
+            )
+
+        st.caption(_HERO_DISCLAIMER)
+
+    # Close the hero wrapper.
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# Build a pre-tabs thesis + decoration so the hero band can render above
+# the tabs on first load. We re-use the cached thesis in session state if
+# present (e.g. after the Tab-1 internals expander regenerates it), so we
+# don't double-call the LLM.
+try:
+    from trade_thesis import decorate_thesis_for_execution as _decorate
+    from thesis_context import build_context as _build_ctx
+    from trade_thesis import generate_thesis as _gen_thesis
+
+    _hero_ctx = _build_ctx(
+        pricing_res=pricing_res,
+        inventory_res=inventory_res,
+        spread_df=spread_df,
+        backtest=bt,
+        depletion=depletion,
+        ais_agg=ais_agg,
+        ais_with_cat=ais_with_cat,
+        z_threshold=z_threshold,
+        floor_bbls=floor_bbls,
+        coint_info=coint_info,
+        crack_info=crack_info,
+    )
+    _hero_ctx.fleet_source = ais_res.source
+
+    _hero_thesis = st.session_state.get("_thesis_obj")
+    if _hero_thesis is None:
+        _hero_thesis = _gen_thesis(_hero_ctx, mode="fast")
+        st.session_state["_thesis_obj"] = _hero_thesis
+        st.session_state["_thesis_last_generated_at"] = (
+            pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+        )
+    _hero_decorated = _decorate(_hero_thesis, _hero_ctx)
+    _render_hero_band(_hero_thesis, _hero_ctx, _hero_decorated)
+except Exception as _hero_exc:
+    # Never let the hero band break the rest of the app.
+    st.markdown('<div data-testid="hero-band">', unsafe_allow_html=True)
+    st.caption(f"Hero band unavailable: {_hero_exc!r}")
+    st.caption(_HERO_DISCLAIMER)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
 tab_arb, tab_depl, tab_fleet, tab_ai = st.tabs(
@@ -813,10 +1062,6 @@ with tab_arb:
         "the spread is back near normal. 10,000 barrels per trade, with the "
         "slippage and commission drag you set in the sidebar. "
         "Think of the PnL as a signal-quality indicator, not a P&L forecast."
-    )
-    bt = _backtest_cached(
-        _fp(spread_df), float(z_threshold), 0.2,
-        float(slippage_per_bbl), float(commission_per_trade),
     )
     bt_c1, bt_c2, bt_c3, bt_c4, bt_c5, bt_c6 = st.columns(6)
     bt_c1.metric("Trades", f"{bt['n_trades']:,}")

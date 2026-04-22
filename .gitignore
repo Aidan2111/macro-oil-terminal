@@ -11,6 +11,7 @@ venv/
 *.log
 .DS_Store
 data/trade_theses.jsonl
+data/trade_executions.jsonl
 data/
 .streamlit/secrets.toml
 .idea/
