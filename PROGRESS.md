@@ -192,5 +192,24 @@ Timestamps are UTC (sandbox time).
   - Zip deploy landed; post-deploy health check returned `ok` on the first attempt.
 - Site post-run: `root=200`, `/_stcore/health=ok`.
 
+### 01:38Z — Run 3 (push-triggered, the real round-trip) — SUCCESS
+- Committed README CD badge + Deploying section + this progress block and pushed to `main`.
+- Run `24755592248`, duration **2m17s**. Every step green, including the health-check retry loop which returned `ok` first try.
+- Live site post-run: `root=200` in 570ms warm, `/_stcore/health=ok`. Push-to-deploy is proven end-to-end.
+
+### CD resources summary (for cleanup awareness)
+- **Entra app registration:** `macro-oil-terminal-cd` / appId `9d8ae4e7-d5f1-49cc-b6e3-b62cf1ad23a8`
+- **Service principal object ID:** `6556aad8-7eda-44c5-b5ad-09757b5edf47`
+- **Role assignment:** Contributor on `/subscriptions/5ae389ef-.../resourceGroups/oil-price-tracker` (SP has nothing outside that RG).
+- **Federated credentials:** `github-main-push`, `github-pull-request`, `github-env-production` — all scoped to `Aidan2111/macro-oil-terminal`.
+- **GitHub secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. No client secret or publish profile — pure OIDC.
+- Cleanup if ever needed:
+  ```bash
+  az ad app delete --id 9d8ae4e7-d5f1-49cc-b6e3-b62cf1ad23a8
+  gh secret delete AZURE_CLIENT_ID
+  gh secret delete AZURE_TENANT_ID
+  gh secret delete AZURE_SUBSCRIPTION_ID
+  ```
+
 
 

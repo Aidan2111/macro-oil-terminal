@@ -1,10 +1,1 @@
-docs: CD badge + deploy section + log CD round-trip
-
-- README: CI + CD badges, Deploying section with secrets table and
-  federated-credential subjects (OIDC, no client secret in repo).
-- PROGRESS.md: Third autonomous block logged — SP creation, federated
-  creds, CD workflow, Run 1 failure (environment: subject mismatch),
-  Run 2 success in 2m48s.
-
-Push this to prove the end-to-end CD loop: commit -> push -> test gate ->
-OIDC login -> zip deploy -> health check.
+docs(cd): log the successful push-to-deploy round-trip + cleanup notes
