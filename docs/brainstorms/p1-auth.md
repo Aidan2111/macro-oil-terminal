@@ -1,8 +1,17 @@
 # P1.1 — Authentication + User Store (Brainstorm)
 
-> **Status:** DRAFT — awaiting Aidan greenlight on the 6 open questions at
-> the bottom. Once resolved this doc freezes and the design spec (`docs/
-> designs/p1-auth.md`) takes over.
+> **Status:** RESOLVED (2026-04-22). All six open questions adopted the
+> proposed defaults under the "most-conservative, minimal, reversible"
+> rule Aidan set during hero-thesis HT0. Design spec (`docs/designs/
+> p1-auth.md`) and plan (`docs/plans/p1-auth.md`) are the live artefacts;
+> this brainstorm is retained as the record of *why* the choices came out
+> the way they did. Material divergence from Aidan's P1 escalation:
+> his brief named Clerk as the default IdP; research showed Alpaca is
+> OAuth 2.0 (not OIDC) so "Clerk relaying to Alpaca" was never the
+> right lever, and Streamlit's native `st.login()` (v1.42+) gives us
+> a drop-in OIDC flow behind any IdP. We picked Google OIDC behind
+> `st.login()` — zero vendors added, swap to Clerk / Auth0 / Microsoft
+> in `secrets.toml` later if we outgrow it.
 
 ## The user problem, restated
 
@@ -242,6 +251,9 @@ Two mocking levels:
    platform layer.
 
 ## Unknowns / open questions for Aidan
+
+**Status (2026-04-22): RESOLVED.** All six adopt the proposed default.
+Design spec + plan updated.
 
 1. **IdP choice — Google only, or Google + Microsoft?** Google covers
    consumer + most GSuite-using desks. Microsoft covers Outlook-only

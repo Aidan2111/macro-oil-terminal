@@ -1,9 +1,9 @@
 # P1.1 — Authentication + User Store (Design spec)
 
-> **Status:** DRAFT — mirrors the brainstorm defaults (`docs/brainstorms/
-> p1-auth.md`). Spec becomes APPROVED when Aidan greenlights the six
-> open questions. This doc is the 5-minute review target — skim the
-> top 40 lines and you know the shape.
+> **Status:** APPROVED (2026-04-22). Brainstorm defaults adopted.
+> Plan (`docs/plans/p1-auth.md`) is the source of truth for execution.
+> This doc is the 5-minute review target — skim the top 40 lines and
+> you know the shape.
 
 ## One-paragraph summary
 

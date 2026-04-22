@@ -1,7 +1,7 @@
 # P1.1 — Auth + User Store (Plan)
 
-> **Status:** DRAFT — locks when Aidan greenlights the six open questions
-> in `docs/brainstorms/p1-auth.md`.
+> **Status:** APPROVED (2026-04-22). Brainstorm defaults adopted.
+> Cutting the worktree.
 > **Branch:** `feat/p1-auth` off `main`, worktree at
 > `../macro_oil_terminal-p1-auth`.
 > **Rhythm:** one fresh subagent per task, RED → GREEN → REFACTOR →
