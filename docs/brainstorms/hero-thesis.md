@@ -1,9 +1,9 @@
 # Hero Trade Thesis + Executable Instruments — Brainstorm
 
-> **Status:** DRAFT. Needs user approval before the design spec is finalised.
-> The Superpowers `brainstorming` skill has a HARD-GATE — no implementation
-> starts until Aidan has signed off on the design that follows from this
-> brainstorm.
+> **Status:** RESOLVED (2026-04-22). All five open questions have a
+> default from Aidan; design spec updated in the same change. Plan
+> unblocked. This brainstorm is retained as the record of *why* the
+> choices came out the way they did.
 
 ## The user problem, restated
 
@@ -114,28 +114,88 @@ because the user needs to choose a tier first to know what the checklist is
 
 ## Unknowns / open questions for Aidan
 
-The following are open and should be resolved before the design spec is frozen:
+**Status (2026-04-22): RESOLVED.** Aidan greenlit all five with
+"confirm all, I don't care" — conservative defaults applied below.
+Plus six extra defaults the instructions pre-empted (portfolio size,
+disclaimer wording, broker deep-links, options-tier strike selection,
+checklist persistence scope, and a residual "conservative / minimal /
+reversible" rule for anything else). Design spec updated accordingly.
 
 1. **Tier-2 instrument: ETF or calendar spread?** USO/BNO is the obvious ETF
    pair; a WTI-Brent calendar spread is more direct but requires a futures
-   account. My default: **both**, let the user pick. Aidan: confirm or pick one.
+   account.
+   **RESOLVED → both**, user picks at render time. ETF pair is the default
+   instrument shown for Tier 2; a collapsed sub-note under the tile
+   exposes the calendar-spread equivalent with a "requires a futures
+   account" caveat. Zero backend change — the ETF tile stays the
+   "instrument" Tier 2 returns; the calendar-spread line is UI-only
+   context copy.
 
 2. **Checklist items — exactly five?** I have a draft list (stop in place,
    size within vol-clamp, half-life understood, EIA catalyst ≥24h away, no
-   conflicting thesis last 5 sessions). Aidan: confirm the five, or swap any.
+   conflicting thesis last 5 sessions).
+   **RESOLVED → ship the five as drafted.** Order and keys frozen in the
+   design spec. `stop_in_place` / `vol_clamp_ok` / `half_life_ack` /
+   `catalyst_clear` / `no_conflicting_recent_thesis`. `vol_clamp_ok`
+   and `catalyst_clear` auto-check from `ThesisContext`; the other
+   three require the user to tick explicitly.
 
-3. **Click-through behaviour on a tier?** Options: (a) copy a TradingView/IB
-   ticker to clipboard, (b) open a broker deeplink, (c) just show the symbol
-   and notes inline. My default: (c), because (a) and (b) are execution
-   integrations we haven't designed. Aidan: confirm (c), or a different scope.
+3. **Click-through behaviour on a tier?** Options: (a) copy a
+   TradingView/IB ticker to clipboard, (b) open a broker deeplink,
+   (c) just show the symbol and notes inline.
+   **RESOLVED → (c) inline display, plus (b) as a *search/lookup*
+   link that gets the user one click closer.** Most brokers don't
+   accept deep-link orders from a 3rd party; the compliant compromise
+   is a link into each broker's own symbol-search page. Four brokers
+   default, rendered as small text-anchor links below each tier: IBKR
+   (`ibkr.com`), Schwab (`schwab.com`), Fidelity (`fidelity.com`),
+   TastyTrade (`tastytrade.com`). No auto-submit, no pre-populated
+   order — the user still types the ticker. Zero scope creep into
+   execution integrations.
 
-4. **What happens to the existing "AI Insights" tab?** If the thesis is hero,
-   that tab is redundant. Default: delete it. Aidan: confirm.
+4. **What happens to the existing "AI Insights" tab?** If the thesis is
+   hero, that tab is redundant.
+   **RESOLVED → delete it.** Landing in its own commit in Task 6 so the
+   deletion is a clean single-SHA revert target if we decide to bring
+   it back.
 
 5. **Materiality gating — does it hide the entire hero, or just the
-   instruments?** When the thesis isn't material (no dislocation), what does
-   the user see? Default: a flat "no thesis today" card with the liveness
-   annotation still showing. Aidan: confirm.
+   instruments?** When the thesis isn't material (no dislocation), what
+   does the user see?
+   **RESOLVED → flat stance hides instruments + checklist; hero itself
+   still renders** with the liveness annotation plus a neutral "No
+   tradeable dislocation today. Next EIA release in Xh." line. Keeps
+   the page shape stable across regimes.
+
+### Extra defaults pre-empted by Aidan
+
+6. **Default portfolio size for sizing widget** → **$100,000**.
+   Placeholder, user-editable, stored in
+   `st.session_state["hero_portfolio_usd"]` with a single number input
+   above the tier row.
+
+7. **Disclaimer wording** (strong, verbatim):
+   *"Research & education only. Not personalized financial advice.
+   Futures and options can lose more than the initial investment. Past
+   performance does not predict future results. Consult a licensed
+   advisor before executing. Data may be 15-min delayed."* Rendered as
+   a small caption below the hero band, always visible.
+
+8. **Options strike selection for the defined-risk tier** →
+   **ATM ± 2 strikes on BNO/USO, nearest expiry 30–60 DTE with
+   OI > 100**. Rendered as inline suggestion text under the Tier-2
+   tile; we're not actually pulling an options chain (that's YAGNI
+   scope), so the text is a static pattern reminder, not a live quote.
+
+9. **Checklist persistence** → **session-scoped via `st.session_state`,
+   plus append-only log to `data/trade_executions.jsonl`** (gitignored)
+   for future hit-rate analysis. Schema per-row:
+   `{ts_utc, thesis_fingerprint, checklist_key, checked_by_user,
+   auto_check_value}`.
+
+10. **Residual rule for anything else** → pick the **most
+    conservative, minimal, reversible** option and log it in this
+    brainstorm.
 
 ## What would prove this wrong?
 
