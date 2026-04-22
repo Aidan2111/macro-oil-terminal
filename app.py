@@ -1077,7 +1077,14 @@ with tab_fleet:
 
 # ---- Tab 4 — AI Trade Thesis ---------------------------------------------
 with tab_ai:
-    from trade_thesis import generate_thesis
+    from trade_thesis import (
+        generate_thesis,
+        _materiality_fingerprint,
+        context_changed_materially,
+        read_recent_theses,
+        diff_theses,
+        history_stats,
+    )
     from thesis_context import build_context
 
     st.subheader("AI trade thesis")
@@ -1087,6 +1094,45 @@ with tab_ai:
         "inventory trend, tanker fleet composition, volatility regime. "
         "Educational research only."
     )
+
+    # --- Mode toggle ----------------------------------------------------
+    mode_display = st.radio(
+        "Model",
+        options=["Quick read (gpt-4o, ~2s)", "Deep analysis (o4-mini reasoning, 10–20s)"],
+        index=0,
+        horizontal=True,
+        help=(
+            "Quick read uses gpt-4o — fast synthesis for normal use. "
+            "Deep analysis invokes o4-mini, a reasoning model that thinks "
+            "longer about the data and exposes its step-by-step thinking."
+        ),
+    )
+    selected_mode = "fast" if mode_display.startswith("Quick") else "deep"
+
+    # --- Auto-refresh cadence (advanced-only) ---------------------------
+    if show_advanced:
+        cadence_label = st.sidebar.select_slider(
+            "Thesis auto-refresh",
+            options=["off", "5 min", "30 min", "1 h"],
+            value="off",
+            help=(
+                "When on, the thesis card re-runs on the given cadence via "
+                "st.fragment. Cadence-triggered runs only burn tokens when "
+                "inputs actually changed materially."
+            ),
+        )
+    else:
+        cadence_label = "off"
+    cadence_secs = {"off": None, "5 min": 300, "30 min": 1800, "1 h": 3600}[cadence_label]
+
+    # --- Rate limit (per-session, user-triggered only) ------------------
+    _rl_bucket = int(pd.Timestamp.utcnow().timestamp() // 3600)
+    if st.session_state.get("_thesis_rl_bucket") != _rl_bucket:
+        st.session_state["_thesis_rl_bucket"] = _rl_bucket
+        st.session_state["_thesis_rl_count"] = 0
+    rl_count = st.session_state["_thesis_rl_count"]
+    rl_cap = 30
+    rl_exhausted = rl_count >= rl_cap
 
     endpoint_set = bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
     key_set = bool(os.environ.get("AZURE_OPENAI_KEY"))
@@ -1114,25 +1160,99 @@ with tab_ai:
     )
     ctx_obj.fleet_source = ais_res.source
 
-    regenerate = st.button("Regenerate thesis", type="primary", key="regen_thesis")
-    # Cache key: params hash + date-hour so sliders don't re-burn tokens but
-    # the thesis refreshes at least once per hour.
-    cache_key = (
-        ctx_obj.fingerprint(),
-        pd.Timestamp.utcnow().strftime("%Y-%m-%d-%H"),
-        regenerate,
+    # --- Materiality check against last-generated snapshot --------------
+    cur_materiality = _materiality_fingerprint(ctx_obj)
+    prev_materiality = st.session_state.get("_thesis_last_materiality")
+    change_reasons = context_changed_materially(prev_materiality, cur_materiality)
+
+    # --- Header row: regen + rate-limit + data-lag badges ---------------
+    hdr_cols = st.columns([1, 1, 2, 2])
+    regenerate = hdr_cols[0].button(
+        "Regenerate",
+        type="primary",
+        key="regen_thesis",
+        disabled=rl_exhausted,
+        help=(
+            f"User-triggered regenerations: {rl_count}/{rl_cap} this hour. "
+            if not rl_exhausted
+            else f"Hit the hourly cap of {rl_cap}; wait or switch to auto-refresh."
+        ),
     )
-    if "_thesis_key" not in st.session_state or st.session_state["_thesis_key"] != cache_key:
-        with st.spinner("Generating trade thesis..."):
-            try:
-                thesis = generate_thesis(ctx_obj)
-            except Exception as exc:
-                st.error(f"Thesis generation failed: `{exc!r}`")
-                st.stop()
-        st.session_state["_thesis_obj"] = thesis
-        st.session_state["_thesis_key"] = cache_key
+    hdr_cols[1].caption(f"Requests this hour: **{rl_count}/{rl_cap}**")
+    last_run_at = st.session_state.get("_thesis_last_generated_at")
+    hdr_cols[2].caption(
+        f"Last refreshed: **{last_run_at or '—'}**"
+    )
+    try:
+        price_age_s = int(
+            (pd.Timestamp.utcnow().tz_localize(None) - pd.Timestamp(pricing_res.fetched_at).tz_localize(None)).total_seconds()
+        )
+    except Exception:
+        price_age_s = -1
+    hdr_cols[3].caption(
+        f"Data lag: **~{price_age_s}s** "
+        "(yfinance futures carry an upstream ~15-min delay)"
+    )
+
+    if change_reasons and prev_materiality is not None:
+        st.warning(
+            "Inputs shifted since the last thesis — "
+            + " · ".join(change_reasons)
+            + ".  Hit **Regenerate** to refresh.",
+            icon="⚠️",
+        )
+
+    # --- Decide whether to run -----------------------------------------
+    # Auto-run only on first visit, explicit regen click, or a material
+    # change while auto-refresh is on. Cadence alone doesn't burn tokens
+    # unless the context has moved.
+    needs_run = (
+        "_thesis_obj" not in st.session_state
+        or regenerate
+        or (cadence_secs is not None and len(change_reasons) > 0)
+    )
+
+    # --- Generate (streaming when Azure OpenAI is configured) -----------
+    def _run_thesis(ctx, mode):
+        placeholder = st.empty()
+        streamed_text_box: list[str] = [""]
+
+        def _on_delta(delta: str):
+            streamed_text_box[0] += delta
+            # Render only the first ~1200 chars so we don't thrash Streamlit
+            placeholder.code(streamed_text_box[0][-1200:], language="json")
+
+        endpoint_set = bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
+        key_set = bool(os.environ.get("AZURE_OPENAI_KEY"))
+        handler = _on_delta if (endpoint_set and key_set) else None
+        with st.spinner(
+            "Thinking through the data…" if mode == "deep" else "Generating…"
+        ):
+            th = generate_thesis(ctx, mode=mode, stream_handler=handler)
+        placeholder.empty()
+        return th
+
+    if needs_run:
+        st.session_state["_thesis_obj"] = _run_thesis(ctx_obj, selected_mode)
+        if regenerate:
+            st.session_state["_thesis_rl_count"] = rl_count + 1
+        st.session_state["_thesis_last_materiality"] = cur_materiality
+        st.session_state["_thesis_last_generated_at"] = pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+
     thesis = st.session_state["_thesis_obj"]
     raw = thesis.raw
+
+    # --- "What changed" diff vs the previous thesis ---------------------
+    history = read_recent_theses(n=10)
+    prev_raw = None
+    if len(history) >= 2 and history[0].get("thesis", {}).get("stance") == raw.get("stance") and history[0].get("context_fingerprint") == thesis.context_fingerprint:
+        # newest history entry IS this thesis; the prior one is the comparator
+        prev_raw = history[1].get("thesis") if history[1:] else None
+    elif history:
+        prev_raw = history[0].get("thesis")
+    diffs = diff_theses(prev_raw, raw)
+    if diffs:
+        st.info("**What changed:** " + "  ·  ".join(diffs))
 
     # Stance pill — plain-language mapping
     stance = raw.get("stance", "flat")
@@ -1266,6 +1386,54 @@ with tab_ai:
         "**Research / education only. Not personalised financial advice. "
         "Executing trades carries risk of material loss.**"
     )
+
+    # --- "How I'm thinking about this" (deep/reasoning mode) -----------
+    reasoning_summary = raw.get("reasoning_summary")
+    if reasoning_summary:
+        with st.expander(
+            "How I'm thinking about this"
+            + ("" if thesis.mode != "deep" else "  (deep analysis)")
+        ):
+            st.markdown(reasoning_summary)
+
+    # --- Recent theses + quick stats -----------------------------------
+    st.markdown("---")
+    stats = history_stats(history)
+    if stats["n"]:
+        st.caption(
+            f"**Last {stats['n']} theses:** "
+            f"{stats['long']} buy · {stats['short']} sell · {stats['flat']} stand-aside · "
+            f"average confidence {stats['avg_conf']:.1f}/10."
+        )
+    with st.expander(f"Recent theses ({stats.get('n', 0)})"):
+        if not history:
+            st.caption("No theses logged yet.")
+        else:
+            rows = []
+            for r in history:
+                th = r.get("thesis", {}) or {}
+                rows.append(
+                    {
+                        "when": r.get("timestamp", "—"),
+                        "mode": r.get("thesis", {}).get("mode") or r.get("mode") or "—",
+                        "stance": th.get("stance", "—"),
+                        "confidence": round(float(th.get("conviction_0_to_10", 0) or 0), 1),
+                        "summary": (th.get("thesis_summary") or "")[:160],
+                    }
+                )
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+    # --- Latency + meta + debug ---------------------------------------
+    meta_bits = [
+        f"mode **{thesis.mode}**",
+        f"latency **{thesis.latency_s:.2f}s**",
+        f"streamed **{'yes' if thesis.streamed else 'no'}**",
+    ]
+    if thesis.retried:
+        meta_bits.append("retried once")
+    if thesis.guardrails_applied:
+        meta_bits.append(f"{len(thesis.guardrails_applied)} guardrails")
+    st.caption("Run: " + "  ·  ".join(meta_bits))
 
     with st.expander("Context sent to the model"):
         st.json(ctx_obj.to_dict())

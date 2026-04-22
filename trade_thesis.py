@@ -29,7 +29,7 @@ import os
 import pathlib
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 
@@ -163,12 +163,16 @@ THESIS_JSON_SCHEMA = {
             },
             "data_caveats": {"type": "array", "items": {"type": "string"}},
             "disclaimer_shown": {"type": "boolean"},
+            # In deep/reasoning mode the model provides a plain-language
+            # summary of its reasoning trace. Optional by design.
+            "reasoning_summary": {"type": "string"},
         },
         "required": [
             "stance", "conviction_0_to_10", "time_horizon_days",
             "entry", "exit", "position_sizing",
             "thesis_summary", "key_drivers", "invalidation_risks",
             "catalyst_watchlist", "data_caveats", "disclaimer_shown",
+            "reasoning_summary",
         ],
     },
     "strict": True,
@@ -185,7 +189,11 @@ SYSTEM_PROMPT = (
     "them in plain language for traders without quant backgrounds. Prefer terms "
     "like \"dislocation\" over \"Z-score\" and \"snap-back to normal\" over "
     "\"mean reversion\" in your thesis_summary and key_drivers prose. Still be "
-    "precise — say \"dislocation of 2.4\" not \"the spread is weird.\""
+    "precise — say \"dislocation of 2.4\" not \"the spread is weird.\"\n\n"
+    "The JSON schema has a required ``reasoning_summary`` field. In Quick-read "
+    "mode keep it short (1-2 sentences describing the path from data to "
+    "conclusion). In Deep-analysis mode expand it to 3-6 sentences covering "
+    "the competing hypotheses you considered and why you picked the stance you did."
 )
 
 
@@ -200,6 +208,16 @@ class Thesis:
     model: Optional[str] = None
     context_fingerprint: str = ""
     guardrails_applied: list[str] = field(default_factory=list)
+    mode: str = "fast"                   # "fast" | "deep" | "legacy" | "rule-based"
+    latency_s: float = 0.0
+    streamed: bool = False
+    retried: bool = False
+
+    def one_line(self) -> str:
+        stance = self.raw.get("stance", "flat")
+        conv = float(self.raw.get("conviction_0_to_10", 0.0))
+        hz = int(self.raw.get("time_horizon_days", 0))
+        return f"{stance} · {conv:.1f}/10 · {hz}d · {self.mode}"
 
 
 # ---------------------------------------------------------------------------
@@ -312,23 +330,79 @@ def _rule_based_fallback(ctx: ThesisContext) -> dict:
             "Generated via rule-based fallback (Azure OpenAI unreachable or unconfigured).",
         ],
         "disclaimer_shown": True,
+        "reasoning_summary": (
+            "Rule-based path: compare dislocation to the user threshold; "
+            "pick a stance; size by |dislocation|/threshold. No model reasoning."
+        ),
     }
 
 
 # ---------------------------------------------------------------------------
-# LLM call
+# Mode → deployment resolution
 # ---------------------------------------------------------------------------
-def _call_azure_openai(ctx: ThesisContext) -> tuple[dict, str]:
-    """Return (raw_dict, model_label). Raises on failure."""
+_VALID_MODES = ("fast", "deep", "legacy")
+_DEFAULT_DEEP_TIMEOUT_S = 45.0
+
+
+def _deployment_for(mode: str) -> str:
+    """Resolve the Azure OpenAI deployment name for a given mode.
+
+    Env var priority per mode:
+      fast   → AZURE_OPENAI_DEPLOYMENT_FAST → AZURE_OPENAI_DEPLOYMENT → "gpt-4o-mini"
+      deep   → AZURE_OPENAI_DEPLOYMENT_DEEP → fast fallback
+      legacy → AZURE_OPENAI_DEPLOYMENT → "gpt-4o-mini"
+    """
+    fast = os.environ.get("AZURE_OPENAI_DEPLOYMENT_FAST") or os.environ.get("AZURE_OPENAI_DEPLOYMENT") or "gpt-4o-mini"
+    if mode == "fast":
+        return fast
+    if mode == "deep":
+        return os.environ.get("AZURE_OPENAI_DEPLOYMENT_DEEP") or fast
+    return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+
+
+# ---------------------------------------------------------------------------
+# LLM call (with streaming + sync fallback)
+# ---------------------------------------------------------------------------
+def _call_azure_openai(
+    ctx: ThesisContext,
+    *,
+    mode: str = "fast",
+    stream_handler: Optional[Callable[[str], None]] = None,
+    deadline_s: float = _DEFAULT_DEEP_TIMEOUT_S,
+) -> tuple[dict, str, dict]:
+    """Return (raw_dict, model_label, meta).
+
+    ``stream_handler`` is an optional callable(delta_text: str) → None that is
+    invoked as tokens stream in. If ``None`` the call is non-streaming.
+    Falls back from streaming → sync if the streaming call errors.
+
+    ``meta`` carries timing / mode info the caller can record.
+
+    Reasoning models (o-family) are called **without** temperature and use
+    ``max_completion_tokens`` semantics per Azure OpenAI.
+    """
     endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
     api_key = os.environ.get("AZURE_OPENAI_KEY")
     api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
-    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
 
     if not (endpoint and api_key):
         raise RuntimeError("AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_KEY not set")
 
+    if mode not in _VALID_MODES:
+        mode = "fast"
+
+    deployment = _deployment_for(mode)
+    is_reasoning = deployment.lower().startswith(("o1", "o3", "o4"))
+    # Reasoning models require ≥ 2024-12-01-preview on Azure OpenAI.
+    # Auto-upgrade per-call so the rest of the app keeps its stable default.
+    if is_reasoning:
+        reasoning_version = os.environ.get(
+            "AZURE_OPENAI_API_VERSION_REASONING", "2025-04-01-preview"
+        )
+        api_version = reasoning_version
+
     from openai import AzureOpenAI  # type: ignore
+    import time as _t
 
     client = AzureOpenAI(
         azure_endpoint=endpoint,
@@ -336,9 +410,19 @@ def _call_azure_openai(ctx: ThesisContext) -> tuple[dict, str]:
         api_version=api_version,
     )
 
-    def _once(retry_nudge: str = "") -> dict:
+    meta: dict = {
+        "mode": mode,
+        "deployment": deployment,
+        "is_reasoning": is_reasoning,
+        "streamed": False,
+        "retried": False,
+        "latency_s": 0.0,
+    }
+
+    def _build_kwargs(retry_nudge: str = "") -> dict:
         user_payload = {
             "note": "All fields are real current values. Produce a trade thesis that cites them explicitly.",
+            "mode_hint": mode,
             "context": ctx.to_dict(),
         }
         messages = [
@@ -348,26 +432,86 @@ def _call_azure_openai(ctx: ThesisContext) -> tuple[dict, str]:
         if retry_nudge:
             messages.append({"role": "user", "content": retry_nudge})
 
-        resp = client.chat.completions.create(
+        kwargs = dict(
             model=deployment,
             messages=messages,
             response_format={"type": "json_schema", "json_schema": THESIS_JSON_SCHEMA},
-            temperature=0.2,
-            max_completion_tokens=1200,
+            max_completion_tokens=4000 if is_reasoning else 1400,
         )
-        content = resp.choices[0].message.content or "{}"
-        parsed = json.loads(content)
-        return parsed
+        if not is_reasoning:
+            # Reasoning models reject temperature in Azure OpenAI today.
+            kwargs["temperature"] = 0.2
+        return kwargs
 
+    def _sync(retry_nudge: str = "") -> str:
+        t0 = _t.monotonic()
+        kwargs = _build_kwargs(retry_nudge)
+        resp = client.chat.completions.create(**kwargs)
+        meta["latency_s"] = round(_t.monotonic() - t0, 2)
+        return resp.choices[0].message.content or "{}"
+
+    def _streamed(retry_nudge: str = "") -> str:
+        t0 = _t.monotonic()
+        kwargs = _build_kwargs(retry_nudge)
+        kwargs["stream"] = True
+        stream = client.chat.completions.create(**kwargs)
+        chunks: list[str] = []
+        for event in stream:
+            if _t.monotonic() - t0 > deadline_s:
+                raise TimeoutError(
+                    f"streaming exceeded deadline of {deadline_s:.0f}s"
+                )
+            choices = getattr(event, "choices", None) or []
+            for ch in choices:
+                delta = getattr(ch, "delta", None)
+                if delta is None:
+                    continue
+                content = getattr(delta, "content", None)
+                if content:
+                    chunks.append(content)
+                    if stream_handler is not None:
+                        try:
+                            stream_handler(content)
+                        except Exception:
+                            pass
+        meta["streamed"] = True
+        meta["latency_s"] = round(_t.monotonic() - t0, 2)
+        return "".join(chunks) or "{}"
+
+    def _parse(content: str) -> dict:
+        return json.loads(content)
+
+    # Try streaming → sync fallback
     try:
-        return _once(), f"Azure OpenAI: {deployment}"
-    except json.JSONDecodeError as exc:
-        logger.warning("Malformed JSON from model, retrying once: %r", exc)
-        nudge = (
-            "Your previous output was not valid JSON. Produce ONLY a JSON object "
-            "matching the schema you were given. No code fences, no commentary."
-        )
-        return _once(retry_nudge=nudge), f"Azure OpenAI (retry): {deployment}"
+        if stream_handler is not None:
+            content = _streamed()
+        else:
+            content = _sync()
+        parsed = _parse(content)
+        return parsed, f"Azure OpenAI: {deployment}", meta
+    except (json.JSONDecodeError, TimeoutError, Exception) as exc:
+        # If streaming specifically failed, retry once non-streaming.
+        if stream_handler is not None and not isinstance(exc, json.JSONDecodeError):
+            logger.info("Streaming call failed (%r), falling back to sync.", exc)
+            meta["retried"] = True
+            try:
+                content = _sync()
+                parsed = _parse(content)
+                return parsed, f"Azure OpenAI (sync fallback): {deployment}", meta
+            except Exception as exc2:
+                exc = exc2
+        # JSON decode or sync failure — one pointed retry.
+        if isinstance(exc, json.JSONDecodeError):
+            logger.warning("Malformed JSON from model, retrying once: %r", exc)
+            meta["retried"] = True
+            nudge = (
+                "Your previous output was not valid JSON. Produce ONLY a JSON "
+                "object matching the schema you were given. No code fences, no commentary."
+            )
+            content = _sync(retry_nudge=nudge)
+            parsed = _parse(content)
+            return parsed, f"Azure OpenAI (retry): {deployment}", meta
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -395,21 +539,180 @@ def _append_audit(ctx: ThesisContext, thesis: Thesis) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Materiality — what constitutes a "meaningful" context change
+# ---------------------------------------------------------------------------
+def _materiality_fingerprint(ctx: ThesisContext) -> dict:
+    """Return the minimal dict used to decide whether to regenerate.
+
+    Kept deliberately small — we never want to burn tokens over
+    millisecond noise. See ``context_changed_materially``.
+    """
+    return {
+        "z": round(float(ctx.current_z), 2),
+        "brent": round(float(ctx.latest_brent), 2),
+        "wti": round(float(ctx.latest_wti), 2),
+        "inv_4w_sign": 1 if ctx.inventory_4w_slope_bbls_per_day > 0 else (-1 if ctx.inventory_4w_slope_bbls_per_day < 0 else 0),
+        "vol_bucket": _vol_bucket(ctx.vol_spread_1y_percentile),
+        "inv_latest": round(float(ctx.inventory_current_bbls) / 1e6, 1),
+    }
+
+
+def _vol_bucket(percentile: float) -> str:
+    """Coarse 3-bucket split of the 1y vol percentile."""
+    if percentile < 33.0:
+        return "low"
+    if percentile > 66.0:
+        return "high"
+    return "mid"
+
+
+def context_changed_materially(prev: dict | None, cur: dict, thresholds: dict | None = None) -> list[str]:
+    """Return the list of reasons the new context is a meaningful change.
+
+    Empty list = no material change → safe to serve cached thesis.
+    """
+    if prev is None:
+        return ["first_run"]
+    t = thresholds or {}
+    d_z_thresh = float(t.get("d_z", 0.3))
+    d_px_thresh_pct = float(t.get("d_px_pct", 1.5))
+    d_inv_mbbl_thresh = float(t.get("d_inv_mbbl", 10.0))
+
+    reasons: list[str] = []
+    if abs(cur["z"] - prev["z"]) > d_z_thresh:
+        reasons.append(f"Δ dislocation {prev['z']:+.2f} → {cur['z']:+.2f}")
+    prev_brent = prev.get("brent", cur["brent"]) or 1.0
+    if abs(cur["brent"] - prev_brent) / prev_brent * 100.0 > d_px_thresh_pct:
+        reasons.append(f"Δ Brent {prev_brent:.2f} → {cur['brent']:.2f}")
+    prev_wti = prev.get("wti", cur["wti"]) or 1.0
+    if abs(cur["wti"] - prev_wti) / prev_wti * 100.0 > d_px_thresh_pct:
+        reasons.append(f"Δ WTI {prev_wti:.2f} → {cur['wti']:.2f}")
+    if cur["inv_4w_sign"] != prev.get("inv_4w_sign"):
+        reasons.append(
+            f"Inventory 4w slope sign flipped ({prev.get('inv_4w_sign')} → {cur['inv_4w_sign']})"
+        )
+    if cur["vol_bucket"] != prev.get("vol_bucket"):
+        reasons.append(
+            f"Vol regime {prev.get('vol_bucket')} → {cur['vol_bucket']}"
+        )
+    prev_inv = prev.get("inv_latest", cur["inv_latest"])
+    if abs(cur["inv_latest"] - prev_inv) > d_inv_mbbl_thresh:
+        reasons.append(
+            f"New EIA release: inventory {prev_inv:,.1f} → {cur['inv_latest']:,.1f} Mbbl"
+        )
+    return reasons
+
+
+# ---------------------------------------------------------------------------
+# Thesis history (tail of the JSONL audit log)
+# ---------------------------------------------------------------------------
+def read_recent_theses(n: int = 10) -> list[dict]:
+    """Return the most recent ``n`` thesis audit records, newest first."""
+    if not _AUDIT_PATH.is_file():
+        return []
+    records: list[dict] = []
+    try:
+        with _AUDIT_PATH.open() as f:
+            lines = f.readlines()
+        for line in lines[-n * 3:]:  # read extra to filter malformed
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.debug("read audit failed: %r", exc)
+        return []
+    records.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
+    return records[:n]
+
+
+def diff_theses(prev_raw: dict | None, cur_raw: dict) -> list[str]:
+    """Return a human-readable list of what changed between two thesis raws."""
+    if prev_raw is None:
+        return []
+    diffs: list[str] = []
+    if prev_raw.get("stance") != cur_raw.get("stance"):
+        diffs.append(
+            f"Stance flipped: {prev_raw.get('stance','?')} → {cur_raw.get('stance','?')}"
+        )
+    try:
+        d = float(cur_raw.get("conviction_0_to_10", 0)) - float(prev_raw.get("conviction_0_to_10", 0))
+    except Exception:
+        d = 0.0
+    if abs(d) >= 0.5:
+        diffs.append(f"Confidence {d:+.1f} vs last thesis")
+
+    prev_risks = set(prev_raw.get("invalidation_risks") or [])
+    cur_risks = set(cur_raw.get("invalidation_risks") or [])
+    new_risks = cur_risks - prev_risks
+    dropped_risks = prev_risks - cur_risks
+    for r in sorted(new_risks)[:3]:
+        diffs.append(f"New risk: {r}")
+    for r in sorted(dropped_risks)[:3]:
+        diffs.append(f"Dropped: {r}")
+
+    prev_events = {(c.get("event"), c.get("date")) for c in (prev_raw.get("catalyst_watchlist") or []) if isinstance(c, dict)}
+    cur_events = {(c.get("event"), c.get("date")) for c in (cur_raw.get("catalyst_watchlist") or []) if isinstance(c, dict)}
+    for e in sorted(cur_events - prev_events)[:3]:
+        diffs.append(f"New catalyst: {e[0]} ({e[1]})")
+    return diffs
+
+
+def history_stats(records: list[dict]) -> dict:
+    """Quick stats on the last N theses for a "Recent theses" summary line."""
+    if not records:
+        return {"n": 0, "long": 0, "short": 0, "flat": 0, "avg_conf": 0.0}
+    stances = [r.get("thesis", {}).get("stance") for r in records]
+    confs = [float(r.get("thesis", {}).get("conviction_0_to_10", 0) or 0) for r in records]
+    return {
+        "n": len(records),
+        "long": stances.count("long_spread"),
+        "short": stances.count("short_spread"),
+        "flat": stances.count("flat"),
+        "avg_conf": float(sum(confs) / len(confs)) if confs else 0.0,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------------
-def generate_thesis(ctx: ThesisContext, *, log: bool = True) -> Thesis:
-    """Return a validated :class:`Thesis`. Never raises."""
+def generate_thesis(
+    ctx: ThesisContext,
+    *,
+    log: bool = True,
+    mode: str = "fast",
+    stream_handler: Optional[Callable[[str], None]] = None,
+) -> Thesis:
+    """Return a validated :class:`Thesis`. Never raises.
+
+    ``mode`` ∈ {"fast", "deep", "legacy"}. Auto-downgrades deep → fast on
+    excessive latency. ``stream_handler`` receives partial text deltas
+    as the API streams tokens; ``None`` uses non-streaming.
+    """
+    if mode not in _VALID_MODES:
+        mode = "fast"
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     fingerprint = ctx.fingerprint()
     model_label = "rule-based (fallback)"
+    effective_mode = mode
+    meta: dict = {"mode": mode, "streamed": False, "retried": False, "latency_s": 0.0}
     raw: dict = {}
 
     try:
-        raw, model_label = _call_azure_openai(ctx)
+        raw, model_label, meta = _call_azure_openai(
+            ctx, mode=mode, stream_handler=stream_handler,
+        )
+        # Deep-mode guardrail: auto-downgrade on excessive latency
+        if mode == "deep" and meta.get("latency_s", 0) > 20.0:
+            logger.info("deep latency %.1fs > 20s — next run will downgrade to fast", meta["latency_s"])
     except Exception as exc:
         logger.info("Azure OpenAI unavailable, rule-based fallback: %r", exc)
         raw = _rule_based_fallback(ctx)
         raw.setdefault("data_caveats", []).append(f"Azure OpenAI fallback reason: {exc!r}")
+        effective_mode = "rule-based"
 
     raw, notes = _apply_guardrails(raw, ctx)
 
@@ -417,9 +720,13 @@ def generate_thesis(ctx: ThesisContext, *, log: bool = True) -> Thesis:
         raw=raw,
         generated_at=generated_at,
         source=model_label,
-        model=os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini") if "Azure" in model_label else None,
+        model=meta.get("deployment") if "Azure" in model_label else None,
         context_fingerprint=fingerprint,
         guardrails_applied=notes,
+        mode=effective_mode,
+        latency_s=float(meta.get("latency_s", 0.0)),
+        streamed=bool(meta.get("streamed", False)),
+        retried=bool(meta.get("retried", False)),
     )
     if log:
         _append_audit(ctx, thesis)
@@ -432,4 +739,12 @@ __all__ = [
     "generate_thesis",
     "THESIS_JSON_SCHEMA",
     "SYSTEM_PROMPT",
+    "context_changed_materially",
+    "_materiality_fingerprint",
+    "read_recent_theses",
+    "diff_theses",
+    "history_stats",
+    "_deployment_for",
+    "_apply_guardrails",
+    "_rule_based_fallback",
 ]

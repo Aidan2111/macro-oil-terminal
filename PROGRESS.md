@@ -343,7 +343,50 @@ The warm path — the everyday user experience — is **11x faster to interactiv
 - Fixed by swapping `.fillna(method="ffill")` → `.ffill()` directly.
 - Next deploy (`24757249588`) landed RuntimeSuccessful in 2m49s. Health endpoint `ok`, root 625ms.
 
-### 03:29Z — Housekeeping
+---
+
+## Seventh autonomous block — upgraded Trade Thesis (2026-04-22 04:00Z)
+
+### 04:00Z — Model deployments
+- Added two new deployments on the existing `oil-tracker-aoai` Azure OpenAI account:
+  - **gpt-4o** (version 2024-11-20, GlobalStandard, capacity 50) — "Quick read" mode.
+  - **o4-mini** (version 2025-04-16, GlobalStandard, capacity 50) — "Deep analysis" reasoning mode.
+- App Service settings updated: `AZURE_OPENAI_DEPLOYMENT_FAST=gpt-4o`, `AZURE_OPENAI_DEPLOYMENT_DEEP=o4-mini`. `AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini` retained as legacy.
+
+### 04:05Z — trade_thesis.py refactor
+- `generate_thesis(ctx, *, mode="fast"|"deep"|"legacy", stream_handler=None)`.
+- `_deployment_for(mode)` resolves env vars with sensible fallbacks.
+- Streaming path: `stream=True` via the Azure OpenAI SDK; deltas pushed into an optional `stream_handler(text)` callable. Fallback to sync on stream errors; malformed-JSON retry nudge preserved.
+- Reasoning models auto-selected `api_version=2025-04-01-preview` at call time (fixed the "Model o4-mini is enabled only for api versions 2024-12-01-preview and later" error we hit on first attempt); skipped `temperature` kwarg (reasoning models reject it); `max_completion_tokens` bumped to 4000.
+- Schema extended: `reasoning_summary` is now a required field (short in fast mode, 3–6 sentences in deep mode).
+- System prompt updated to tell the model to use plain-language dislocation phrasing in prose and to flex reasoning_summary length by mode.
+
+### 04:10Z — Materiality + history + diff
+- `_materiality_fingerprint(ctx)` — compact 6-key dict (rounded z, Brent, WTI, inv-slope-sign, vol-bucket low/mid/high, latest inventory Mbbl).
+- `context_changed_materially(prev, cur)` — returns the list of reasons; thresholds Δ|Z|>0.3, Δpx>1.5%, inventory slope flip, vol regime bucket change, >10Mbbl inventory move (new EIA release).
+- `read_recent_theses(n=10)`, `diff_theses(prev, cur)`, `history_stats(records)` — all fed from the `data/trade_theses.jsonl` audit log.
+- `Thesis` dataclass carries `mode`, `latency_s`, `streamed`, `retried` for the UI badge.
+
+### 04:18Z — Tab 4 UI
+- **Mode toggle** radio: Quick read (gpt-4o, ~2s) vs Deep analysis (o4-mini reasoning, 10–20s).
+- **Streaming renderer**: partial JSON chunks render into a rolling code block via a placeholder that clears once parsing succeeds. Non-streaming fallback preserves behaviour when env vars are missing.
+- **Regenerate button** always visible + disabled state when the per-session rate-limit (30/hour) is hit.
+- **"Last refreshed"** + **"Data lag"** captions (data lag = `now - pricing_res.fetched_at`).
+- **Materiality callout** (amber `st.warning`) rendered when any input moved materially since the last thesis.
+- **Auto-refresh cadence** sidebar slider (off / 5 min / 30 min / 1 h) exposed only in advanced view. Cadence-triggered runs only generate when material change detected.
+- **"What changed"** info callout above the card diffs stance flips, ±confidence, new/dropped risks, new catalysts vs the previous thesis.
+- **"How I'm thinking about this"** expander for the reasoning summary (flagged as "deep analysis" in that mode).
+- **Recent theses** expander — last 10 rows of `{when, mode, stance, confidence, summary}`, plus a stats caption.
+- **Run meta caption**: `mode · latency · streamed · retried? · N guardrails`.
+
+### 04:28Z — Live dual-mode verification
+- `.agent-scripts/live_thesis_dual.py` exercises both modes:
+  - gpt-4o streaming: **7.43s**, 1485 bytes streamed, stance=short_spread, conviction=7.5.
+  - o4-mini streaming: **28.55s**, 2495 bytes streamed, stance=short_spread, conviction=7.0, reasoning_summary discussed "weighed trend-extension against snap-back and found falling US inventories…".
+  - gpt-4o non-streaming: 13.05s.
+- First dual run hit "Model o4-mini is enabled only for api versions 2024-12-01-preview and later" — fixed by auto-upgrading to `2025-04-01-preview` when a reasoning deployment is detected. `.env.example` documents the override knob.
+
+### 04:30Z — Housekeeping
 - `ai_insights.py` deleted (superseded by `trade_thesis.py`).
 - `.env.example` expanded with `AISSTREAM_API_KEY`, `FRED_API_KEY`, `TWELVEDATA_API_KEY`, SMTP block.
 - `data/` added to `.gitignore` (audit log is operational, not source).
