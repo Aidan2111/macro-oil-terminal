@@ -351,6 +351,14 @@ ais_with_cat, ais_agg = categorize_flag_states(ais_df)
 coint_info = _cointegration_cached(_fp(prices))
 crack_info = _crack_cached(_fp(prices))
 
+# Backtest summary — promoted above the tabs so the hero band can use it
+# to build the ThesisContext before the first tab renders. Tab 1 still
+# displays the full backtest detail panel below; this is the same call.
+bt = _backtest_cached(
+    _fp(spread_df), float(z_threshold), 0.2,
+    float(slippage_per_bbl), float(commission_per_trade),
+)
+
 
 # ---------------------------------------------------------------------------
 # Header + WebGPU hero
@@ -568,7 +576,7 @@ st.markdown(
         if (ev.target && ['INPUT','TEXTAREA','SELECT'].includes(ev.target.tagName)) return;
         if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
         switch (ev.key) {
-          case '1': case '2': case '3': case '4':
+          case '1': case '2': case '3':
             clickTab(parseInt(ev.key, 10) - 1); ev.preventDefault(); break;
           case 'r': case 'R':
             clickByText('Regenerate'); break;
@@ -585,7 +593,7 @@ st.markdown(
          font-family: ui-monospace, Menlo, monospace; font-size:0.88rem; line-height:1.55;
          box-shadow: 0 8px 24px rgba(0,0,0,0.45);">
       <b>Keyboard shortcuts</b><br/>
-      <b>1 2 3 4</b> — switch tabs<br/>
+      <b>1 2 3</b> — switch tabs<br/>
       <b>R</b> — regenerate thesis<br/>
       <b>?</b> — toggle this cheat sheet
     </div>
@@ -598,14 +606,283 @@ render_hero_banner(height=220)
 
 
 # ---------------------------------------------------------------------------
+# Hero thesis band (Task 6a/b) — rendered above the tabs on every page.
+# Uses trade_thesis.decorate_thesis_for_execution(thesis, ctx) to build
+# the three instrument tiers + the pre-trade checklist. The audit log for
+# checklist ticks is appended to data/trade_executions.jsonl (gitignored).
+# ---------------------------------------------------------------------------
+_HERO_BROKER_LINKS = {
+    "IBKR": "https://www.ibkr.com/research/stocks",
+    "Schwab": "https://www.schwab.com/research",
+    "Fidelity": "https://www.fidelity.com/research",
+    "TastyTrade": "https://tastytrade.com/",
+}
+_HERO_DISCLAIMER = (
+    "Research & education only. Not personalized financial advice. "
+    "Futures and options can lose more than the initial investment. "
+    "Past performance does not predict future results. Consult a licensed "
+    "advisor before executing. Data may be 15-min delayed."
+)
+def _hero_audit_log(thesis_fingerprint: str, checklist_key: str, checked_by_user: bool, auto_check_value) -> None:
+    """Append one checklist-tick row to data/trade_executions.jsonl.
+
+    Failures are swallowed — the UI must never raise from a checkbox click.
+    """
+    try:
+        import json as _json
+        import pathlib as _pl
+        from datetime import datetime as _dt, timezone as _tz
+        path = _pl.Path("data/trade_executions.jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "ts_utc": _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "thesis_fingerprint": thesis_fingerprint,
+            "checklist_key": checklist_key,
+            "checked_by_user": bool(checked_by_user),
+            "auto_check_value": auto_check_value,
+        }
+        with path.open("a") as fh:
+            fh.write(_json.dumps(row, default=str) + "\n")
+    except Exception:
+        pass  # log-but-continue; never raise
+
+
+def _hero_stance_label(stance: str) -> tuple[str, str]:
+    """Return (display_label, bg_color) for a stance string."""
+    mapping = {
+        "long_spread":  ("BUY SPREAD",   "#2ecc71"),
+        "short_spread": ("SELL SPREAD",  "#e74c3c"),
+        "flat":         ("STAND ASIDE",  "#95a5a6"),
+    }
+    return mapping.get(stance, ("STAND ASIDE", "#95a5a6"))
+
+
+def _render_thesis_mini(decorated) -> None:
+    """Render the stance pill / confidence / horizon / 2-line summary."""
+    raw = decorated.raw or {}
+    stance = raw.get("stance", "flat")
+    label, color = _hero_stance_label(stance)
+    conv = float(raw.get("conviction_0_to_10", 0.0))
+    horizon = int(raw.get("time_horizon_days", 0))
+    summary = raw.get("thesis_summary", "")
+    st.markdown(
+        f"""
+        <div style="display:flex; gap:14px; align-items:center; margin:4px 0 8px 0;">
+          <span style="background:{color}; color:#0b0f14; padding:6px 14px;
+                       border-radius:6px; font-weight:700; letter-spacing:1px;
+                       font-size:0.95rem;">{label}</span>
+          <span style="color:#e7ecf3; font-family:ui-monospace,Menlo,monospace;
+                       font-size:0.88rem;">
+            confidence <b>{conv:.1f}/10</b> &nbsp;·&nbsp; horizon <b>{horizon} days</b>
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if summary:
+        # Two-line summary — cap at ~280 chars to keep the band compact.
+        short = summary if len(summary) <= 280 else summary[:277] + "..."
+        st.caption(short)
+
+
+def _render_portfolio_input() -> float:
+    """Render the portfolio-sizing number_input and return its current value."""
+    return float(st.number_input(
+        "Portfolio (USD)",
+        min_value=0, value=100_000, step=1_000,
+        key="hero_portfolio_usd",
+        help="Dollar sizing in the tiles below is percent × this portfolio value.",
+    ))
+
+
+def _render_tier_tile(col, inst, portfolio_usd: float) -> None:
+    """Render a single instrument tile into the given column."""
+    pct = float(getattr(inst, "suggested_size_pct", 0.0) or 0.0)
+    dollars = portfolio_usd * pct / 100.0
+    symbol = inst.symbol or "—"
+    tier_color = {1: "#6c7a89", 2: "#3498db", 3: "#9b59b6"}.get(inst.tier, "#6c7a89")
+    broker_bits = " · ".join(
+        f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
+        f'style="color:#7fb4ff; text-decoration:none;">{name}</a>'
+        for name, url in _HERO_BROKER_LINKS.items()
+    )
+    col.markdown(
+        f"""
+        <div style="border:1px solid #2a3442; border-radius:8px; padding:10px 12px;
+                    background:#111821; height:100%;">
+          <div>
+            <span style="background:{tier_color}; color:#0b0f14; padding:2px 8px;
+                         border-radius:4px; font-weight:700; font-size:0.75rem;
+                         letter-spacing:0.5px;">TIER {inst.tier}</span>
+            <span style="color:#e7ecf3; font-weight:600; margin-left:8px;">{inst.name}</span>
+            <span style="color:#95a5a6; margin-left:6px; font-family:ui-monospace,Menlo,monospace;
+                         font-size:0.82rem;">{symbol}</span>
+          </div>
+          <div style="color:#c7cdd4; font-size:0.84rem; margin-top:6px;">{inst.rationale}</div>
+          <div style="color:#e7ecf3; font-size:0.85rem; margin-top:6px;
+                      font-family:ui-monospace,Menlo,monospace;">
+            size <b>{pct:.1f}%</b> &nbsp;·&nbsp; <b>${dollars:,.0f}</b>
+          </div>
+          <div style="font-size:0.78rem; margin-top:6px;">{broker_bits}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if inst.tier == 2:
+        col.caption("Defined-risk alt: ATM \u00b1 2 strikes on BNO/USO, 30\u201360 DTE, OI > 100.")
+
+
+def _render_checklist(checklist, thesis_fingerprint: str) -> None:
+    """Render the 5-item pre-trade checklist inside a bordered container."""
+    with st.container(border=True):
+        st.markdown("**Pre-trade checklist**")
+        for item in checklist:
+            auto_val = item.auto_check
+            default = bool(auto_val) if auto_val is not None else False
+            st.checkbox(
+                item.prompt,
+                value=default,
+                key=f"hero_check_{item.key}",
+                on_change=_hero_audit_log,
+                args=(thesis_fingerprint, item.key, True, auto_val),
+                help=("Auto-checked from today's data." if auto_val is not None
+                      else "User must tick before executing."),
+            )
+
+
+def _render_hero_band(thesis, ctx, decorated) -> None:
+    """Render the hero thesis band above the tabs (every page, every tab).
+
+    The outermost element is a ``<div data-testid="hero-band">`` emitted
+    via ``st.markdown(unsafe_allow_html=True)``. DOMPurify preserves the
+    ``data-testid`` attribute so the Playwright role-based locator in
+    ``tests/e2e/test_hero_band.py`` resolves it. The same markdown block
+    includes a visible header stripe so the element has non-zero bounding
+    box dimensions (a requirement for Playwright ``to_be_visible``).
+    """
+    # The visible wrapper stripe — emitted as a single self-contained HTML
+    # block so Streamlit doesn't close the div prematurely.
+    stance_for_header = "flat"
+    if decorated is not None:
+        stance_for_header = (decorated.raw or {}).get("stance", "flat")
+    header_label, header_color = _hero_stance_label(stance_for_header)
+    st.markdown(
+        f'<div data-testid="hero-band" '
+        f'style="border-left:4px solid {header_color}; '
+        f'background:#111821; padding:10px 14px; margin:6px 0 10px 0; '
+        f'border-radius:6px; color:#e7ecf3;">'
+        f'<span style="background:{header_color}; color:#0b0f14; '
+        f'padding:4px 10px; border-radius:4px; font-weight:700; '
+        f'letter-spacing:1px; font-size:0.85rem;">HERO &middot; {header_label}</span>'
+        f'<span style="margin-left:10px; color:#c7cdd4; font-size:0.85rem;">'
+        f"Today's thesis, sizing, and pre-trade checklist.</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Body — rendered inside a regular container immediately below the
+    # wrapper div. The wrapper div above is what the e2e test asserts on;
+    # the container below holds the interactive widgets.
+    with st.container(key="hero-band-body"):
+        if thesis is None or decorated is None:
+            # Initial load before the LLM call fires. Show a placeholder flat
+            # hero so the Playwright test's hero-band selector still resolves.
+            st.markdown(
+                '<span style="background:#95a5a6; color:#0b0f14; padding:6px 14px; '
+                'border-radius:6px; font-weight:700;">STAND ASIDE</span>'
+                '<span style="margin-left:10px; color:#c7cdd4;">Thesis pending\u2026</span>',
+                unsafe_allow_html=True,
+            )
+            _render_portfolio_input()
+            st.caption(_HERO_DISCLAIMER)
+            return
+
+        raw = decorated.raw or {}
+        _render_thesis_mini(decorated)
+
+        portfolio_usd = _render_portfolio_input()
+
+        materiality_flat = (
+            raw.get("stance") == "flat" and not (decorated.instruments or [])
+        )
+        if materiality_flat:
+            hrs = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
+            hrs_txt = f"{hrs:.0f}" if isinstance(hrs, (int, float)) else "??"
+            st.caption(
+                f"No tradeable dislocation today. Next EIA release in {hrs_txt}h."
+            )
+        else:
+            cols = st.columns(3)
+            for col, inst in zip(cols, decorated.instruments):
+                _render_tier_tile(col, inst, portfolio_usd)
+            _render_checklist(
+                decorated.checklist or [],
+                decorated.context_fingerprint or "",
+            )
+
+        st.caption(_HERO_DISCLAIMER)
+
+
+# Build a pre-tabs thesis + decoration so the hero band can render above
+# the tabs on first load. We re-use the cached thesis in session state if
+# present (e.g. after the Tab-1 internals expander regenerates it), so we
+# don't double-call the LLM.
+try:
+    from trade_thesis import decorate_thesis_for_execution as _decorate
+    from thesis_context import build_context as _build_ctx
+    from trade_thesis import generate_thesis as _gen_thesis
+
+    _hero_ctx = _build_ctx(
+        pricing_res=pricing_res,
+        inventory_res=inventory_res,
+        spread_df=spread_df,
+        backtest=bt,
+        depletion=depletion,
+        ais_agg=ais_agg,
+        ais_with_cat=ais_with_cat,
+        z_threshold=z_threshold,
+        floor_bbls=floor_bbls,
+        coint_info=coint_info,
+        crack_info=crack_info,
+    )
+    _hero_ctx.fleet_source = ais_res.source
+
+    _hero_thesis = st.session_state.get("_thesis_obj")
+    if _hero_thesis is None:
+        _hero_thesis = _gen_thesis(_hero_ctx, mode="fast")
+        st.session_state["_thesis_obj"] = _hero_thesis
+        st.session_state["_thesis_last_generated_at"] = (
+            pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+        )
+    _hero_decorated = _decorate(_hero_thesis, _hero_ctx)
+    _render_hero_band(_hero_thesis, _hero_ctx, _hero_decorated)
+except Exception as _hero_exc:
+    # Never let the hero band break the rest of the app. Emit a compact
+    # but still-visible hero wrapper so the e2e selector still resolves.
+    st.markdown(
+        '<div data-testid="hero-band" '
+        'style="border-left:4px solid #95a5a6; background:#111821; '
+        'padding:10px 14px; margin:6px 0 10px 0; border-radius:6px; '
+        'color:#e7ecf3;">'
+        '<span style="background:#95a5a6; color:#0b0f14; padding:4px 10px; '
+        'border-radius:4px; font-weight:700; letter-spacing:1px; '
+        'font-size:0.85rem;">HERO &middot; UNAVAILABLE</span>'
+        f'<span style="margin-left:10px; color:#c7cdd4; font-size:0.85rem;">'
+        f"{_hero_exc!r}</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(_HERO_DISCLAIMER)
+
+
+# ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
-tab_arb, tab_depl, tab_fleet, tab_ai = st.tabs(
+tab_arb, tab_depl, tab_fleet = st.tabs(
     [
         "Spread dislocation",
         "Inventory drawdown",
         "Tanker fleet",
-        "AI trade thesis",
     ]
 )
 
@@ -825,10 +1102,6 @@ with tab_arb:
         "the spread is back near normal. 10,000 barrels per trade, with the "
         "slippage and commission drag you set in the sidebar. "
         "Think of the PnL as a signal-quality indicator, not a P&L forecast."
-    )
-    bt = _backtest_cached(
-        _fp(spread_df), float(z_threshold), 0.2,
-        float(slippage_per_bbl), float(commission_per_trade),
     )
     bt_c1, bt_c2, bt_c3, bt_c4, bt_c5, bt_c6 = st.columns(6)
     bt_c1.metric("Trades", f"{bt['n_trades']:,}")
@@ -1072,6 +1345,106 @@ with tab_arb:
             f"No trades triggered at \u00b1{z_threshold:.1f}\u03c3 on the "
             "historical window. Drop the threshold in the sidebar to see activity."
         )
+
+    # --- Model internals (relocated from the retired "AI trade thesis" tab) --
+    # The hero band at the top already shows the stance, confidence, summary,
+    # and pre-trade checklist. What's left from the old AI tab is the model
+    # mode toggle, the reasoning summary ("how I'm thinking about this"),
+    # and the history of past theses — kept here for traders who want to
+    # inspect the engine that produced the hero band.
+    with st.expander("Model internals (thesis engine)"):
+        from trade_thesis import (
+            read_recent_theses as _mi_read_recent,
+            history_stats as _mi_history_stats,
+            diff_theses as _mi_diff,
+        )
+
+        _mi_thesis = st.session_state.get("_thesis_obj")
+
+        # Mode toggle + regenerate ---------------------------------------
+        _mi_mode_display = st.radio(
+            "Model",
+            options=[
+                "Quick read (gpt-4o, ~2s)",
+                "Deep analysis (o4-mini reasoning, 10\u201320s)",
+            ],
+            index=0,
+            horizontal=True,
+            key="_mi_mode_radio",
+            help=(
+                "Quick read uses gpt-4o \u2014 fast synthesis for normal use. "
+                "Deep analysis invokes o4-mini, a reasoning model that thinks "
+                "longer about the data and exposes its step-by-step thinking."
+            ),
+        )
+        _mi_selected_mode = "fast" if _mi_mode_display.startswith("Quick") else "deep"
+
+        _mi_regen = st.button(
+            "Regenerate",
+            type="primary",
+            key="_mi_regen_btn",
+            help="Regenerates the thesis now; the hero band will refresh on rerun.",
+        )
+        if _mi_regen:
+            try:
+                from trade_thesis import generate_thesis as _mi_gen
+                with st.spinner(
+                    "Thinking through the data\u2026" if _mi_selected_mode == "deep"
+                    else "Generating\u2026"
+                ):
+                    _mi_thesis = _mi_gen(_hero_ctx, mode=_mi_selected_mode)
+                st.session_state["_thesis_obj"] = _mi_thesis
+                st.session_state["_thesis_last_generated_at"] = (
+                    pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+                )
+                st.success("Thesis regenerated. Scroll up to see the refreshed hero band.")
+            except Exception as _exc:
+                st.error(f"Regenerate failed: `{_exc!r}`")
+
+        # Reasoning summary ---------------------------------------------
+        if _mi_thesis is not None:
+            _reasoning = (_mi_thesis.raw or {}).get("reasoning_summary")
+            if _reasoning:
+                st.markdown("**How I'm thinking about this**")
+                st.markdown(_reasoning)
+
+            # Run metadata
+            _bits = [
+                f"mode **{_mi_thesis.mode}**",
+                f"latency **{_mi_thesis.latency_s:.2f}s**",
+                f"streamed **{'yes' if _mi_thesis.streamed else 'no'}**",
+            ]
+            if _mi_thesis.retried:
+                _bits.append("retried once")
+            if _mi_thesis.guardrails_applied:
+                _bits.append(f"{len(_mi_thesis.guardrails_applied)} guardrails")
+            st.caption("Run: " + "  \u00b7  ".join(_bits))
+
+        # Recent theses history -----------------------------------------
+        _mi_history = _mi_read_recent(n=10)
+        _mi_stats = _mi_history_stats(_mi_history)
+        if _mi_stats["n"]:
+            st.caption(
+                f"**Last {_mi_stats['n']} theses:** "
+                f"{_mi_stats['long']} buy \u00b7 {_mi_stats['short']} sell \u00b7 "
+                f"{_mi_stats['flat']} stand-aside \u00b7 "
+                f"average confidence {_mi_stats['avg_conf']:.1f}/10."
+            )
+        with st.expander(f"Recent theses ({_mi_stats.get('n', 0)})"):
+            if not _mi_history:
+                st.caption("No theses logged yet.")
+            else:
+                _mi_rows = []
+                for r in _mi_history:
+                    _th = r.get("thesis", {}) or {}
+                    _mi_rows.append({
+                        "when": r.get("timestamp", "\u2014"),
+                        "mode": _th.get("mode") or r.get("mode") or "\u2014",
+                        "stance": _th.get("stance", "\u2014"),
+                        "confidence": round(float(_th.get("conviction_0_to_10", 0) or 0), 1),
+                        "summary": (_th.get("thesis_summary") or "")[:160],
+                    })
+                st.dataframe(pd.DataFrame(_mi_rows), use_container_width=True)
 
     # ---- CFTC Positioning expander (Macro Arbitrage) --------------------
     with st.expander(":material/query_stats: Positioning — CFTC COT (WTI)", expanded=False):
@@ -1531,407 +1904,6 @@ with tab_fleet:
             key="download_fleet",
         )
 
-
-# ---- Tab 4 — AI Trade Thesis ---------------------------------------------
-with tab_ai:
-    from trade_thesis import (
-        generate_thesis,
-        _materiality_fingerprint,
-        context_changed_materially,
-        read_recent_theses,
-        diff_theses,
-        history_stats,
-    )
-    from thesis_context import build_context
-
-    st.subheader("AI trade thesis")
-    st.caption(
-        "Plain-language trade guidance grounded in today's real state — "
-        "spread dislocation, snap-back hit rate from the backtest, EIA "
-        "inventory trend, tanker fleet composition, volatility regime. "
-        "Educational research only."
-    )
-
-    # --- Mode toggle ----------------------------------------------------
-    mode_display = st.radio(
-        "Model",
-        options=["Quick read (gpt-4o, ~2s)", "Deep analysis (o4-mini reasoning, 10–20s)"],
-        index=0,
-        horizontal=True,
-        help=(
-            "Quick read uses gpt-4o — fast synthesis for normal use. "
-            "Deep analysis invokes o4-mini, a reasoning model that thinks "
-            "longer about the data and exposes its step-by-step thinking."
-        ),
-    )
-    selected_mode = "fast" if mode_display.startswith("Quick") else "deep"
-
-    # --- Auto-refresh cadence (advanced-only) ---------------------------
-    if show_advanced:
-        cadence_label = st.sidebar.select_slider(
-            "Thesis auto-refresh",
-            options=["off", "5 min", "30 min", "1 h"],
-            value="off",
-            help=(
-                "When on, the thesis card re-runs on the given cadence via "
-                "st.fragment. Cadence-triggered runs only burn tokens when "
-                "inputs actually changed materially."
-            ),
-        )
-    else:
-        cadence_label = "off"
-    cadence_secs = {"off": None, "5 min": 300, "30 min": 1800, "1 h": 3600}[cadence_label]
-
-    # --- Rate limit (per-session, user-triggered only) ------------------
-    _rl_bucket = int(pd.Timestamp.utcnow().timestamp() // 3600)
-    if st.session_state.get("_thesis_rl_bucket") != _rl_bucket:
-        st.session_state["_thesis_rl_bucket"] = _rl_bucket
-        st.session_state["_thesis_rl_count"] = 0
-    rl_count = st.session_state["_thesis_rl_count"]
-    rl_cap = 30
-    rl_exhausted = rl_count >= rl_cap
-
-    endpoint_set = bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
-    key_set = bool(os.environ.get("AZURE_OPENAI_KEY"))
-    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
-
-    status_cols = st.columns([1, 1, 1, 2])
-    status_cols[0].metric("Endpoint", "set" if endpoint_set else "missing")
-    status_cols[1].metric("API key", "set" if key_set else "missing")
-    status_cols[2].metric("Deployment", deployment)
-    status_cols[3].metric(
-        "Mode",
-        "Azure OpenAI (JSON schema)" if (endpoint_set and key_set) else "Rule-based fallback",
-    )
-
-    ctx_obj = build_context(
-        pricing_res=pricing_res,
-        inventory_res=inventory_res,
-        spread_df=spread_df,
-        backtest=bt,
-        depletion=depletion,
-        ais_agg=ais_agg,
-        ais_with_cat=ais_with_cat,
-        z_threshold=z_threshold,
-        floor_bbls=floor_bbls,
-        coint_info=coint_info,
-        crack_info=crack_info,
-        cftc_res=cftc_res,
-    )
-    ctx_obj.fleet_source = ais_res.source
-
-    # --- Materiality check against last-generated snapshot --------------
-    cur_materiality = _materiality_fingerprint(ctx_obj)
-    prev_materiality = st.session_state.get("_thesis_last_materiality")
-    change_reasons = context_changed_materially(prev_materiality, cur_materiality)
-
-    # --- Header row: regen + rate-limit + data-lag badges ---------------
-    hdr_cols = st.columns([1, 1, 2, 2])
-    regenerate = hdr_cols[0].button(
-        "Regenerate",
-        type="primary",
-        key="regen_thesis",
-        disabled=rl_exhausted,
-        help=(
-            f"User-triggered regenerations: {rl_count}/{rl_cap} this hour. "
-            if not rl_exhausted
-            else f"Hit the hourly cap of {rl_cap}; wait or switch to auto-refresh."
-        ),
-    )
-    hdr_cols[1].caption(f"Requests this hour: **{rl_count}/{rl_cap}**")
-    last_run_at = st.session_state.get("_thesis_last_generated_at")
-    hdr_cols[2].caption(
-        f"Last refreshed: **{last_run_at or '—'}**"
-    )
-    try:
-        price_age_s = int(
-            (pd.Timestamp.utcnow().tz_localize(None) - pd.Timestamp(pricing_res.fetched_at).tz_localize(None)).total_seconds()
-        )
-    except Exception:
-        price_age_s = -1
-    hdr_cols[3].caption(
-        f"Data lag: **~{price_age_s}s** "
-        "(yfinance futures carry an upstream ~15-min delay)"
-    )
-
-    if change_reasons and prev_materiality is not None:
-        st.warning(
-            "Inputs shifted since the last thesis — "
-            + " · ".join(change_reasons)
-            + ".  Hit **Regenerate** to refresh.",
-            icon="⚠️",
-        )
-
-    # --- Decide whether to run -----------------------------------------
-    # Auto-run only on first visit, explicit regen click, or a material
-    # change while auto-refresh is on. Cadence alone doesn't burn tokens
-    # unless the context has moved.
-    needs_run = (
-        "_thesis_obj" not in st.session_state
-        or regenerate
-        or (cadence_secs is not None and len(change_reasons) > 0)
-    )
-
-    # --- Generate (streaming when Azure OpenAI is configured) -----------
-    def _run_thesis(ctx, mode):
-        placeholder = st.empty()
-        streamed_text_box: list[str] = [""]
-
-        def _on_delta(delta: str):
-            streamed_text_box[0] += delta
-            # Render only the first ~1200 chars so we don't thrash Streamlit
-            placeholder.code(streamed_text_box[0][-1200:], language="json")
-
-        endpoint_set = bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
-        key_set = bool(os.environ.get("AZURE_OPENAI_KEY"))
-        handler = _on_delta if (endpoint_set and key_set) else None
-        with st.spinner(
-            "Thinking through the data…" if mode == "deep" else "Generating…"
-        ):
-            th = generate_thesis(ctx, mode=mode, stream_handler=handler)
-        placeholder.empty()
-        return th
-
-    if needs_run:
-        st.session_state["_thesis_obj"] = _run_thesis(ctx_obj, selected_mode)
-        if regenerate:
-            st.session_state["_thesis_rl_count"] = rl_count + 1
-        st.session_state["_thesis_last_materiality"] = cur_materiality
-        st.session_state["_thesis_last_generated_at"] = pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
-
-    thesis = st.session_state["_thesis_obj"]
-    raw = thesis.raw
-
-    # --- "What changed" diff vs the previous thesis ---------------------
-    history = read_recent_theses(n=10)
-    prev_raw = None
-    if len(history) >= 2 and history[0].get("thesis", {}).get("stance") == raw.get("stance") and history[0].get("context_fingerprint") == thesis.context_fingerprint:
-        # newest history entry IS this thesis; the prior one is the comparator
-        prev_raw = history[1].get("thesis") if history[1:] else None
-    elif history:
-        prev_raw = history[0].get("thesis")
-    diffs = diff_theses(prev_raw, raw)
-    if diffs:
-        st.info("**What changed:** " + "  ·  ".join(diffs))
-
-    # Stance pill — plain-language mapping
-    stance = raw.get("stance", "flat")
-    stance_color = {"long_spread": "#2ecc71", "short_spread": "#e74c3c", "flat": "#95a5a6"}[stance]
-    stance_label = {
-        "long_spread": "BUY THE SPREAD",
-        "short_spread": "SELL THE SPREAD",
-        "flat": "STAND ASIDE",
-    }[stance]
-    # Technical suffix only when advanced view is on
-    stance_suffix = (
-        {"long_spread": "  (long spread)", "short_spread": "  (short spread)", "flat": "  (flat)"}[stance]
-        if show_advanced
-        else ""
-    )
-    conviction = float(raw.get("conviction_0_to_10", 0.0))
-    horizon = int(raw.get("time_horizon_days", 0))
-
-    st.markdown(
-        f"""
-        <div style="display:flex; gap:18px; align-items:center; margin-top:6px; margin-bottom:10px;">
-          <span style="background:{stance_color}; color:#0b0f14; padding:10px 18px; border-radius:8px;
-                       font-weight:700; letter-spacing:1.2px; font-size:1.15rem;">
-            {stance_label}{stance_suffix}
-          </span>
-          <span style="color:#e7ecf3; font-family:ui-monospace,Menlo,monospace;">
-            confidence <b>{conviction:.1f}/10</b>
-            &nbsp;·&nbsp; horizon <b>{horizon} days</b>
-            &nbsp;·&nbsp; source <b>{thesis.source}</b>
-          </span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # --- Liveness annotation (rotating one-liner above the card) ------
-    live_lines: list[str] = []
-    try:
-        # How many of the last 5 daily closes had |Z| > 2
-        z_last5 = spread_df["Z_Score"].dropna().tail(5)
-        streak = int((z_last5.abs() > 2.0).sum())
-        if streak >= 2:
-            live_lines.append(
-                f"Dislocation has held > 2σ for {streak} of the last "
-                f"5 sessions — sticky regime."
-            )
-    except Exception:
-        pass
-    # Hours since the most recent EIA release Wednesday (most recent past Wed 14:30 UTC)
-    _now = pd.Timestamp.utcnow().tz_localize(None)
-    _days_back = (_now.weekday() - 2) % 7
-    _last_eia = (_now - pd.Timedelta(days=_days_back)).replace(hour=14, minute=30, second=0, microsecond=0)
-    if _last_eia > _now:
-        _last_eia -= pd.Timedelta(days=7)
-    _hrs_since = int((_now - _last_eia).total_seconds() // 3600)
-    if 0 <= _hrs_since < 96:
-        live_lines.append(
-            f"Last EIA release was **{_hrs_since}h** ago; next one in "
-            f"**{(168 - _hrs_since) % 168}h**."
-        )
-    if ctx_obj.coint_verdict == "cointegrated" and ctx_obj.coint_half_life_days:
-        live_lines.append(
-            f"Half-life to mean: **{ctx_obj.coint_half_life_days:.0f} days** — "
-            f"{'fast reverting' if ctx_obj.coint_half_life_days < 30 else 'slow grind'}."
-        )
-    if live_lines:
-        # Rotate by minute so it feels live across reruns
-        idx = (pd.Timestamp.utcnow().minute) % len(live_lines)
-        st.caption("🔔  " + live_lines[idx])
-
-    entry = raw.get("entry", {}) or {}
-    exit_ = raw.get("exit", {}) or {}
-    sizing = raw.get("position_sizing", {}) or {}
-
-    def _z_display(v):
-        return f"{v}σ (Z)" if show_advanced else f"{v}"
-
-    tri_cols = st.columns(3)
-    tri_cols[0].markdown(
-        f"**Enter when**\n\n"
-        f"- {entry.get('trigger_condition','—')}\n"
-        f"- Dislocation reaches **{_z_display(entry.get('suggested_z_level','—'))}**\n"
-        f"- Spread near **${entry.get('suggested_spread_usd','—')}**"
-    )
-    tri_cols[1].markdown(
-        f"**Take profit when**\n\n"
-        f"- {exit_.get('target_condition','—')}\n"
-        f"- Dislocation reaches **{_z_display(exit_.get('target_z_level','—'))}**"
-    )
-    tri_cols[2].markdown(
-        f"**Cut the trade if**\n\n"
-        f"- {exit_.get('stop_loss_condition','—')}\n"
-        f"- Dislocation reaches **{_z_display(exit_.get('stop_z_level','—'))}**"
-    )
-
-    st.markdown("#### Why — the thesis")
-    st.markdown(f"> {raw.get('thesis_summary','(no summary)')}")
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown("#### What's driving this")
-        for d in (raw.get("key_drivers") or []):
-            st.markdown(f"- {d}")
-        sizing_method_display = {
-            "fixed_fractional": "fixed fraction of capital",
-            "volatility_scaled": "scaled by volatility",
-            "kelly": "Kelly-style sizing",
-        }.get(sizing.get("method", ""), sizing.get("method", "?"))
-        method_suffix = f" ({sizing.get('method','?')})" if show_advanced else ""
-        st.markdown(
-            f"**How much to risk** — {sizing_method_display}{method_suffix} · "
-            f"suggest **{sizing.get('suggested_pct_of_capital',0):.1f}% of capital**"
-        )
-        st.caption(sizing.get("rationale", ""))
-    with col_b:
-        st.markdown("#### What would make us wrong")
-        with st.container(border=True):
-            for r in (raw.get("invalidation_risks") or []):
-                st.warning(r)
-
-    if raw.get("catalyst_watchlist"):
-        st.markdown("#### Upcoming events to watch")
-        for c in raw["catalyst_watchlist"]:
-            st.info(f"**{c.get('event','?')}** — {c.get('date','?')} · {c.get('expected_impact','')}")
-
-    with st.expander("Things to keep in mind (caveats & guardrails)"):
-        if thesis.guardrails_applied:
-            st.markdown("**Automatic adjustments this run:**")
-            for g in thesis.guardrails_applied:
-                st.markdown(f"- {g}")
-        if raw.get("data_caveats"):
-            st.markdown("**Model-reported caveats:**")
-            for c in raw["data_caveats"]:
-                st.markdown(f"- {c}")
-
-    # Copy-as-markdown report — same plain language
-    md_report_lines = [
-        f"# Trade Thesis — {thesis.generated_at}",
-        f"**Stance:** {stance_label}  \n**Confidence:** {conviction:.1f}/10  \n"
-        f"**Horizon:** {horizon} days  \n**Source:** {thesis.source}",
-        "",
-        f"## Why\n\n{raw.get('thesis_summary','')}",
-        "",
-        f"### Enter when\n- {entry.get('trigger_condition','')}\n- Dislocation: {entry.get('suggested_z_level','')}\n- Spread: ${entry.get('suggested_spread_usd','')}",
-        f"\n### Take profit when\n- {exit_.get('target_condition','')}\n- Dislocation: {exit_.get('target_z_level','')}",
-        f"\n### Cut the trade if\n- {exit_.get('stop_loss_condition','')}\n- Dislocation: {exit_.get('stop_z_level','')}",
-        "",
-        f"### How much to risk\n{sizing_method_display} — {sizing.get('suggested_pct_of_capital',0):.1f}% of capital\n\n{sizing.get('rationale','')}",
-        "",
-        "### What's driving this\n" + "\n".join(f"- {d}" for d in (raw.get("key_drivers") or [])),
-        "\n### What would make us wrong\n" + "\n".join(f"- {r}" for r in (raw.get("invalidation_risks") or [])),
-    ]
-    if raw.get("data_caveats"):
-        md_report_lines.append("\n### Things to keep in mind\n" + "\n".join(f"- {c}" for c in raw["data_caveats"]))
-    md_report = "\n".join(md_report_lines)
-
-    st.download_button(
-        "Copy as markdown report",
-        data=md_report.encode(),
-        file_name=f"trade_thesis_{thesis.context_fingerprint}.md",
-        mime="text/markdown",
-        key="dl_thesis_md",
-    )
-
-    st.caption(
-        "**Research / education only. Not personalised financial advice. "
-        "Executing trades carries risk of material loss.**"
-    )
-
-    # --- "How I'm thinking about this" (deep/reasoning mode) -----------
-    reasoning_summary = raw.get("reasoning_summary")
-    if reasoning_summary:
-        with st.expander(
-            "How I'm thinking about this"
-            + ("" if thesis.mode != "deep" else "  (deep analysis)")
-        ):
-            st.markdown(reasoning_summary)
-
-    # --- Recent theses + quick stats -----------------------------------
-    st.markdown("---")
-    stats = history_stats(history)
-    if stats["n"]:
-        st.caption(
-            f"**Last {stats['n']} theses:** "
-            f"{stats['long']} buy · {stats['short']} sell · {stats['flat']} stand-aside · "
-            f"average confidence {stats['avg_conf']:.1f}/10."
-        )
-    with st.expander(f"Recent theses ({stats.get('n', 0)})"):
-        if not history:
-            st.caption("No theses logged yet.")
-        else:
-            rows = []
-            for r in history:
-                th = r.get("thesis", {}) or {}
-                rows.append(
-                    {
-                        "when": r.get("timestamp", "—"),
-                        "mode": r.get("thesis", {}).get("mode") or r.get("mode") or "—",
-                        "stance": th.get("stance", "—"),
-                        "confidence": round(float(th.get("conviction_0_to_10", 0) or 0), 1),
-                        "summary": (th.get("thesis_summary") or "")[:160],
-                    }
-                )
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
-
-    # --- Latency + meta + debug ---------------------------------------
-    meta_bits = [
-        f"mode **{thesis.mode}**",
-        f"latency **{thesis.latency_s:.2f}s**",
-        f"streamed **{'yes' if thesis.streamed else 'no'}**",
-    ]
-    if thesis.retried:
-        meta_bits.append("retried once")
-    if thesis.guardrails_applied:
-        meta_bits.append(f"{len(thesis.guardrails_applied)} guardrails")
-    st.caption("Run: " + "  ·  ".join(meta_bits))
-
-    with st.expander("Context sent to the model"):
-        st.json(ctx_obj.to_dict())
 
 
 st.markdown("---")

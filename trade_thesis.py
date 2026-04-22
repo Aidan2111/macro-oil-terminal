@@ -101,6 +101,7 @@ class ThesisContext:
     cushing_4w_slope_bbls_per_day: Optional[float] = None
     crack_321_usd: Optional[float] = None
     crack_corr_30d: Optional[float] = None
+    hours_to_next_eia: Optional[float] = None
 
     # CFTC Commitments of Traders — WTI positioning (disaggregated futures)
     cftc_as_of_date: Optional[str] = None                 # YYYY-MM-DD of latest Tuesday report
@@ -219,6 +220,28 @@ SYSTEM_PROMPT = (
 
 
 # ---------------------------------------------------------------------------
+# Execution decoration — instruments + checklist (added per hero-thesis design)
+# ---------------------------------------------------------------------------
+@dataclass
+class Instrument:
+    """A single executable instrument tier attached to a thesis."""
+    tier: int                  # 1, 2, or 3 — paper / ETF / futures
+    name: str
+    symbol: Optional[str]      # None for the paper tier
+    rationale: str             # one sentence
+    suggested_size_pct: float  # percentage of capital
+    worst_case_per_unit: str   # "$X per contract" / "N/A"
+
+
+@dataclass
+class ChecklistItem:
+    """A single pre-trade checklist item rendered beside a thesis."""
+    key: str                   # stable identifier, e.g. "stop_in_place"
+    prompt: str                # user-visible text
+    auto_check: Optional[bool] # None = user must tick; True/False = pre-populated
+
+
+# ---------------------------------------------------------------------------
 # Output shape
 # ---------------------------------------------------------------------------
 @dataclass
@@ -233,12 +256,111 @@ class Thesis:
     latency_s: float = 0.0
     streamed: bool = False
     retried: bool = False
+    instruments: list = field(default_factory=list)
+    checklist: list = field(default_factory=list)
 
     def one_line(self) -> str:
         stance = self.raw.get("stance", "flat")
         conv = float(self.raw.get("conviction_0_to_10", 0.0))
         hz = int(self.raw.get("time_horizon_days", 0))
         return f"{stance} · {conv:.1f}/10 · {hz}d · {self.mode}"
+
+
+def _build_checklist(ctx: ThesisContext) -> list[ChecklistItem]:
+    """Return the 5-item pre-trade checklist.
+
+    Order is frozen — the UI iterates the list in order. Two items
+    auto-check from the context (``vol_clamp_ok`` and ``catalyst_clear``);
+    the other three require the user to tick explicitly.
+    """
+    # Vol regime: True when we know the spread vol is below 85th percentile.
+    # ``vol_spread_1y_percentile`` is a non-optional float on ThesisContext,
+    # so no None-guard is needed.
+    vol_clamp_ok = bool(ctx.vol_spread_1y_percentile < 85.0)
+
+    # Catalyst gap: True if the next EIA is >= 24h away, False if < 24h
+    # away, None if the calendar feed isn't available.
+    hrs = ctx.hours_to_next_eia
+    if hrs is None:
+        catalyst_clear: Optional[bool] = None
+    else:
+        catalyst_clear = bool(hrs >= 24.0)
+
+    return [
+        ChecklistItem("stop_in_place",
+                      "I have a stop at ±2σ spread move from entry.",
+                      None),
+        ChecklistItem("vol_clamp_ok",
+                      "Spread realised vol is below the 1y 85th percentile.",
+                      vol_clamp_ok),
+        ChecklistItem("half_life_ack",
+                      "I understand the implied half-life is ~N days.",
+                      None),
+        ChecklistItem("catalyst_clear",
+                      "No EIA release within the next 24 hours.",
+                      catalyst_clear),
+        ChecklistItem("no_conflicting_recent_thesis",
+                      "No stance flip in the last 5 thesis entries.",
+                      None),
+    ]
+
+
+def decorate_thesis_for_execution(thesis: Thesis, ctx: ThesisContext) -> Thesis:
+    """Return a deepcopy of `thesis` with executable decorations attached.
+
+    For `stance == "flat"`, instruments and checklist are empty. For
+    `long_spread` / `short_spread`, three instrument tiers are built:
+
+    - Tier 1 (Paper) — size always zero.
+    - Tier 2 (USO/BNO ETF pair) — half the thesis suggested size,
+      leg direction inverted on short_spread.
+    - Tier 3 (CL=F / BZ=F futures) — full thesis suggested size,
+      legs inverted on short_spread.
+
+    The checklist is populated in Task 5; this task leaves it empty.
+    The size clamp (vol-regime, backtest, cointegration) is applied
+    upstream in `_apply_guardrails` and is not re-applied here.
+    """
+    from copy import deepcopy
+    out = deepcopy(thesis)
+    stance = (out.raw or {}).get("stance")
+    if stance == "flat":
+        out.instruments = []
+        out.checklist = []
+        return out
+
+    size = float(
+        ((out.raw or {}).get("position_sizing") or {}).get("suggested_pct_of_capital", 0.0)
+    )
+
+    if stance == "short_spread":
+        etf_rationale = "short USO / long BNO (WTI vs Brent ETF pair, inverted)"
+        fut_rationale = "short CL=F / long BZ=F (futures calendar pair, inverted)"
+    else:  # long_spread (or unknown — treat as long for safety)
+        etf_rationale = "long USO / short BNO (WTI vs Brent ETF pair)"
+        fut_rationale = "long CL=F / short BZ=F (futures calendar pair)"
+
+    out.instruments = [
+        Instrument(
+            tier=1, name="Paper", symbol=None,
+            rationale="Track the thesis without capital at risk.",
+            suggested_size_pct=0.0, worst_case_per_unit="N/A",
+        ),
+        Instrument(
+            tier=2, name="USO/BNO ETF pair", symbol="USO/BNO",
+            rationale=etf_rationale,
+            suggested_size_pct=round(size * 0.5, 2),
+            worst_case_per_unit="~$X per $1k notional",
+        ),
+        Instrument(
+            tier=3, name="CL=F / BZ=F futures", symbol="CL=F/BZ=F",
+            rationale=fut_rationale,
+            suggested_size_pct=round(size * 1.0, 2),
+            worst_case_per_unit="$1000 per contract per $1 move",
+        ),
+    ]
+    out.checklist = _build_checklist(ctx)
+    return out
 
 
 # ---------------------------------------------------------------------------

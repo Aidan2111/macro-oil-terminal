@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -62,6 +62,26 @@ def _next_wednesday(today: pd.Timestamp) -> pd.Timestamp:
     if days_ahead == 0:
         days_ahead = 7
     return today + pd.Timedelta(days=days_ahead)
+
+
+def _hours_to_next_eia_release(now: Optional[datetime]) -> Optional[float]:
+    """Hours until the next EIA weekly petroleum status release.
+
+    EIA publishes the weekly report on Wednesdays at 14:30 UTC
+    (10:30 ET, standard time — DST differences are not accounted for
+    in this minimal helper; if you need DST precision, compose with a
+    calendar API).
+
+    Returns None when `now` is None so a missing timestamp does not
+    propagate as a spurious zero.
+    """
+    if now is None:
+        return None
+    days_ahead = (2 - now.weekday()) % 7
+    candidate = now.replace(hour=14, minute=30, second=0, microsecond=0) + timedelta(days=days_ahead)
+    if candidate <= now:
+        candidate += timedelta(days=7)
+    return (candidate - now).total_seconds() / 3600.0
 
 
 def build_context(

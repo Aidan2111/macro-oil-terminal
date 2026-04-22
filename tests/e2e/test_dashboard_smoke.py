@@ -32,13 +32,15 @@ def test_title_and_header_visible(streamlit_server, page):
     assert page.locator("h1", has_text="Inventory-Adjusted").count() >= 1
 
 
-def test_all_four_tabs_render(streamlit_server, page):
+def test_all_three_tabs_render(streamlit_server, page):
     _goto(page, streamlit_server)
+    # The fourth "AI trade thesis" tab was retired in Task 6c — its content
+    # now lives in the always-visible hero band + a Model-internals expander
+    # at the bottom of Tab 1.
     for tab_name in (
         "Spread dislocation",
         "Inventory drawdown",
         "Tanker fleet",
-        "AI trade thesis",
     ):
         # Wait for each tab to actually attach to the DOM before asserting.
         page.get_by_role("tab", name=tab_name).first.wait_for(
@@ -66,25 +68,25 @@ def test_dislocation_label_replaced_z_score(streamlit_server, page):
     )
 
 
-def test_ai_thesis_tab_renders_card(streamlit_server, page):
+def test_hero_band_shows_plain_language_stance(streamlit_server, page):
+    """The old AI tab's stance labels now live in the always-visible hero band."""
     _goto(page, streamlit_server)
-    page.get_by_role("tab", name="AI trade thesis").click()
-    # The rate-limit caption only exists inside the AI tab panel — a good
-    # sentinel for "the tab's body has actually rendered".
-    page.wait_for_selector("text=Requests this hour", timeout=60_000)
+    hero = page.locator('[data-testid="hero-band"]').first
+    hero.wait_for(state="visible", timeout=30_000)
     body = page.inner_text("body")
-    # The mode selector offers both model labels
+    # Hero band renders one of the three plain-language stance pills.
+    assert any(s in body for s in ("BUY SPREAD", "SELL SPREAD", "STAND ASIDE"))
+
+
+def test_model_internals_expander_exposes_mode_toggle(streamlit_server, page):
+    """Model-internals expander (bottom of Tab 1) keeps the gpt-4o / o4-mini toggle."""
+    _goto(page, streamlit_server)
+    # Tab 1 is visible by default; expand Model internals and assert the toggle exists
+    page.get_by_text("Model internals (thesis engine)").click()
+    page.wait_for_selector("text=Quick read", timeout=30_000)
+    body = page.inner_text("body")
     assert "gpt-4o" in body
     assert "o4-mini" in body
-    # Plain-language stance labels
-    assert any(s in body for s in ("BUY THE SPREAD", "SELL THE SPREAD", "STAND ASIDE"))
-
-
-def test_what_would_make_us_wrong_section(streamlit_server, page):
-    _goto(page, streamlit_server)
-    page.get_by_role("tab", name="AI trade thesis").click()
-    page.wait_for_selector("text=Requests this hour", timeout=60_000)
-    page.wait_for_selector("text=What would make us wrong", timeout=60_000)
 
 
 def test_url_query_param_roundtrip(streamlit_server, page):
