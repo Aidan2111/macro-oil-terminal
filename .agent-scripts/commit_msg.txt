@@ -1,1 +1,15 @@
-docs: final screenshots with alert toggle + drill-down visible
+ci(cd): OIDC-based GitHub Actions deploy to Azure Web App
+
+- .github/workflows/cd.yml triggers on push to main + workflow_dispatch
+- id-token: write for OIDC federated credential exchange
+- Test gate (test_runner.py) runs before any Azure call
+- azure/login@v2 using AZURE_CLIENT_ID / TENANT / SUBSCRIPTION secrets
+- azure/webapps-deploy@v3 with a zipped package (excludes .venv,
+  .git, caches, screenshots, .agent-scripts)
+- Post-deploy health check loop retries /_stcore/health up to 10x
+- concurrency group deploy-prod (serialises deploys)
+
+Azure SP (Entra app "macro-oil-terminal-cd"):
+  appId 9d8ae4e7-d5f1-49cc-b6e3-b62cf1ad23a8
+  Role Contributor scoped to RG oil-price-tracker
+  Federated creds for refs/heads/main and pull_request

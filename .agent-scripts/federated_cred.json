@@ -1,0 +1,7 @@
+{
+  "name": "github-main-push",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:Aidan2111/macro-oil-terminal:ref:refs/heads/main",
+  "description": "GitHub Actions CD from main branch",
+  "audiences": ["api://AzureADTokenExchange"]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "github-pull-request",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:Aidan2111/macro-oil-terminal:pull_request",
+  "description": "GitHub Actions PR preview checks",
+  "audiences": ["api://AzureADTokenExchange"]
+}
