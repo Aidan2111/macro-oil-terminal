@@ -8,6 +8,9 @@ day/night Earth globe, and an Azure OpenAI-backed market-commentary panel.
 - **Live (Azure App Service):** https://oil-tracker-app-4281.azurewebsites.net
 - **Repo:** https://github.com/Aidan2111/macro-oil-terminal
 
+[![CI](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/ci.yml)
+[![CD](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/cd.yml/badge.svg)](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/cd.yml)
+
 ## Screens
 
 ![Macro Arbitrage](docs/screenshots/01_macro_arbitrage.png)
@@ -85,4 +88,34 @@ unreachable, so tests remain deterministic offline.
 
 ## Deployment
 
-See `DEPLOY.md` for GitHub + Azure command blueprints.
+**CD is push-to-deploy.** Any push to `main` triggers `.github/workflows/cd.yml`,
+which (a) installs requirements, (b) runs `test_runner.py` as a gate, (c) logs
+into Azure via OIDC (no long-lived secrets in the repo), (d) zips the app, and
+(e) deploys to `oil-tracker-app-4281`. A post-deploy health check retries
+`/_stcore/health` up to 10 times. Concurrency group `deploy-prod` serialises
+runs so deploys can't overlap.
+
+Required GitHub repository secrets (all OIDC-only, no client secrets):
+
+| Secret | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | App registration `macro-oil-terminal-cd` |
+| `AZURE_TENANT_ID` | Youbiquity tenant |
+| `AZURE_SUBSCRIPTION_ID` | Target subscription |
+
+The service principal has `Contributor` scoped to resource group
+`oil-price-tracker`, and federated credentials for:
+
+- `repo:Aidan2111/macro-oil-terminal:ref:refs/heads/main` (push)
+- `repo:Aidan2111/macro-oil-terminal:pull_request` (PR checks)
+- `repo:Aidan2111/macro-oil-terminal:environment:production` (used by CD)
+
+**Re-trigger manually:**
+
+```bash
+gh workflow run cd.yml --ref main
+gh run watch
+```
+
+See `DEPLOY.md` for the original GitHub + Azure command blueprints (used during
+bootstrap).

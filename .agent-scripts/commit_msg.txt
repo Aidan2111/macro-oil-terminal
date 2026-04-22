@@ -1,15 +1,10 @@
-ci(cd): OIDC-based GitHub Actions deploy to Azure Web App
+docs: CD badge + deploy section + log CD round-trip
 
-- .github/workflows/cd.yml triggers on push to main + workflow_dispatch
-- id-token: write for OIDC federated credential exchange
-- Test gate (test_runner.py) runs before any Azure call
-- azure/login@v2 using AZURE_CLIENT_ID / TENANT / SUBSCRIPTION secrets
-- azure/webapps-deploy@v3 with a zipped package (excludes .venv,
-  .git, caches, screenshots, .agent-scripts)
-- Post-deploy health check loop retries /_stcore/health up to 10x
-- concurrency group deploy-prod (serialises deploys)
+- README: CI + CD badges, Deploying section with secrets table and
+  federated-credential subjects (OIDC, no client secret in repo).
+- PROGRESS.md: Third autonomous block logged — SP creation, federated
+  creds, CD workflow, Run 1 failure (environment: subject mismatch),
+  Run 2 success in 2m48s.
 
-Azure SP (Entra app "macro-oil-terminal-cd"):
-  appId 9d8ae4e7-d5f1-49cc-b6e3-b62cf1ad23a8
-  Role Contributor scoped to RG oil-price-tracker
-  Federated creds for refs/heads/main and pull_request
+Push this to prove the end-to-end CD loop: commit -> push -> test gate ->
+OIDC login -> zip deploy -> health check.

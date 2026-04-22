@@ -1,0 +1,7 @@
+{
+  "name": "github-env-production",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:Aidan2111/macro-oil-terminal:environment:production",
+  "description": "GitHub Actions production environment deploys",
+  "audiences": ["api://AzureADTokenExchange"]
+}

@@ -157,5 +157,40 @@ Timestamps are UTC (sandbox time).
 - **Azure OpenAI:** oil-tracker-aoai, `gpt-4o-mini` GlobalStandard deployment
 - **Tests:** 28/28 local, 3/3 CI runs green
 
+---
+
+## Third autonomous block — CD pipeline (2026-04-22 01:28Z)
+
+### 01:28Z — Azure SP with OIDC federated credentials
+- Verified host identity has `Owner` on subscription `5ae389ef-…`.
+- Created Entra app registration + SP: **macro-oil-terminal-cd**
+  - `appId / AZURE_CLIENT_ID` = `9d8ae4e7-d5f1-49cc-b6e3-b62cf1ad23a8`
+  - Object ID `6556aad8-7eda-44c5-b5ad-09757b5edf47`
+  - Role assignment: **Contributor** scoped to RG `oil-price-tracker` (narrower than subscription-level).
+- Federated credentials attached (no client secret anywhere):
+  1. `github-main-push` → `repo:Aidan2111/macro-oil-terminal:ref:refs/heads/main`
+  2. `github-pull-request` → `repo:Aidan2111/macro-oil-terminal:pull_request`
+  3. `github-env-production` → `repo:Aidan2111/macro-oil-terminal:environment:production` (added after the first CD run revealed that the `environment:` block in the workflow emits this subject claim)
+
+### 01:29Z — GitHub secrets
+- `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` set via `gh secret set`. **No publish-profile fallback required** — OIDC path worked on the first SP.
+
+### 01:30Z — .github/workflows/cd.yml
+- Triggers: `push: branches: [main]` + `workflow_dispatch`.
+- `permissions: id-token: write, contents: read` for OIDC token exchange.
+- `concurrency: group: deploy-prod, cancel-in-progress: false` — serialises deploys, never cancels a live deploy.
+- Steps: checkout → setup Python 3.11 → `pip install -r requirements.txt` → **`python test_runner.py` (gate)** → `azure/login@v2` (OIDC) → zip exclude (`.venv`, `.git`, `__pycache__`, `.agent-scripts`, screenshots, dist) → `azure/webapps-deploy@v3` → post-deploy health check loop (10× retry on `/_stcore/health`).
+
+### 01:30Z — Run 1 (push-triggered) — FAIL
+- Run `24755418317`. Failed at `azure/login` with `AADSTS700213: No matching federated identity record found for presented assertion subject 'repo:Aidan2111/macro-oil-terminal:environment:production'`.
+- Root cause: the `environment: production` key on the job changes OIDC subject from the branch-ref form to the environment form. Added `github-env-production` federated credential and kicked off a workflow_dispatch retry.
+
+### 01:34Z — Run 2 (workflow_dispatch) — SUCCESS
+- Run `24755461324`, duration **2m48s**. All steps green:
+  - Test gate: 31/31 passed on Python 3.11 (Azure/GitHub runner — real network, yfinance hit upstream).
+  - `azure/login` OIDC token exchange cleared.
+  - Zip deploy landed; post-deploy health check returned `ok` on the first attempt.
+- Site post-run: `root=200`, `/_stcore/health=ok`.
+
 
 
