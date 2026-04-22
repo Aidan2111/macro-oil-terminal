@@ -77,6 +77,7 @@ def build_context(
     floor_bbls: float,
     coint_info: dict | None = None,
     crack_info: dict | None = None,
+    cftc_res=None,
 ) -> ThesisContext:
     latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
     latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
@@ -143,6 +144,29 @@ def build_context(
             days = max(1, (cu.index[-1] - cu.index[0]).days)
             cushing_4w_slope = float((cu.iloc[-1] - cu.iloc[0]) / days)
 
+    # CFTC positioning (Managed Money Z-score + percentile — latest report)
+    cftc_as_of = None
+    cftc_oi = None
+    cftc_mm = None
+    cftc_pm = None
+    cftc_sw = None
+    cftc_mm_z = None
+    cftc_mm_pct = None
+    if cftc_res is not None and getattr(cftc_res, "frame", None) is not None and not cftc_res.frame.empty:
+        latest = cftc_res.frame.iloc[-1]
+        cftc_as_of = cftc_res.frame.index[-1].strftime("%Y-%m-%d")
+        cftc_oi = int(latest.get("open_interest", 0) or 0)
+        if "mm_net" in cftc_res.frame.columns:
+            cftc_mm = int(latest["mm_net"])
+            cftc_mm_z = float(cftc_res.mm_zscore_3y) if cftc_res.mm_zscore_3y is not None else None
+            series = cftc_res.frame["mm_net"].dropna().tail(156)
+            if not series.empty:
+                cftc_mm_pct = _percentile_rank(series, float(latest["mm_net"]))
+        if "producer_net" in cftc_res.frame.columns:
+            cftc_pm = int(latest["producer_net"])
+        if "swap_net" in cftc_res.frame.columns:
+            cftc_sw = int(latest["swap_net"])
+
     # Calendar
     today = pd.Timestamp.utcnow().tz_localize(None).normalize()
     eia_next = _next_wednesday(today).strftime("%Y-%m-%d")
@@ -203,4 +227,11 @@ def build_context(
         crack_corr_30d=(float(crack_info.get("corr_30d_vs_brent_wti"))
                         if crack_info and crack_info.get("corr_30d_vs_brent_wti") == crack_info.get("corr_30d_vs_brent_wti")
                         else None),
+        cftc_as_of_date=cftc_as_of,
+        cftc_open_interest=cftc_oi,
+        cftc_mm_net=cftc_mm,
+        cftc_producer_net=cftc_pm,
+        cftc_swap_net=cftc_sw,
+        cftc_mm_zscore_3y=cftc_mm_z,
+        cftc_mm_pctile_3y=cftc_mm_pct,
     )

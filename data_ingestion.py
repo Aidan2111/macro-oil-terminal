@@ -36,6 +36,7 @@ from providers.inventory import (
     InventoryResult,
     InventoryUnavailable,
 )
+from providers import _cftc as _cftc_provider
 
 
 # ---------------------------------------------------------------------------
@@ -201,12 +202,47 @@ def fetch_ais_data(n_vessels: int = 500) -> AISResult:
     )
 
 
+# ---------------------------------------------------------------------------
+# 4. CFTC COT positioning — real via weekly disaggregated futures zip
+# ---------------------------------------------------------------------------
+@dataclass
+class COTResult:
+    frame: pd.DataFrame                 # weekly frame indexed by date
+    source: str                         # e.g. "CFTC disaggregated futures (WTI-PHYSICAL)"
+    source_url: str
+    fetched_at: pd.Timestamp
+    market_name: str
+    weeks: int
+    mm_zscore_3y: float | None          # Z-score of managed-money net vs trailing ~3y
+
+
+def fetch_cftc_positioning() -> COTResult:
+    """Return weekly WTI COT positioning. Pure real feed, cached for 24h.
+
+    Raises on total CFTC download failure — callers should catch and render
+    ``st.error`` with a retry CTA rather than substitute fake data.
+    """
+    r = _cftc_provider.fetch_wti_positioning()
+    z = _cftc_provider.managed_money_zscore(r.frame)
+    return COTResult(
+        frame=r.frame,
+        source=f"CFTC disaggregated futures ({r.market_name})",
+        source_url=r.source_url,
+        fetched_at=r.fetched_at,
+        market_name=r.market_name,
+        weeks=r.weeks,
+        mm_zscore_3y=z,
+    )
+
+
 __all__ = [
     "fetch_pricing_data",
     "fetch_pricing_intraday_data",
     "fetch_inventory_data",
     "fetch_ais_data",
+    "fetch_cftc_positioning",
     "AISResult",
+    "COTResult",
     "PricingResult",
     "PricingUnavailable",
     "InventoryResult",
