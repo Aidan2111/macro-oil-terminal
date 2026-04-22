@@ -1,0 +1,52 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Playwright end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install app dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright + browsers
+        run: |
+          pip install "playwright>=1.48" "pytest>=8"
+          python -m playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        run: python -m pytest tests/e2e -v --tb=short
+
+      - name: Upload e2e traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: |
+            tests/e2e/**/*.png
+            tests/e2e/**/*.zip
+          if-no-files-found: ignore

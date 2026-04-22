@@ -1,45 +1,32 @@
-feat(thesis): upgraded models + streaming + materiality + history + dual-mode UI
+test: pytest unit suite (71 tests, 73.5% cov) + Playwright e2e (13 tests)
 
-Azure infra:
-* Two new deployments on oil-tracker-aoai:
-  - gpt-4o (2024-11-20, GlobalStandard, cap 50) — Quick read mode
-  - o4-mini (2025-04-16, GlobalStandard, cap 50) — Deep analysis mode
-* App Settings AZURE_OPENAI_DEPLOYMENT_FAST=gpt-4o,
-  AZURE_OPENAI_DEPLOYMENT_DEEP=o4-mini.
+Unit suite (tests/unit/, 71 tests @ 73.52% branch coverage):
+* conftest with autouse env-scrub, EIA fixture monkeypatch, synth prices,
+  sample ThesisContext + backtest fixtures.
+* Full coverage of data_ingestion (real EIA via fixture + placeholder
+  notice + InventoryUnavailable propagation), quantitative_models
+  (spread, depletion, backtest incl. slippage/commission monotonicity,
+  walk-forward, Monte Carlo percentiles, regime breakdown),
+  trade_thesis (schema, deployment resolver, guardrails,
+  fingerprint, materiality, diffs, streaming handler via mocked
+  AzureOpenAI, stream-fallback-to-sync, malformed-JSON retry),
+  thesis_context helpers + end-to-end build_context, provider impls
+  (_yfinance happy+sad, _fred keyed, _aisstream helpers + require-key),
+  observability no-op safety, webgpu template placeholders, input
+  clamp, workflow files, alerts.
 
-trade_thesis.py:
-* generate_thesis(ctx, *, mode, stream_handler) — fast / deep / legacy modes.
-* Streaming via stream=True; delta callback invoked per chunk; sync fallback
-  on stream errors; malformed-JSON retry nudge preserved.
-* Reasoning model path (o-family) auto-uses api_version 2025-04-01-preview,
-  skips `temperature`, bumps max_completion_tokens to 4000.
-* Schema gains required `reasoning_summary` field (short in fast mode,
-  3–6 sentences in deep mode).
-* Materiality: _materiality_fingerprint + context_changed_materially with
-  thresholds Δ|Z|>0.3, Δpx>1.5%, slope flip, vol regime change, new EIA
-  release detected.
-* History + diff: read_recent_theses, diff_theses, history_stats —
-  fed from data/trade_theses.jsonl.
-* Thesis dataclass carries mode/latency_s/streamed/retried/one_line().
+E2E suite (tests/e2e/, 13 Playwright tests — 84s green locally):
+* Session-scope headless Streamlit on free port with /_stcore/health wait.
+* Dashboard smoke: title, all 4 plain-language tabs, ticker strip,
+  Dislocation-dominates-Z-score, AI tab body, "What would make us wrong",
+  URL query-param roundtrip.
+* Thesis flow: mode toggle shows gpt-4o + o4-mini, Regenerate button,
+  Recent theses expander, Things-to-keep-in-mind, disclaimer, context
+  expander exposes snapshot fields.
 
-app.py Tab 4:
-* Mode radio (Quick read / Deep analysis) routes to the right deployment.
-* Streaming placeholder renders partial JSON chunks as they arrive.
-* Regenerate button with per-session rate limit 30/hour; disabled state
-  with copy explaining why.
-* Last-refreshed + data-lag captions.
-* Materiality warning callout when inputs shift since last run.
-* Auto-refresh cadence sidebar (advanced-only): off / 5m / 30m / 1h.
-  Cadence only burns tokens when material change is detected.
-* "What changed" diff info-callout vs previous thesis (stance flip, ±conf,
-  new/dropped risks, new catalysts).
-* "How I'm thinking about this" reasoning-summary expander.
-* "Recent theses" expander with last-10 table + stats caption.
-* Run-meta caption: mode · latency · streamed · retried · guardrails.
+CI split (.github/workflows):
+* ci.yml now runs pytest (3.11 + 3.12 matrix with coverage.xml artifact)
+  + streamlit-smoke + legacy test_runner.py in parallel.
+* e2e.yml new job: Playwright Chromium + pytest tests/e2e.
 
-Live verification:
-* gpt-4o streaming: 7.43s, stance=short_spread (conf 7.5).
-* o4-mini deep streaming: 28.55s, stance=short_spread (conf 7.0),
-  richer reasoning_summary.
-* First o4-mini attempt failed with "api versions 2024-12-01-preview
-  and later" — fixed by per-call version auto-upgrade.
+pyproject.toml: pytest + coverage config (70% fail_under).

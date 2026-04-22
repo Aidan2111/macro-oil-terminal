@@ -7,12 +7,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  tests:
-    name: test_runner.py
+  pytest:
+    name: pytest (unit + coverage)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
@@ -29,16 +33,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run test_runner.py
-        run: python test_runner.py
-
-      - name: Streamlit import smoke check
+      - name: Run pytest + coverage
         run: |
-          python -c "import streamlit, pandas, numpy, plotly, sklearn, yfinance; print('ok')"
-          python -c "import app" 2>&1 | tail -5 || true
+          python -m pytest tests/unit \
+            --cov \
+            --cov-report=term \
+            --cov-report=xml:coverage.xml
+
+      - name: Upload coverage XML (3.11 only)
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
 
   streamlit-smoke:
-    name: Streamlit startup smoke test
+    name: Streamlit startup smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -72,3 +83,20 @@ jobs:
           curl -fsS http://127.0.0.1:8501/_stcore/health
           curl -s -o /dev/null -w "Root: %{http_code}\n" http://127.0.0.1:8501/
           kill $SPID || true
+
+  legacy-runner:
+    # Keep test_runner.py around as a belt-and-braces smoke suite so we
+    # catch regressions even before pytest collects them.
+    name: Legacy test_runner.py
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python test_runner.py

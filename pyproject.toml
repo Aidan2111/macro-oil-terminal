@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "macro-oil-terminal"
+version = "0.3.0"
+description = "Inventory-adjusted spread arbitrage + AIS fleet analytics with AI trade thesis."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests/unit"]
+markers = [
+    "slow: deselect with -m 'not slow'",
+    "network: tests that touch the real network",
+    "live_llm: tests that call the live Azure OpenAI deployments",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = [
+    "providers",
+    "quantitative_models",
+    "trade_thesis",
+    "thesis_context",
+    "alerts",
+    "data_ingestion",
+    "webgpu_components",
+    "observability",
+]
+omit = [
+    "tests/*",
+    ".agent-scripts/*",
+    "infra/*",
+    "app.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+skip_covered = false
+show_missing = true
+fail_under = 70
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

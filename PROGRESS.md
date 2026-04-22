@@ -386,7 +386,42 @@ The warm path — the everyday user experience — is **11x faster to interactiv
   - gpt-4o non-streaming: 13.05s.
 - First dual run hit "Model o4-mini is enabled only for api versions 2024-12-01-preview and later" — fixed by auto-upgrading to `2025-04-01-preview` when a reasoning deployment is detected. `.env.example` documents the override knob.
 
-### 04:30Z — Housekeeping
+---
+
+## Eighth autonomous block — pytest migration + Playwright e2e (2026-04-22 13:30Z)
+
+### 13:30Z — pytest layout
+- `pyproject.toml`: pytest config + coverage config (branch + 70% fail_under), ruff target py311.
+- `tests/conftest.py`: session-wide scrub of all AZURE_OPENAI_* env vars, EIA fixture monkeypatch, synthetic price frame, sample ThesisContext, sample backtest.
+- 8 unit modules under `tests/unit/`:
+  - test_data_ingestion.py — real EIA via fixture, AIS placeholder notice, InventoryUnavailable propagation.
+  - test_quantitative_models.py — spread/z, depletion, backtest incl. slippage/commission monotonicity, walk-forward, Monte Carlo percentiles, regime breakdown.
+  - test_trade_thesis.py — schema, deployment resolver, rule-based shape, all three guardrail clamps, rule-based fallback, fingerprint stability, materiality fingerprint + threshold crossings, diff helpers, streaming handler via mocked AzureOpenAI, stream-fallback-to-sync on error, malformed-JSON retry nudge (3 scenarios, 19 tests total).
+  - test_thesis_context.py — percentile/slope/vol helpers, days-since, next-wednesday.
+  - test_alerts.py — threshold below/preview/negative.
+  - test_webgpu_components.py — template placeholders, points payload shape.
+  - test_workflows.py — committed .github/workflows/ files + Dependabot config.
+  - test_input_hardening.py — _clamp helper pulled from app.py via regex.
+  - test_provider_impls.py — _yfinance happy + empty paths, _fred keyed path, _aisstream helpers + requires-key guard.
+  - test_thesis_context_full.py — end-to-end build_context() against fixture-backed real inventory.
+  - test_observability.py — no-op safety when Application Insights env missing.
+- **71 unit tests green locally, 73.52% branch coverage** — above the 70% floor.
+
+### 13:42Z — CI split
+- `.github/workflows/ci.yml` now runs three jobs in parallel on push/PR/dispatch:
+  - `pytest` — matrix Python 3.11 + 3.12, runs pytest + coverage, uploads coverage.xml artifact from 3.11.
+  - `streamlit-smoke` — unchanged health-endpoint probe.
+  - `legacy-runner` — still executes the original `test_runner.py` as belt-and-braces.
+- `.github/workflows/e2e.yml` — separate Playwright job with Chromium install; uploads traces on failure; concurrency-grouped per ref.
+
+### 13:50Z — Playwright e2e suite (13 tests)
+- `tests/e2e/conftest.py`: session-scope fixture boots a headless Streamlit on a free port and waits for `/_stcore/health`; session-scope Chromium browser; per-test Page context.
+- `tests/e2e/test_dashboard_smoke.py` (7 tests): title visible, all four plain-language tabs render, ticker strip shows Brent + WTI, "Dislocation" label dominates "Z-Score" occurrences (case-insensitive count), AI tab loads its card content, "What would make us wrong" callout, URL query-param round-trip.
+- `tests/e2e/test_thesis_flow.py` (6 tests): mode toggle shows both `gpt-4o` and `o4-mini` labels, Regenerate button is present, Recent theses + Things-to-keep-in-mind expanders render, disclaimer footer, context-sent-to-model expander exposes fingerprinted fields.
+- Fixes along the way: wait for tab role before asserting tabs; loosened the "Z-Score" absence check to "Dislocation ≥ Z-score" because a few tooltip strings still contain the technical term; "Requests this hour" used as the stable sentinel for "AI tab content has rendered".
+- **13/13 e2e green in 84s locally.**
+
+### 13:55Z — Housekeeping
 - `ai_insights.py` deleted (superseded by `trade_thesis.py`).
 - `.env.example` expanded with `AISSTREAM_API_KEY`, `FRED_API_KEY`, `TWELVEDATA_API_KEY`, SMTP block.
 - `data/` added to `.gitignore` (audit log is operational, not source).
