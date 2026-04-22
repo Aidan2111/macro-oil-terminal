@@ -211,6 +211,28 @@ SYSTEM_PROMPT = (
 
 
 # ---------------------------------------------------------------------------
+# Execution decoration — instruments + checklist (added per hero-thesis design)
+# ---------------------------------------------------------------------------
+@dataclass
+class Instrument:
+    """A single executable instrument tier attached to a thesis."""
+    tier: int                  # 1, 2, or 3 — paper / ETF / futures
+    name: str
+    symbol: Optional[str]      # None for the paper tier
+    rationale: str             # one sentence
+    suggested_size_pct: float  # percentage of capital
+    worst_case_per_unit: str   # "$X per contract" / "N/A"
+
+
+@dataclass
+class ChecklistItem:
+    """A single pre-trade checklist item rendered beside a thesis."""
+    key: str                   # stable identifier, e.g. "stop_in_place"
+    prompt: str                # user-visible text
+    auto_check: Optional[bool] # None = user must tick; True/False = pre-populated
+
+
+# ---------------------------------------------------------------------------
 # Output shape
 # ---------------------------------------------------------------------------
 @dataclass
