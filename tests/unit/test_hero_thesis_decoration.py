@@ -137,8 +137,8 @@ def test_decorate_long_spread_produces_three_tiers(minimal_context):
     # Futures at full suggested size
     assert out.instruments[2].suggested_size_pct == pytest.approx(4.0)
     assert "CL=F" in out.instruments[2].rationale or "CL" in out.instruments[2].rationale
-    # Checklist stays empty this task
-    assert out.checklist == []
+    # Checklist is populated in Task 5 (length asserted here; order asserted below)
+    assert len(out.checklist) == 5
 
 
 def test_decorate_short_spread_inverts_etf_pair(minimal_context):
@@ -177,4 +177,96 @@ def test_decorate_flat_stance_still_empty_instruments(minimal_context):
     thesis = _thesis(stance="flat")
     out = decorate_thesis_for_execution(thesis, minimal_context)
     assert out.instruments == []
+    assert out.checklist == []
+
+
+def test_decorate_checklist_has_five_items_in_order(minimal_context):
+    thesis = _thesis(
+        stance="long_spread",
+        conviction_0_to_10=7.0,
+        time_horizon_days=4,
+        position_sizing={"suggested_pct_of_capital": 4.0,
+                         "method": "fixed_fractional", "rationale": "stub"},
+    )
+    out = decorate_thesis_for_execution(thesis, minimal_context)
+    assert [c.key for c in out.checklist] == [
+        "stop_in_place",
+        "vol_clamp_ok",
+        "half_life_ack",
+        "catalyst_clear",
+        "no_conflicting_recent_thesis",
+    ]
+
+
+def test_decorate_checklist_auto_checks_vol_clamp_when_vol_below_p85(minimal_context):
+    # minimal_context has vol_spread_1y_percentile=55 < 85 -> auto-check True
+    thesis = _thesis(
+        stance="long_spread",
+        conviction_0_to_10=7.0,
+        time_horizon_days=4,
+        position_sizing={"suggested_pct_of_capital": 4.0,
+                         "method": "fixed_fractional", "rationale": "stub"},
+    )
+    out = decorate_thesis_for_execution(thesis, minimal_context)
+    vol_item = next(c for c in out.checklist if c.key == "vol_clamp_ok")
+    assert vol_item.auto_check is True
+
+
+def test_decorate_checklist_vol_clamp_false_when_vol_over_p85(minimal_context):
+    from dataclasses import replace
+    hot_ctx = replace(minimal_context, vol_spread_1y_percentile=92.0)
+    thesis = _thesis(stance="long_spread",
+                     position_sizing={"suggested_pct_of_capital": 4.0,
+                                      "method": "fixed_fractional", "rationale": "stub"})
+    out = decorate_thesis_for_execution(thesis, hot_ctx)
+    vol_item = next(c for c in out.checklist if c.key == "vol_clamp_ok")
+    assert vol_item.auto_check is False
+
+
+def test_decorate_checklist_catalyst_clear_over_24h(minimal_context):
+    # minimal_context has hours_to_next_eia=48 -> auto-check True
+    thesis = _thesis(stance="long_spread",
+                     position_sizing={"suggested_pct_of_capital": 4.0,
+                                      "method": "fixed_fractional", "rationale": "stub"})
+    out = decorate_thesis_for_execution(thesis, minimal_context)
+    cat_item = next(c for c in out.checklist if c.key == "catalyst_clear")
+    assert cat_item.auto_check is True
+
+
+def test_decorate_checklist_catalyst_false_when_eia_under_24h(minimal_context):
+    from dataclasses import replace
+    close_ctx = replace(minimal_context, hours_to_next_eia=6.0)
+    thesis = _thesis(stance="long_spread",
+                     position_sizing={"suggested_pct_of_capital": 4.0,
+                                      "method": "fixed_fractional", "rationale": "stub"})
+    out = decorate_thesis_for_execution(thesis, close_ctx)
+    cat_item = next(c for c in out.checklist if c.key == "catalyst_clear")
+    assert cat_item.auto_check is False
+
+
+def test_decorate_checklist_catalyst_none_when_hours_unknown(minimal_context):
+    from dataclasses import replace
+    unknown_ctx = replace(minimal_context, hours_to_next_eia=None)
+    thesis = _thesis(stance="long_spread",
+                     position_sizing={"suggested_pct_of_capital": 4.0,
+                                      "method": "fixed_fractional", "rationale": "stub"})
+    out = decorate_thesis_for_execution(thesis, unknown_ctx)
+    cat_item = next(c for c in out.checklist if c.key == "catalyst_clear")
+    assert cat_item.auto_check is None
+
+
+def test_decorate_checklist_user_items_always_none(minimal_context):
+    thesis = _thesis(stance="long_spread",
+                     position_sizing={"suggested_pct_of_capital": 4.0,
+                                      "method": "fixed_fractional", "rationale": "stub"})
+    out = decorate_thesis_for_execution(thesis, minimal_context)
+    by_key = {c.key: c for c in out.checklist}
+    assert by_key["stop_in_place"].auto_check is None
+    assert by_key["half_life_ack"].auto_check is None
+    assert by_key["no_conflicting_recent_thesis"].auto_check is None
+
+
+def test_decorate_flat_stance_still_empty_checklist(minimal_context):
+    thesis = _thesis(stance="flat")
+    out = decorate_thesis_for_execution(thesis, minimal_context)
     assert out.checklist == []

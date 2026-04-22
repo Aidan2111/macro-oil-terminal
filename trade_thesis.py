@@ -257,6 +257,45 @@ class Thesis:
         return f"{stance} · {conv:.1f}/10 · {hz}d · {self.mode}"
 
 
+def _build_checklist(ctx: ThesisContext) -> list[ChecklistItem]:
+    """Return the 5-item pre-trade checklist.
+
+    Order is frozen — the UI iterates the list in order. Two items
+    auto-check from the context (``vol_clamp_ok`` and ``catalyst_clear``);
+    the other three require the user to tick explicitly.
+    """
+    # Vol regime: True when we know the spread vol is below 85th percentile.
+    # ``vol_spread_1y_percentile`` is a non-optional float on ThesisContext,
+    # so no None-guard is needed.
+    vol_clamp_ok = bool(ctx.vol_spread_1y_percentile < 85.0)
+
+    # Catalyst gap: True if the next EIA is >= 24h away, False if < 24h
+    # away, None if the calendar feed isn't available.
+    hrs = ctx.hours_to_next_eia
+    if hrs is None:
+        catalyst_clear: Optional[bool] = None
+    else:
+        catalyst_clear = bool(hrs >= 24.0)
+
+    return [
+        ChecklistItem("stop_in_place",
+                      "I have a stop at ±2σ spread move from entry.",
+                      None),
+        ChecklistItem("vol_clamp_ok",
+                      "Spread realised vol is below the 1y 85th percentile.",
+                      vol_clamp_ok),
+        ChecklistItem("half_life_ack",
+                      "I understand the implied half-life is ~N days.",
+                      None),
+        ChecklistItem("catalyst_clear",
+                      "No EIA release within the next 24 hours.",
+                      catalyst_clear),
+        ChecklistItem("no_conflicting_recent_thesis",
+                      "No stance flip in the last 5 thesis entries.",
+                      None),
+    ]
+
+
 def decorate_thesis_for_execution(thesis: Thesis, ctx: ThesisContext) -> Thesis:
     """Return a deepcopy of `thesis` with executable decorations attached.
 
@@ -311,7 +350,7 @@ def decorate_thesis_for_execution(thesis: Thesis, ctx: ThesisContext) -> Thesis:
             worst_case_per_unit="$1000 per contract per $1 move",
         ),
     ]
-    out.checklist = []  # filled in Task 5
+    out.checklist = _build_checklist(ctx)
     return out
 
 
