@@ -278,7 +278,39 @@ Steady-state numbers from the second pass after the deploy stabilised:
 
 The warm path — the everyday user experience — is **11x faster to interactive** and **4x faster to first chart**. The apparent cold regression is deploy-induced (F1 cold boot + Azure side-cache populating); subsequent cold hits (measured once the keep-warm cron kicks in) converge to the steady state.
 
-### 02:52Z — Housekeeping
+---
+
+## Fifth autonomous block — ops + security + IaC (2026-04-22 02:55Z)
+
+### 02:55Z — Application Insights
+- `az monitor app-insights component create --app oil-tracker-ai --resource-group oil-price-tracker --location westus2`
+- `APPLICATIONINSIGHTS_CONNECTION_STRING` (240 chars) set as App Service App Setting.
+- New `observability.py` module: `configure()` wires `azure-monitor-opentelemetry` if the env var is present; otherwise every call is a no-op. `tracer()`, `trace_event(name, **attrs)`, and a `span(name, **attrs)` context manager provided.
+- `azure-monitor-opentelemetry` added to `requirements.txt`; CI + sandbox both on 1.8.7.
+- app.py calls `_obs_configure()` once at import time.
+
+### 03:00Z — Azure Alert Rules
+- Action group `oil-tracker-alerts` → email `aidan.marshall@Youbiquity.com`.
+- Metric alert `oil-tracker-http5xx`: total `Http5xx > 5` over 5m, 1m eval, severity 2.
+- Metric alert `oil-tracker-slow-response`: average `HttpResponseTime > 5s` over 5m, severity 3.
+- Both enabled, confirmed via `az monitor metrics alert list`.
+
+### 03:05Z — Bicep IaC
+- `infra/main.bicep` captures the full stack: RG, F1 Linux plan, Web App + App Settings + Streamlit startup + websockets, Azure OpenAI + gpt-4o-mini deployment + custom subdomain, Application Insights, action group, both alert rules. Idempotent — references existing resources by name with Bicep's declarative reconcile.
+- `infra/deploy.sh`: `--what-if` preview + full deploy with naming conventions matching the live resources.
+- `az bicep build` compiles clean (ARM JSON verified).
+
+### 03:10Z — Backtest realism
+- `backtest_zscore_meanreversion` now takes `slippage_per_bbl` and `commission_per_trade`. Both applied to every completed round-trip (slippage doubled for two legs, commission doubled for open+close).
+- Sidebar inputs: slippage USD/bbl (default $0.05) + commission USD/round-trip (default $20).
+- New public helpers:
+  - `walk_forward_backtest(window_months=12, step_months=3)` — rolling-window stats for regime stability.
+  - `monte_carlo_entry_noise(n_runs=200, noise_sigma=0.15)` — threshold-robustness stress test.
+  - `regime_breakdown(vol_window=30)` — bins trades by the 30d realised vol at entry, median-split.
+- Rendered in a Tab 1 expander with a walk-forward bar chart, MC percentile tiles, and a regime bar.
+- 4 new tests: slippage reduces PnL monotonically, walk-forward shape, MC monotone percentiles, regime buckets both present. **36/36 green locally.**
+
+### 03:15Z — Housekeeping
 - `ai_insights.py` deleted (superseded by `trade_thesis.py`).
 - `.env.example` expanded with `AISSTREAM_API_KEY`, `FRED_API_KEY`, `TWELVEDATA_API_KEY`, SMTP block.
 - `data/` added to `.gitignore` (audit log is operational, not source).

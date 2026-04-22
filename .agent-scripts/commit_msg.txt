@@ -1,36 +1,27 @@
-feat+ops: live ticker, URL state, Dependabot/CodeQL/pre-commit, release automation, docs
+feat+ops: App Insights, Azure alerts, Bicep IaC, backtest realism
 
-User-facing:
-* Real-time ticker strip — 1-min yfinance intraday inside
-  st.fragment(run_every=60) when the new "Live mode" sidebar toggle is
-  on. Handles weekend/holiday/closed-feed by falling back to the daily
-  series with a clear "market closed" badge and last-bar timestamp.
-* URL state sync — sidebar z/floor/window round-trip into
-  st.query_params so links capture the current view. Values are clamped
-  (NaN/inf/non-numeric → safe default) via a new _clamp helper.
+Ops / observability
+* Application Insights component oil-tracker-ai (westus2) created,
+  connection string wired into App Service settings (never in repo).
+* observability.py: defensive azure-monitor-opentelemetry wrapper —
+  no-op when env var missing, never raises.
+* Metric alerts wired (action group → Aidan's email):
+  - oil-tracker-http5xx (Http5xx total > 5 in 5m, sev 2)
+  - oil-tracker-slow-response (HttpResponseTime avg > 5s, sev 3).
+* infra/main.bicep + infra/deploy.sh capture the whole stack (RG,
+  plan, Web App + settings + streamlit startup, AOAI + gpt-4o-mini,
+  AI component, action group, both alerts) reproducibly from scratch.
+  Idempotent; `what-if` preview supported.
 
-Ops + security:
-* .github/dependabot.yml — weekly pip + github-actions + docker PRs.
-* .github/workflows/codeql.yml — Python security+quality queries
-  on every push, PR, and Monday 04:00 UTC.
-* .pre-commit-config.yaml — opt-in gitleaks + ruff + basic hygiene hooks.
-* .github/CODEOWNERS — @Aidan2111 owns everything (explicit on
-  infra-sensitive paths).
-* SECURITY.md — reporting + secret-handling posture + documented
-  CSP/header limitation (Streamlit default).
+Backtest realism
+* backtest_zscore_meanreversion: slippage + commission now applied per
+  completed trade.
+* walk_forward_backtest: 12m/3m rolling-window stats.
+* monte_carlo_entry_noise: 200 runs with ±0.15σ threshold noise —
+  surfaces threshold overfit.
+* regime_breakdown: low-vol vs high-vol trade performance, median-split
+  on 30d realised spread vol.
+* Tab 1 expander renders the walk-forward bar chart, MC percentile
+  metrics, and regime bar. Sidebar has slippage + commission inputs.
 
-Release automation:
-* .github/workflows/release.yml — triggers on v*.*.* tag (+ manual
-  dispatch). Test-gate → OIDC login → zip deploy → health check → GitHub
-  Release with release notes generated from commits + PROGRESS.md diff
-  since the previous tag. Signed with the same SP used for CD.
-
-Docs:
-* docs/architecture.md — Mermaid data-flow + deployment diagrams,
-  trade-off notes.
-* CONTRIBUTING.md — quick start, test gate, CD expectations, data policy.
-
-Tests:
-* test_runner.py +8 checks (clamp valid/NaN/non-numeric/±inf, plus
-  workflow-file sanity: CD OIDC + test gate, release notes builder,
-  Dependabot present). 32/32 green.
+Tests: 36/36 green. Smoke test green. CD ready.

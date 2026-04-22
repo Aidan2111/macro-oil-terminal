@@ -228,6 +228,8 @@ def backtest_zscore_meanreversion(
     entry_z: float = 2.0,
     exit_z: float = 0.2,
     notional_bbls: float = 10_000.0,
+    slippage_per_bbl: float = 0.0,
+    commission_per_trade: float = 0.0,
 ) -> Dict[str, object]:
     """Rule-based backtest of the classic spread mean-reversion play.
 
@@ -282,7 +284,10 @@ def backtest_zscore_meanreversion(
         else:
             if abs(z) <= exit_z:
                 side = "long_spread" if position == 1 else "short_spread"
-                pnl_per_bbl = (s - entry_spread) * position
+                gross_per_bbl = (s - entry_spread) * position
+                # Slippage applied at both legs of the round-trip
+                net_per_bbl = gross_per_bbl - 2.0 * float(slippage_per_bbl)
+                pnl_usd = net_per_bbl * notional_bbls - 2.0 * float(commission_per_trade)
                 trades.append(
                     {
                         "entry_date": entry_date,
@@ -290,8 +295,8 @@ def backtest_zscore_meanreversion(
                         "side": side,
                         "entry_spread": entry_spread,
                         "exit_spread": s,
-                        "pnl_per_bbl": pnl_per_bbl,
-                        "pnl_usd": pnl_per_bbl * notional_bbls,
+                        "pnl_per_bbl": float(net_per_bbl),
+                        "pnl_usd": float(pnl_usd),
                         "days_held": (date - entry_date).days,
                     }
                 )
@@ -341,9 +346,156 @@ def backtest_zscore_meanreversion(
     return out
 
 
+# ---------------------------------------------------------------------------
+# Walk-forward rolling window — parameter-stability diagnostic
+# ---------------------------------------------------------------------------
+def walk_forward_backtest(
+    spread_df: pd.DataFrame,
+    entry_z: float = 2.0,
+    exit_z: float = 0.2,
+    notional_bbls: float = 10_000.0,
+    slippage_per_bbl: float = 0.0,
+    window_months: int = 12,
+    step_months: int = 3,
+) -> pd.DataFrame:
+    """Slide a rolling backtest window across the full history.
+
+    Returns a DataFrame with one row per window containing the
+    aggregate stats from ``backtest_zscore_meanreversion`` on that slice.
+    Useful for spotting regimes where the signal breaks down.
+    """
+    if spread_df is None or spread_df.empty or "Z_Score" not in spread_df.columns:
+        return pd.DataFrame(columns=["window_start", "window_end", "n_trades", "win_rate", "sharpe", "total_pnl_usd"])
+
+    df = spread_df.dropna(subset=["Z_Score"])
+    if df.empty:
+        return pd.DataFrame()
+
+    start = df.index.min()
+    end = df.index.max()
+    window = pd.DateOffset(months=window_months)
+    step = pd.DateOffset(months=step_months)
+
+    rows = []
+    cursor = start
+    while cursor + window <= end:
+        left = cursor
+        right = cursor + window
+        sl = df.loc[left:right]
+        if sl.empty:
+            cursor = cursor + step
+            continue
+        out = backtest_zscore_meanreversion(
+            sl, entry_z=entry_z, exit_z=exit_z,
+            notional_bbls=notional_bbls, slippage_per_bbl=slippage_per_bbl,
+        )
+        rows.append(
+            {
+                "window_start": left,
+                "window_end": right,
+                "n_trades": out["n_trades"],
+                "win_rate": out["win_rate"],
+                "sharpe": out.get("sharpe", 0.0),
+                "total_pnl_usd": out["total_pnl_usd"],
+            }
+        )
+        cursor = cursor + step
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Monte Carlo — random-entry noise as a robustness check
+# ---------------------------------------------------------------------------
+def monte_carlo_entry_noise(
+    spread_df: pd.DataFrame,
+    entry_z: float = 2.0,
+    exit_z: float = 0.2,
+    notional_bbls: float = 10_000.0,
+    slippage_per_bbl: float = 0.0,
+    n_runs: int = 200,
+    noise_sigma: float = 0.15,
+    seed: int = 7,
+) -> Dict[str, float]:
+    """Perturb the entry threshold by i.i.d. Normal noise ``n_runs`` times.
+
+    The idea: if a tiny wobble in ``entry_z`` changes total PnL
+    dramatically, the strategy is overfit to a specific threshold.
+    Returns summary stats of the PnL distribution.
+    """
+    if spread_df is None or spread_df.empty or "Z_Score" not in spread_df.columns:
+        return {"n_runs": 0, "pnl_mean": 0.0, "pnl_std": 0.0, "pnl_p05": 0.0, "pnl_p95": 0.0}
+
+    rng = np.random.default_rng(seed)
+    results: list[float] = []
+    for _ in range(n_runs):
+        shift = float(rng.normal(0, noise_sigma))
+        out = backtest_zscore_meanreversion(
+            spread_df,
+            entry_z=max(0.1, entry_z + shift),
+            exit_z=exit_z,
+            notional_bbls=notional_bbls,
+            slippage_per_bbl=slippage_per_bbl,
+        )
+        results.append(float(out["total_pnl_usd"]))
+    arr = np.array(results, dtype=float)
+    return {
+        "n_runs": len(arr),
+        "pnl_mean": float(arr.mean()),
+        "pnl_std": float(arr.std(ddof=0)),
+        "pnl_p05": float(np.percentile(arr, 5)),
+        "pnl_p95": float(np.percentile(arr, 95)),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Regime breakdown (high-vol vs low-vol)
+# ---------------------------------------------------------------------------
+def regime_breakdown(
+    spread_df: pd.DataFrame,
+    trades: pd.DataFrame,
+    vol_window: int = 30,
+) -> pd.DataFrame:
+    """Split the trade blotter by the vol regime at trade entry.
+
+    Returns a DataFrame with one row per regime (`low_vol`, `high_vol`)
+    giving trade count, win rate, and total PnL.
+    """
+    if trades is None or trades.empty or spread_df is None or spread_df.empty:
+        return pd.DataFrame(columns=["regime", "n_trades", "win_rate", "total_pnl_usd"])
+
+    spread = spread_df["Spread"] if "Spread" in spread_df.columns else spread_df.iloc[:, 0]
+    rolling_vol = spread.diff().rolling(vol_window).std()
+    median_vol = float(rolling_vol.median())
+
+    t = trades.copy()
+    entry_vol = rolling_vol.reindex(t["entry_date"]).fillna(method="ffill").values
+    t["regime"] = np.where(entry_vol > median_vol, "high_vol", "low_vol")
+
+    grouped = (
+        t.groupby("regime")
+        .agg(
+            n_trades=("pnl_usd", "count"),
+            win_rate=("pnl_usd", lambda s: float((s > 0).mean()) if len(s) else 0.0),
+            total_pnl_usd=("pnl_usd", "sum"),
+        )
+        .reset_index()
+    )
+    # Ensure both regimes appear even if empty
+    for r in ("low_vol", "high_vol"):
+        if r not in grouped["regime"].values:
+            grouped = pd.concat(
+                [grouped, pd.DataFrame([{"regime": r, "n_trades": 0, "win_rate": 0.0, "total_pnl_usd": 0.0}])],
+                ignore_index=True,
+            )
+    return grouped.sort_values("regime").reset_index(drop=True)
+
+
 __all__ = [
     "compute_spread_zscore",
     "forecast_depletion",
     "categorize_flag_states",
     "backtest_zscore_meanreversion",
+    "walk_forward_backtest",
+    "monte_carlo_entry_noise",
+    "regime_breakdown",
 ]

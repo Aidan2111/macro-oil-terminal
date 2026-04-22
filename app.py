@@ -39,9 +39,15 @@ from quantitative_models import (
     forecast_depletion,
     categorize_flag_states,
     backtest_zscore_meanreversion,
+    walk_forward_backtest,
+    monte_carlo_entry_noise,
+    regime_breakdown,
 )
 from webgpu_components import render_hero_banner, render_fleet_globe
 from alerts import maybe_send_zscore_alert
+from observability import configure as _obs_configure, span as _obs_span, trace_event
+
+_AI_ACTIVE = _obs_configure()
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +145,19 @@ live_mode = st.sidebar.toggle(
     "every 60s via an st.fragment. When off, a 60-day static snapshot is used.",
 )
 
+st.sidebar.markdown("---")
+st.sidebar.caption("Backtest frictions")
+slippage_per_bbl = st.sidebar.number_input(
+    "Slippage (USD/bbl per leg)",
+    min_value=0.0, max_value=2.0, value=0.05, step=0.01, format="%.2f",
+    help="Bid-ask drag applied at both entry and exit. 0.05/bbl ≈ tight institutional fill.",
+)
+commission_per_trade = st.sidebar.number_input(
+    "Commission (USD/round-trip)",
+    min_value=0.0, max_value=250.0, value=20.0, step=5.0, format="%.0f",
+    help="Fixed fee deducted per completed trade. Zero = frictionless toy.",
+)
+
 
 # ---------------------------------------------------------------------------
 # Data loading (cached)
@@ -213,9 +232,14 @@ def _depletion_cached(inv_fingerprint: str, floor: float, weeks: int) -> dict:
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60)
-def _backtest_cached(spread_fingerprint: str, entry_z: float, exit_z: float) -> dict:
+def _backtest_cached(
+    spread_fingerprint: str, entry_z: float, exit_z: float,
+    slippage: float, commission: float,
+) -> dict:
     return backtest_zscore_meanreversion(
-        spread_df, entry_z=entry_z, exit_z=exit_z, notional_bbls=10_000.0
+        spread_df, entry_z=entry_z, exit_z=exit_z,
+        notional_bbls=10_000.0,
+        slippage_per_bbl=slippage, commission_per_trade=commission,
     )
 
 
@@ -488,7 +512,10 @@ with tab_arb:
         "slippage, and financing, so treat the PnL as a signal-quality "
         "indicator rather than a P&L forecast."
     )
-    bt = _backtest_cached(_fp(spread_df), float(z_threshold), 0.2)
+    bt = _backtest_cached(
+        _fp(spread_df), float(z_threshold), 0.2,
+        float(slippage_per_bbl), float(commission_per_trade),
+    )
     bt_c1, bt_c2, bt_c3, bt_c4, bt_c5, bt_c6 = st.columns(6)
     bt_c1.metric("Trades", f"{bt['n_trades']:,}")
     bt_c2.metric(
@@ -557,6 +584,103 @@ with tab_arb:
                 mime="text/csv",
                 key="download_blotter",
             )
+
+        with st.expander("Walk-forward, Monte Carlo, regime breakdown (robustness)"):
+            st.caption(
+                "These extras stress the strategy. Walk-forward slides a "
+                "12-month window in 3-month steps to spot regime breaks. "
+                "Monte Carlo adds ±0.15σ i.i.d. noise to the entry "
+                "threshold across 200 runs. Regime split bins trades by "
+                "the 30-day realised vol at entry."
+            )
+
+            # Walk-forward
+            wf = walk_forward_backtest(
+                spread_df, entry_z=float(z_threshold), exit_z=0.2,
+                notional_bbls=10_000.0,
+                slippage_per_bbl=float(slippage_per_bbl),
+                window_months=12, step_months=3,
+            )
+            if not wf.empty:
+                wf_fig = go.Figure()
+                wf_fig.add_trace(
+                    go.Bar(
+                        x=wf["window_end"],
+                        y=wf["total_pnl_usd"],
+                        marker_color=[
+                            "#2ecc71" if p >= 0 else "#e74c3c" for p in wf["total_pnl_usd"]
+                        ],
+                        hovertemplate=(
+                            "window end %{x|%Y-%m-%d}<br>PnL $%{y:,.0f}<br>"
+                            "trades %{customdata[0]}<br>win rate %{customdata[1]:.0%}"
+                            "<extra></extra>"
+                        ),
+                        customdata=wf[["n_trades", "win_rate"]].values,
+                    )
+                )
+                wf_fig.update_layout(
+                    height=280,
+                    template="plotly_dark",
+                    margin=dict(l=40, r=20, t=20, b=40),
+                    yaxis_title="Window PnL (USD)",
+                    xaxis_title="Window end",
+                    showlegend=False,
+                )
+                st.markdown("**Walk-forward (12m window, 3m step)**")
+                st.plotly_chart(wf_fig, use_container_width=True)
+            else:
+                st.info("Not enough history for a 12-month walk-forward window.")
+
+            # Monte Carlo
+            mc = monte_carlo_entry_noise(
+                spread_df,
+                entry_z=float(z_threshold), exit_z=0.2,
+                notional_bbls=10_000.0,
+                slippage_per_bbl=float(slippage_per_bbl),
+                n_runs=200, noise_sigma=0.15, seed=7,
+            )
+            if mc["n_runs"] > 0:
+                mc_cols = st.columns(4)
+                mc_cols[0].metric("MC runs", f"{mc['n_runs']}")
+                mc_cols[1].metric("Mean PnL", f"${mc['pnl_mean']:,.0f}")
+                mc_cols[2].metric("P05 PnL", f"${mc['pnl_p05']:,.0f}")
+                mc_cols[3].metric("P95 PnL", f"${mc['pnl_p95']:,.0f}")
+                st.caption(
+                    "If P05 is deeply negative while P95 is positive the "
+                    "strategy is threshold-sensitive — a small shift in "
+                    f"entry_z wipes out results."
+                )
+            else:
+                st.info("Monte Carlo skipped (no trades on this slice).")
+
+            # Regime breakdown
+            if not bt["trades"].empty:
+                rb = regime_breakdown(spread_df, bt["trades"], vol_window=30)
+                if not rb.empty:
+                    rb_fig = go.Figure(
+                        data=[
+                            go.Bar(
+                                x=rb["regime"],
+                                y=rb["total_pnl_usd"],
+                                marker_color=["#1f77b4" if r == "low_vol" else "#ff7f0e" for r in rb["regime"]],
+                                text=[
+                                    f"{int(n)} trades<br>{w*100:.0f}% win"
+                                    for n, w in zip(rb["n_trades"], rb["win_rate"])
+                                ],
+                                textposition="outside",
+                            )
+                        ]
+                    )
+                    rb_fig.update_layout(
+                        height=280,
+                        template="plotly_dark",
+                        yaxis_title="Total PnL (USD)",
+                        xaxis_title="Volatility regime (30d realised, median-split)",
+                        showlegend=False,
+                        margin=dict(l=40, r=20, t=30, b=40),
+                    )
+                    st.markdown("**Regime breakdown (high-vol vs low-vol at entry)**")
+                    st.plotly_chart(rb_fig, use_container_width=True)
     else:
         st.info(
             f"No trades triggered at \u00b1{z_threshold:.1f}\u03c3 on the "

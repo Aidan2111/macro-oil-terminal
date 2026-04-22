@@ -139,6 +139,9 @@ def test_quant_models() -> None:
         forecast_depletion,
         categorize_flag_states,
         backtest_zscore_meanreversion,
+        walk_forward_backtest,
+        monte_carlo_entry_noise,
+        regime_breakdown,
     )
     from data_ingestion import fetch_inventory_data, fetch_ais_data
 
@@ -185,6 +188,40 @@ def test_quant_models() -> None:
     _check("quant.forecast_depletion", t_depletion_basic)
     _check("quant.categorize_flag_states", t_categorize_basic)
     _check("quant.backtest_zscore_meanreversion (+dd/sharpe)", t_backtest_basic)
+
+    def t_backtest_slippage_reduces_pnl() -> None:
+        sdf = compute_spread_zscore(prices, window=90)
+        a = backtest_zscore_meanreversion(sdf, entry_z=1.0, exit_z=0.2, slippage_per_bbl=0.0)
+        b = backtest_zscore_meanreversion(sdf, entry_z=1.0, exit_z=0.2, slippage_per_bbl=0.50)
+        # With slippage applied to both legs, gross PnL must not increase.
+        if a["n_trades"] > 0:
+            assert b["total_pnl_usd"] <= a["total_pnl_usd"]
+
+    def t_walk_forward_basic() -> None:
+        sdf = compute_spread_zscore(prices, window=90)
+        wf = walk_forward_backtest(sdf, entry_z=1.0, exit_z=0.2, window_months=4, step_months=1)
+        if not wf.empty:
+            assert {"window_start", "window_end", "n_trades", "total_pnl_usd"}.issubset(wf.columns)
+
+    def t_monte_carlo_basic() -> None:
+        sdf = compute_spread_zscore(prices, window=90)
+        mc = monte_carlo_entry_noise(sdf, entry_z=1.0, exit_z=0.2, n_runs=30, noise_sigma=0.1)
+        assert mc["n_runs"] == 30
+        assert math.isfinite(mc["pnl_mean"]) and math.isfinite(mc["pnl_std"])
+        assert mc["pnl_p05"] <= mc["pnl_p95"]
+
+    def t_regime_breakdown_shape() -> None:
+        sdf = compute_spread_zscore(prices, window=90)
+        out = backtest_zscore_meanreversion(sdf, entry_z=1.0, exit_z=0.2)
+        if out["n_trades"] > 0:
+            rb = regime_breakdown(sdf, out["trades"], vol_window=30)
+            assert set(rb["regime"]) == {"low_vol", "high_vol"}
+            assert (rb["n_trades"] >= 0).all()
+
+    _check("quant.backtest[slippage reduces PnL]", t_backtest_slippage_reduces_pnl)
+    _check("quant.walk_forward_backtest (basic)", t_walk_forward_basic)
+    _check("quant.monte_carlo_entry_noise (basic)", t_monte_carlo_basic)
+    _check("quant.regime_breakdown (shape)", t_regime_breakdown_shape)
 
 
 # ---------------------------------------------------------------------------
