@@ -468,7 +468,7 @@ def regime_breakdown(
     median_vol = float(rolling_vol.median())
 
     t = trades.copy()
-    entry_vol = rolling_vol.reindex(t["entry_date"]).fillna(method="ffill").values
+    entry_vol = rolling_vol.reindex(t["entry_date"]).ffill().values
     t["regime"] = np.where(entry_vol > median_vol, "high_vol", "low_vol")
 
     grouped = (

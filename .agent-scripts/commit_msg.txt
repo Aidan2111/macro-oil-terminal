@@ -1,52 +1,15 @@
-ui: plain-language pass — rename Z-score to Dislocation, add tooltips
+fix(quant): pandas 3.x DataFrame.fillna(method=) removed → use .ffill()
 
-Copy-only change; no math, no schema, no behaviour difference.
+CI on Python 3.12 (pandas 3.x-track) fails with
+  TypeError: NDFrame.fillna() got an unexpected keyword argument 'method'
+on quant.regime_breakdown.
 
-Relabels at the UI boundary only; internal code identifiers (Z_Score,
-category names, stance strings, conviction_0_to_10) stay stable so the
-backtest, thesis, tests, and trade_theses.jsonl audit log are all
-unaffected.
+Replace the deprecated form with the direct .ffill() method.
 
-Renames applied throughout app.py:
-* Z-score → Dislocation (90-day dislocation on the subplot title).
-* "Historical Z-score mean-reversion backtest" →
-  "Snap-back to normal — historical backtest".
-* Sidebar: "Z-Score Alert Threshold" → "Dislocation alert level",
-  "Inventory Floor" → sentence-case, "Depletion rolling window" →
-  "Drawdown lookback".
-* Backtest metrics: win rate / avg hold / biggest losing streak
-  (max drawdown) / risk-adjusted return (Sharpe).
-* Depletion tab: "Daily Depletion" → "Daily drawdown", "Projected
-  Floor Breach" → "Date inventory hits the floor", "Regression R²"
-  → "Trend fit quality".
-* Fleet tab: "Jones Act / Domestic" → "US-flagged / US-destined",
-  "Shadow Risk" → "Flags of convenience", "Sanctioned" →
-  "Sanctioned-country flags", "Flag State" → "Vessel registration
-  country", MMSI column header → "Vessel ID" (MMSI kept in tooltip).
-* Trade Thesis card: LONG SPREAD → BUY THE SPREAD, SHORT → SELL,
-  FLAT → STAND ASIDE; "Entry/Target/Stop" → "Enter when / Take
-  profit when / Cut the trade if"; "Key drivers" → "What's driving
-  this"; "Invalidation risks" → "What would make us wrong";
-  "Catalyst watchlist" → "Upcoming events to watch"; "Position
-  sizing" → "How much to risk"; "Data caveats" → "Things to keep in
-  mind". Conviction → Confidence. Kelly/fixed_fractional/vol
-  methods translated to plain language.
-* Tabs: "Macro Arbitrage / Depletion Forecast / Fleet Analytics /
-  AI Insights" → "Spread dislocation / Inventory drawdown / Tanker
-  fleet / AI trade thesis".
-* Chart ticker captions: "BZ=F/CL=F" → "Brent / WTI".
-
-Every renamed metric keeps a `help=` tooltip with the precise
-definition so the raw stats term is one click away.
-
-Advanced view toggle:
-* Sidebar "Show advanced metrics" (default off) reveals the raw
-  Z-score/σ/R²/Kelly terms inline beside the plain-language labels.
-
-System prompt update:
-* trade_thesis.SYSTEM_PROMPT now tells the model to prefer
-  "dislocation" over "Z-score" and "snap-back to normal" over
-  "mean reversion" in its prose — still precise, not fluffy.
-
-Tests + smoke both still green (36/36). Underlying dataframes and
-JSONL audit shape unchanged.
+Also:
+* app.py: subheader "Brent vs WTI — price and spread dislocation"
+  (Z-score suffix only when advanced view is on) — stops the last
+  stats-jargon leftover in Tab 1.
+* .agent-scripts/capture_screens.py updated tab locators to the new
+  plain-language tab names so future screenshot runs don't time out.
+* docs/screenshots refreshed against the new labels.

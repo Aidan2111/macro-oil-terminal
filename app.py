@@ -421,7 +421,10 @@ tab_arb, tab_depl, tab_fleet, tab_ai = st.tabs(
 
 # ---- Tab 1 --------------------------------------------------------------
 with tab_arb:
-    st.subheader("Brent vs WTI — Price + Spread Z-Score")
+    st.subheader(
+        "Brent vs WTI — price and spread dislocation"
+        + (" (Z-score)" if show_advanced else "")
+    )
     st.caption(
         f"Source: **{pricing_res.source}** (daily, ~15-min delayed futures) · "
         f"fetched {pricing_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')}"
