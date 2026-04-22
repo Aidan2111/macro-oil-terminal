@@ -66,4 +66,7 @@ def fetch_inventory() -> InventoryResult:
 
 def active_inventory_provider() -> str:
     """Return the name of the provider that would be tried first."""
-    return "EIA (keyless)" if not os.environ.get("FRED_API_KEY") else "EIA (keyless) → FRED (keyed) fallback"
+    primary = "EIA v2 API (keyed)" if os.environ.get("EIA_API_KEY") else "EIA dnav (keyless)"
+    if os.environ.get("FRED_API_KEY"):
+        return f"{primary} → FRED (keyed) fallback"
+    return primary
