@@ -24,6 +24,7 @@ from plotly.subplots import make_subplots
 from data_ingestion import (
     fetch_pricing_data,
     fetch_pricing_intraday_data,
+    fetch_cftc_positioning,
     fetch_inventory_data,
     fetch_ais_data,
     PricingResult,
@@ -226,6 +227,14 @@ def _load_ais_cached() -> AISResult:
     return fetch_ais_data(n_vessels=500)
 
 
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 12)  # CFTC publishes weekly (Friday 3:30 ET)
+def _load_cftc_cached():
+    try:
+        return fetch_cftc_positioning()
+    except Exception:
+        return None
+
+
 # --- Defensive fetch: surface clear error states instead of fake data ---
 pricing_res: PricingResult | None = None
 inventory_res: InventoryResult | None = None
@@ -261,6 +270,9 @@ with st.spinner("Loading live market data..."):
     except Exception as exc:
         st.error(f"AIS fetch raised unexpectedly: `{exc!r}`")
         st.stop()
+
+    # CFTC positioning — soft failure: show a warning but keep the dashboard usable
+    cftc_res = _load_cftc_cached()
 
 prices = pricing_res.frame
 inventory = inventory_res.frame
@@ -1061,12 +1073,108 @@ with tab_arb:
             "historical window. Drop the threshold in the sidebar to see activity."
         )
 
+    # ---- CFTC Positioning expander (Macro Arbitrage) --------------------
+    with st.expander(":material/query_stats: Positioning — CFTC COT (WTI)", expanded=False):
+        if cftc_res is None or cftc_res.frame is None or cftc_res.frame.empty:
+            st.warning(
+                "CFTC feed unavailable — weekly positioning data could not be "
+                "retrieved. Check network connectivity; updates next Friday 3:30pm ET."
+            )
+        else:
+            st.caption(
+                f":blue-badge[:material/public: CFTC COT (keyless, weekly)] "
+                f"Source: **{cftc_res.source}** · "
+                f"fetched {cftc_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')} · "
+                f"as of **{cftc_res.frame.index[-1].strftime('%Y-%m-%d')}** · "
+                f"{cftc_res.weeks} weeks"
+            )
+            cot_latest = cftc_res.frame.iloc[-1]
+            pcols = st.columns(4)
+            pcols[0].metric(
+                "Managed Money net",
+                f"{int(cot_latest['mm_net']):+,}",
+                delta=f"Z {cftc_res.mm_zscore_3y:+.2f}" if cftc_res.mm_zscore_3y is not None else None,
+                help=(
+                    "Hedge-fund / CTA net futures position (contracts, 1000 bbl each). "
+                    "Z-score is vs trailing ~3y. Extreme positive = crowded long "
+                    "(often precedes reversal); extreme negative = crowded short."
+                ),
+            )
+            pcols[1].metric(
+                "Producer / Merchant net",
+                f"{int(cot_latest['producer_net']):+,}",
+                help="Physical crude producers, refiners, merchants — the hedging flow.",
+            )
+            pcols[2].metric(
+                "Swap Dealer net",
+                f"{int(cot_latest['swap_net']):+,}",
+                help="Bank desks laying off producer hedges. Usually negative when producers are net long.",
+            )
+            pcols[3].metric(
+                "Open interest",
+                f"{int(cot_latest['open_interest']):,}",
+                help="Total contracts outstanding across all categories.",
+            )
+
+            # Chart: MM net + Z-score overlay
+            try:
+                mm_frame = cftc_res.frame[["mm_net"]].copy()
+                mm_frame = mm_frame.dropna()
+                rolling_mean = mm_frame["mm_net"].rolling(156, min_periods=20).mean()
+                rolling_std = mm_frame["mm_net"].rolling(156, min_periods=20).std(ddof=0)
+                mm_frame["z"] = (mm_frame["mm_net"] - rolling_mean) / rolling_std
+
+                fig = go.Figure()
+                fig.add_trace(
+                    go.Scattergl(
+                        x=mm_frame.index,
+                        y=mm_frame["mm_net"],
+                        mode="lines",
+                        name="MM Net (contracts)",
+                        line=dict(color="#1f77b4", width=1.8),
+                    )
+                )
+                fig.add_trace(
+                    go.Scattergl(
+                        x=mm_frame.index,
+                        y=mm_frame["z"] * (mm_frame["mm_net"].abs().mean()),
+                        mode="lines",
+                        name="Z-score (scaled)",
+                        line=dict(color="#ff7f0e", width=1.2, dash="dot"),
+                        yaxis="y2",
+                        opacity=0.75,
+                    )
+                )
+                fig.update_layout(
+                    height=320,
+                    template="plotly_dark",
+                    margin=dict(l=40, r=40, t=30, b=40),
+                    xaxis_title="Report date",
+                    yaxis=dict(title="Managed-money net (contracts)"),
+                    yaxis2=dict(title="Z-score (~3y)", overlaying="y", side="right", showgrid=False),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                st.caption(
+                    ":grey[Z-score thresholds: ±1.5σ historically mark extended positioning; "
+                    "±2.0σ flags crowded regimes that often mean-revert within 4-8 weeks.]"
+                )
+            except Exception as exc:
+                st.caption(f":red[positioning chart failed to render: {exc!r}]")
+
 
 # ---- Tab 2 --------------------------------------------------------------
 with tab_depl:
     st.subheader("How fast is US crude inventory drawing down?")
+    # Badge reflects whether we're on the v2 API key path or keyless dnav fallback.
+    _eia_live = bool(os.environ.get("EIA_API_KEY"))
+    _badge = (
+        ":green-badge[:material/verified: EIA v2 API (keyed)]"
+        if _eia_live
+        else ":orange-badge[:material/public: EIA dnav (keyless)]"
+    )
     st.caption(
-        f"Source: **EIA (dnav, keyless)** via {inventory_res.source} · "
+        f"{_badge}  Source: **{inventory_res.source}** · "
         f"fetched {inventory_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')} · "
         f"[{inventory_res.source_url}]({inventory_res.source_url})"
     )
@@ -1236,8 +1344,14 @@ with tab_fleet:
         "US-flagged vessels (Jones Act), flags of convenience used by "
         "sanctions-sensitive cargoes, and sanctioned-country flags."
     )
+    # Badge: LIVE when aisstream.io websocket returned a real snapshot, else clearly-labeled sample.
+    if getattr(ais_res, "is_live", False):
+        _fleet_badge = f":green-badge[:material/sensors: LIVE AIS — {len(ais_res.frame):,} vessels · last 5 min]"
+    else:
+        _fleet_badge = ":orange-badge[:material/inventory_2: Labeled historical snapshot (Q3 2024)]"
     st.caption(
-        f"Source: **{ais_res.source}** · fetched {ais_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')}"
+        f"{_fleet_badge}  Source: **{ais_res.source}** · "
+        f"fetched {ais_res.fetched_at.strftime('%Y-%m-%d %H:%M:%SZ')}"
     )
     if ais_res.snapshot_notice:
         st.info(ais_res.snapshot_notice)
@@ -1502,6 +1616,7 @@ with tab_ai:
         floor_bbls=floor_bbls,
         coint_info=coint_info,
         crack_info=crack_info,
+        cftc_res=cftc_res,
     )
     ctx_obj.fleet_source = ais_res.source
 
