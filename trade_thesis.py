@@ -101,6 +101,7 @@ class ThesisContext:
     cushing_4w_slope_bbls_per_day: Optional[float] = None
     crack_321_usd: Optional[float] = None
     crack_corr_30d: Optional[float] = None
+    hours_to_next_eia: Optional[float] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
