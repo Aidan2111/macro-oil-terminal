@@ -79,15 +79,44 @@ All feature work follows the Superpowers-inspired workflow
 (brainstorm → design → worktree → plan → TDD → review → finish).
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`docs/workflow.md`](docs/workflow.md).
 
+## Data sources
+
+All four live provider paths are implemented; each is key-gated where a key is required. Priority order + graceful fallback is enforced in `providers/` so the UI never shows fake numbers.
+
+| Domain | Primary | Fallback | Env var | Signup |
+| --- | --- | --- | --- | --- |
+| Pricing (Brent/WTI) | yfinance (BZ=F, CL=F) | Twelve Data → Polygon | `TWELVEDATA_API_KEY`, `POLYGON_API_KEY` (both optional) | n/a |
+| Inventory | EIA **v2 JSON API** (`api.eia.gov/v2/seriesid/PET.*.W`) | EIA dnav HTML scrape (keyless) → FRED (keyed) | `EIA_API_KEY`, `FRED_API_KEY` (optional) | `https://www.eia.gov/opendata/register.php` |
+| AIS (tanker fleet) | aisstream.io websocket | Labeled Q3 2024 fleet-composition snapshot (never random) | `AISSTREAM_API_KEY` | `https://aisstream.io/apikeys` (GitHub OAuth) |
+| Positioning (CFTC COT) | `fut_disagg_txt_YYYY.zip` weekly disaggregated | n/a (no key needed) | — | n/a |
+
+Every provider exposes `health_check()`; the sidebar "Data sources (health)" expander renders green / amber / red dots with latency and notes.
+
+### Environment variables
+
+```
+AZURE_OPENAI_ENDPOINT       # Trade Thesis / AI Insights
+AZURE_OPENAI_KEY
+AZURE_OPENAI_DEPLOYMENT     # default / legacy deployment name
+AZURE_OPENAI_DEPLOYMENT_FAST  # "Quick read" mode
+AZURE_OPENAI_DEPLOYMENT_DEEP  # "Deep analysis" reasoning mode
+
+EIA_API_KEY                 # flips inventory to v2 JSON API
+FRED_API_KEY                # optional second-fallback
+AISSTREAM_API_KEY           # flips Tab 3 to live AIS
+TWELVEDATA_API_KEY          # optional pricing fallback
+POLYGON_API_KEY             # optional pricing fallback
+
+ALERT_SMTP_*                # optional email alerts on Z-score breach
+```
+
+Copy `.env.example` → `.env` for local dev. On Azure, set via `az webapp config appsettings set`.
+
 ## Notes
 
-- Pricing source: yfinance tickers `BZ=F` (Brent) and `CL=F` (WTI). If
-  the network is unreachable, a deterministic synthetic series stands in.
-- Inventory is simulated (no EIA/FRED key) with realistic long-run
-  drawdown + weekly noise + seasonal wave.
-- AIS is entirely mocked (500 rows) — weighted toward Panama, Liberia,
-  US, Iran, Russia flags with plausible lat/lon scatter around shipping
-  lane hotspots.
+- When `EIA_API_KEY` is unset, the Depletion tab shows an amber "EIA dnav (keyless)" badge; with the key it's green "EIA v2 API (keyed)".
+- When `AISSTREAM_API_KEY` is unset, Tab 3 shows a clearly-labeled Q3 2024 crude-tanker flag-composition snapshot (real historical weights, not random numbers). With the key it flips to a green "LIVE AIS — N vessels · last 5 min" badge.
+- The CFTC COT positioning chart on tab 1 is keyless; it updates every Friday at 3:30pm ET.
 - The WebGPU globe requires a browser that exposes `navigator.gpu`
   (Chrome 113+ / Edge 113+). It falls back to WebGL automatically.
 - **Not investment advice.**
