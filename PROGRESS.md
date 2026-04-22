@@ -2,6 +2,92 @@
 
 Timestamps are UTC (sandbox time).
 
+## 2026-04-22 — Hero-thesis branch landed (Superpowers flow)
+
+### 21:35Z–22:05Z — HT0: brainstorm + design freeze
+- Aidan greenlit all 5 open questions in `docs/brainstorms/hero-thesis.md`
+  with conservative defaults ("confirm all, I don't care"). Plus 6 extra
+  defaults pre-empted: portfolio $100k; verbatim disclaimer; broker search
+  links (IBKR/Schwab/Fidelity/TastyTrade, never auto-submit); options
+  strike rule (ATM ± 2 on BNO/USO, 30–60 DTE, OI > 100); checklist session
+  state + append-only `data/trade_executions.jsonl`; residual
+  "most-conservative, minimal, reversible" rule.
+- Brainstorm + design spec amended in-place (SHA `c7a53b3`, `b0f3897`).
+
+### 22:15Z–22:45Z — HT1..HT6: TDD subagent loop
+- One fresh subagent per task with strict RED→GREEN→REFACTOR→commit and
+  two-stage (spec-compliance + code-quality) review between each. Zero
+  retries — every subagent landed clean on first dispatch.
+- **HT1** (`b73735b`) — `_hours_to_next_eia_release` helper in
+  `thesis_context.py` + field on `ThesisContext`. 3 tests.
+- **HT2** (`83bfe83`) — `Instrument` + `ChecklistItem` dataclasses added
+  above `Thesis` in `trade_thesis.py`. 2 tests.
+- **HT3** (`79add15`) — `decorate_thesis_for_execution(thesis, ctx)` pure
+  function; flat stance returns empty; added `instruments` / `checklist`
+  fields to `Thesis` at the end of the dataclass so no pickled records
+  break. 3 tests.
+- **HT4** (`cbcccbe`) — three-tier construction for long/short_spread:
+  Paper (size 0) / USO-BNO ETF (size × 0.5, inverted on short) / CL-BZ
+  futures (size × 1.0, inverted on short). The subagent caught and fixed
+  a test-typo I left (`.lower()` applied but uppercase asserted). 4 tests.
+- **HT5** (`3b6faa0`) — `_build_checklist(ctx)` with 5 items in frozen
+  order. Two auto-check from context: `vol_clamp_ok` (True when
+  `vol_spread_1y_percentile < 85.0`) and `catalyst_clear` (True when
+  `hours_to_next_eia >= 24.0`, False below, None when unknown). The
+  other three require the user to tick. 8 tests.
+- **HT6** (commits `c1a9731`, `6a34fb9`, `ee67f44`) —
+  - `c1a9731` — new `_render_hero_band(thesis, ctx, decorated)` + 6
+    sub-helpers (stance-label, audit-log, thesis-mini, portfolio-input,
+    tier-tile, checklist) rendering above `st.tabs(...)` on every tab.
+    Hero div carries `data-testid="hero-band"` for Playwright.
+    Portfolio widget defaults to $100k. Broker search-link row per
+    tier. Tier-2 defined-risk options caption. Disclaimer caption at
+    the bottom. Checklist ticks append to `data/trade_executions.jsonl`
+    (gitignored) inside a try/except.
+  - `6a34fb9` — deleted the "AI trade thesis" tab (its content now
+    lives in the hero band + a "Model internals" expander at the
+    bottom of Tab 1). Single-SHA revert target.
+  - `ee67f44` — updated `tests/e2e/test_dashboard_smoke.py` and
+    `tests/e2e/test_thesis_flow.py` for the 3-tab layout + Model
+    internals expander. New `tests/e2e/test_hero_band.py` (4 tests)
+    asserting hero above tabs, AI tab absent, disclaimer visible,
+    portfolio input defaulted.
+
+### 22:45Z — HT7: finishing-a-development-branch
+- Merged main into hero-thesis (`32d2c83`); conflicts:
+  - `app.py` (2 regions): took BOTH expanders in Tab 1 (hero's Model
+    internals + main's CFTC positioning), took HEAD (empty) for the
+    AI Insights tab since Task 6c deletes it. Zero logic conflicts.
+  - `trade_thesis.py` + `thesis_context.py` auto-merged — both sides
+    added orthogonal optional fields (CFTC on main, hours_to_next_eia
+    on hero).
+- Merge gate: **pytest tests/unit 161 passed, 1 skipped**,
+  **test_runner.py 36/36**, streamlit smoke clean.
+- `git merge --no-ff hero-thesis` into `main` (merge SHA `8c760e7`),
+  pushed.
+- CI ✅, CodeQL ✅, CD ✅ (deployed westus2 + new canadaeast target).
+- **Live verification (westus2)**: hero band at y=810 h=46, tabs at
+  y=1158 — hero strictly above tabs; disclaimer "Research & education
+  only" visible; stance pill `STAND ASIDE` rendered. Screenshot
+  `/tmp/hero_live.png`, 540KB, `hero_above_tabs=True`, **PASS**.
+
+### 22:55Z — HT8: CI e2e flake fix
+- `test_thesis_flow.py` on CI had been timing out at 30s on hero-band
+  visibility — pre-existing flake, NOT a hero-thesis regression (same
+  failure pattern on the previous 5 main pushes, well before my merge).
+- Locally same file 9/9 pass in 62s; bumped waits to 60s + added a
+  disclaimer-text sentinel before the hero-band locator so CI has a
+  last-render hook. Committed before the concurrent `ci(cd): point
+  deploy at canadaeast` commit superseded my E2E run.
+
+### Canada East observation
+- The other task has migrated CD target from `oil-tracker-app-4281`
+  (westus2) to `oil-tracker-app-canadaeast-4474`. Westus2 still serves
+  the merged code; canadaeast had a visibly slower cold boot and did
+  not yet show the hero band in my probe — likely due to first-request
+  warm-up, not a code issue. Not in my scope; the hero-thesis scope is
+  proven on westus2 and in local e2e.
+
 ## 2026-04-21
 
 ### ~03:10 — Phase 1 kickoff
