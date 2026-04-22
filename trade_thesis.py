@@ -90,6 +90,18 @@ class ThesisContext:
     # User threshold (sidebar slider)
     user_z_threshold: float
 
+    # --- Added after initial release (optional — default to sentinels so
+    #     existing audit-log records still deserialise). All these let the
+    #     LLM cite richer structure without breaking the frozen schema.
+    coint_p_value: float = float("nan")
+    coint_verdict: str = "inconclusive"
+    coint_hedge_ratio: float = float("nan")
+    coint_half_life_days: Optional[float] = None
+    cushing_current_bbls: Optional[float] = None
+    cushing_4w_slope_bbls_per_day: Optional[float] = None
+    crack_321_usd: Optional[float] = None
+    crack_corr_30d: Optional[float] = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -261,7 +273,25 @@ def _apply_guardrails(raw: dict, ctx: ThesisContext) -> tuple[dict, list[str]]:
             "Suggested position size capped at 20% of capital by policy."
         )
 
-    # 4) Force disclaimer on
+    # 4) Cointegration-broken → clamp conviction ≤ 5 and mark caveat.
+    if getattr(ctx, "coint_verdict", "inconclusive") == "not_cointegrated":
+        try:
+            cur = float(raw.get("conviction_0_to_10", 0))
+        except Exception:
+            cur = 0.0
+        if cur > 5.0:
+            notes.append(
+                f"cointegration clamp: conviction {cur:.1f} → 5.0 "
+                f"(Brent-WTI fail Engle-Granger, p={getattr(ctx, 'coint_p_value', float('nan')):.3f})"
+            )
+            raw["conviction_0_to_10"] = 5.0
+        raw.setdefault("data_caveats", []).append(
+            "Brent-WTI currently fail the Engle-Granger cointegration test. "
+            "Mean-reversion sizing is downgraded — the 'snap-back' model is "
+            "on thin ice in this regime."
+        )
+
+    # 5) Force disclaimer on
     raw["disclaimer_shown"] = True
 
     return raw, notes

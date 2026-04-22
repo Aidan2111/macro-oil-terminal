@@ -46,6 +46,15 @@ def test_simulators_not_on_public_api():
     assert not hasattr(di, "generate_ais_mock")
 
 
+def test_cushing_series_present(eia_fixture):
+    import data_ingestion as di
+    res = di.fetch_inventory_data()
+    assert "Cushing_bbls" in res.frame.columns
+    last = float(res.frame["Cushing_bbls"].dropna().iloc[-1])
+    # Cushing sits in roughly 15–60M bbl range through the 2020s
+    assert 10e6 < last < 100e6
+
+
 def test_inventory_unavailable_raises(monkeypatch):
     """If both EIA and FRED fail, InventoryUnavailable propagates."""
     import providers.inventory as inv

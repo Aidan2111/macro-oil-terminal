@@ -46,6 +46,8 @@ from quantitative_models import (
 from webgpu_components import render_hero_banner, render_fleet_globe
 from alerts import maybe_send_zscore_alert
 from observability import configure as _obs_configure, span as _obs_span, trace_event
+from cointegration import engle_granger
+from crack_spread import compute_crack
 
 _AI_ACTIVE = _obs_configure()
 
@@ -265,6 +267,43 @@ def _backtest_cached(
     )
 
 
+@st.cache_data(show_spinner=False, ttl=60 * 60)
+def _cointegration_cached(price_fingerprint: str) -> dict:
+    """Engle-Granger on the full 5y Brent/WTI frame (cached hourly)."""
+    try:
+        res = engle_granger(prices["Brent"], prices["WTI"])
+        return res.to_dict()
+    except Exception as exc:
+        return {
+            "verdict": "inconclusive",
+            "p_value": float("nan"),
+            "adf_stat": float("nan"),
+            "hedge_ratio": float("nan"),
+            "alpha": float("nan"),
+            "half_life_days": None,
+            "is_cointegrated": False,
+            "is_weak": False,
+            "n_obs": 0,
+            "window": "full",
+            "error": repr(exc)[:160],
+        }
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60)
+def _crack_cached(price_fingerprint: str) -> dict:
+    """3-2-1 crack spread + 30d correlation vs Brent-WTI (cached hourly)."""
+    out = compute_crack(brent_wti_daily=prices)
+    return {
+        "ok": bool(out.ok),
+        "latest_crack_usd": float(out.latest_crack_usd),
+        "latest_rbob": float(out.latest_rbob_usd_per_gal),
+        "latest_ho": float(out.latest_ho_usd_per_gal),
+        "latest_wti": float(out.latest_wti_usd),
+        "corr_30d_vs_brent_wti": float(out.corr_30d_vs_brent_wti),
+        "note": out.note,
+    }
+
+
 def _fp(df: pd.DataFrame) -> str:
     return f"{len(df)}-{df.index[-1] if len(df) else 'empty'}"
 
@@ -272,6 +311,8 @@ def _fp(df: pd.DataFrame) -> str:
 spread_df = _spread_cached(_fp(prices), 90)
 depletion = _depletion_cached(_fp(inventory), floor_bbls, depletion_weeks)
 ais_with_cat, ais_agg = categorize_flag_states(ais_df)
+coint_info = _cointegration_cached(_fp(prices))
+crack_info = _crack_cached(_fp(prices))
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +490,78 @@ with tab_arb:
         ),
     )
 
+    # --- Cointegration + crack spread tiles (desk-quant foundation) ----
+    ct_col, hl_col, hr_col, crack_col = st.columns(4)
+    coint_verdict = coint_info.get("verdict", "inconclusive")
+    coint_p = coint_info.get("p_value", float("nan"))
+    verdict_badge = {
+        "cointegrated": ("STRONG", "normal"),
+        "weak": ("WEAK", "off"),
+        "not_cointegrated": ("BROKEN", "inverse"),
+        "inconclusive": ("—", "off"),
+    }.get(coint_verdict, ("—", "off"))
+    ct_col.metric(
+        "Cointegration strength",
+        verdict_badge[0],
+        delta=f"p={coint_p:.3f}" if coint_p == coint_p else "n/a",
+        delta_color=verdict_badge[1],
+        help=(
+            "Engle-Granger test on Brent vs WTI. STRONG (p<0.05) means "
+            "the pair is statistically well-behaved for mean-reversion "
+            "trading. BROKEN means the signal isn't valid right now."
+        ),
+    )
+    hl = coint_info.get("half_life_days")
+    hl_col.metric(
+        "Half-life to mean",
+        f"{hl:.1f} days" if hl else "—",
+        help=(
+            "How long it takes the Brent-WTI spread to decay half-way "
+            "back to its mean. Short half-life (<30d) = fast reverting; "
+            "long (>90d) = slow grind — size accordingly."
+        ),
+    )
+    hr = coint_info.get("hedge_ratio", float("nan"))
+    hr_col.metric(
+        "Dynamic hedge ratio",
+        f"{hr:.2f}" if hr == hr else "—",
+        help=(
+            "β from OLS Brent = α + β·WTI. A 1:1 hedge is naïve; the "
+            "current β tells you how many barrels of WTI you'd short per "
+            "barrel of Brent you're long to isolate the residual."
+        ),
+    )
+    crack_ok = crack_info.get("ok", False)
+    crack_val = crack_info.get("latest_crack_usd", float("nan"))
+    crack_corr = crack_info.get("corr_30d_vs_brent_wti", float("nan"))
+    crack_col.metric(
+        "3-2-1 crack spread",
+        f"${crack_val:,.2f}/bbl" if crack_ok and crack_val == crack_val else "n/a",
+        delta=f"corr30d {crack_corr:+.2f}" if crack_corr == crack_corr else "",
+        help=(
+            "(2·RBOB + HO)/3 − WTI, in USD/barrel — a proxy for refinery "
+            "margin. When crack is high, refiners lift WTI hard and the "
+            "Brent-WTI spread tends to compress. The correlation number "
+            "shows how tightly those moves track over the last 30 days."
+        ),
+    )
+
+    if not crack_ok:
+        st.caption(
+            f":grey[crack spread unavailable — {crack_info.get('note', 'upstream fetch failed')}]"
+        )
+    if coint_verdict == "not_cointegrated":
+        st.warning(
+            "⚠️  Brent & WTI fail the cointegration test right now "
+            f"(p={coint_p:.3f}). The dislocation signal below should be "
+            "treated as trend-follow rather than snap-back to normal."
+        )
+    elif coint_verdict == "weak":
+        st.info(
+            f"Cointegration weak (p={coint_p:.3f}) — thesis card will "
+            "size more conservatively than normal."
+        )
+
     if alert_on:
         alert_status = maybe_send_zscore_alert(latest_z, z_threshold, latest_spread)
         if alert_status is None:
@@ -599,6 +712,55 @@ with tab_arb:
             "Average trade return divided by its volatility, annualised. "
             "Rule of thumb: > 1 is good, > 2 is excellent, < 0.5 is noise. "
             "Technically the Sharpe ratio."
+        ),
+    )
+
+    # --- Extended risk suite (desk-grade) -------------------------------
+    rx_c1, rx_c2, rx_c3, rx_c4, rx_c5 = st.columns(5)
+    sortino = bt.get("sortino", 0.0)
+    rx_c1.metric(
+        "Downside-adj return" + (" (Sortino)" if show_advanced else ""),
+        f"{sortino:.2f}" if sortino != float("inf") else "∞",
+        help=(
+            "Like Sharpe, but only penalises downside volatility — ignores "
+            "good swings. If Sortino >> Sharpe, the strategy's noise is "
+            "mostly upside. Technically the Sortino ratio."
+        ),
+    )
+    calmar = bt.get("calmar", 0.0)
+    rx_c2.metric(
+        "Return vs drawdown" + (" (Calmar)" if show_advanced else ""),
+        f"{calmar:.2f}" if calmar != float("inf") else "∞",
+        help=(
+            "Annualised return ÷ biggest losing streak. A PM's single "
+            "favourite sizing metric: > 1 means you make more in a year "
+            "than you bled at the worst drawdown. Technically Calmar."
+        ),
+    )
+    rx_c3.metric(
+        "Worst-5% trade" + (" (VaR-95)" if show_advanced else ""),
+        f"${bt.get('var_95', 0.0):,.0f}",
+        help=(
+            "95% of historical trades did at least this well; the other "
+            "5% did worse. Per-trade value-at-risk on the PnL distribution."
+        ),
+    )
+    rx_c4.metric(
+        "Tail-5% avg" + (" (ES-95)" if show_advanced else ""),
+        f"${bt.get('es_95', 0.0):,.0f}",
+        help=(
+            "Average PnL across the worst 5% of historical trades — "
+            "expected shortfall. What to brace for on a bad day."
+        ),
+    )
+    roll = bt.get("rolling_12m_sharpe", float("nan"))
+    rx_c5.metric(
+        "12m rolling Sharpe",
+        f"{roll:.2f}" if roll == roll else "—",
+        help=(
+            "Trailing-year Sharpe on the trade PnL series. A sharp drop "
+            "versus the full-sample Sharpe means the strategy's edge has "
+            "decayed recently — re-examine before sizing up."
         ),
     )
 
@@ -810,6 +972,49 @@ with tab_depl:
             "1.0 = perfect line, 0 = noise. Technically R² of the regression."
         ),
     )
+
+    # --- Cushing delivery hub (the Brent-WTI spread driver) -------------
+    cushing_series = inventory.get("Cushing_bbls")
+    if cushing_series is not None and cushing_series.notna().any():
+        cu = cushing_series.dropna()
+        cu_current = float(cu.iloc[-1])
+        cu_tail = cu.tail(4)
+        if len(cu_tail) >= 2:
+            days = (cu_tail.index[-1] - cu_tail.index[0]).days or 1
+            cu_slope = (cu_tail.iloc[-1] - cu_tail.iloc[0]) / days
+        else:
+            cu_slope = 0.0
+
+        d1, d2, d3 = st.columns([2, 2, 3])
+        d1.metric(
+            "Cushing, OK stocks",
+            f"{cu_current/1e6:,.1f} million barrels",
+            help=(
+                "Weekly EIA series for Cushing, Oklahoma — the physical "
+                "delivery hub for the WTI contract. Dominant driver of "
+                "the WTI leg of the Brent-WTI spread."
+            ),
+        )
+        d2.metric(
+            "Cushing 4-week drawdown",
+            f"{cu_slope/1e3:+,.1f} thousand bbl/day",
+            help=(
+                "Linear slope of the last 4 weekly Cushing observations. "
+                "Falling Cushing → WTI firms → Brent-WTI spread compresses."
+            ),
+        )
+        # 5y percentile for quick context
+        if len(cu) > 50:
+            pct_rank = float((cu < cu_current).mean() * 100.0)
+            d3.metric(
+                "Cushing 5y percentile",
+                f"{pct_rank:.0f}th",
+                help=(
+                    "Where today's Cushing stock level sits in its own "
+                    "5-year distribution. Above 80th = pipeline-out-stressed; "
+                    "below 20th = WTI well-bid."
+                ),
+            )
 
     fig2 = go.Figure()
 
@@ -1157,6 +1362,8 @@ with tab_ai:
         ais_with_cat=ais_with_cat,
         z_threshold=z_threshold,
         floor_bbls=floor_bbls,
+        coint_info=coint_info,
+        crack_info=crack_info,
     )
     ctx_obj.fleet_source = ais_res.source
 

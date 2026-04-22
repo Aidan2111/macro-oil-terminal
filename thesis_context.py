@@ -75,6 +75,8 @@ def build_context(
     ais_with_cat: pd.DataFrame,
     z_threshold: float,
     floor_bbls: float,
+    coint_info: dict | None = None,
+    crack_info: dict | None = None,
 ) -> ThesisContext:
     latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
     latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
@@ -125,6 +127,22 @@ def build_context(
     vol_spread_series = _realized_vol_series_pct(spread_series, 30).tail(252).dropna()
     vol_percentile = _percentile_rank(vol_spread_series, vol_spread) if not vol_spread_series.empty else 50.0
 
+    # Cointegration + crack — merge optional dicts into local vars
+    coint_info = coint_info or {}
+    crack_info = crack_info or {}
+    cushing_series = None
+    try:
+        cushing_series = inventory_res.frame.get("Cushing_bbls") if inventory_res is not None else None
+    except Exception:
+        cushing_series = None
+    cushing_current = float(cushing_series.dropna().iloc[-1]) if cushing_series is not None and cushing_series.notna().any() else None
+    cushing_4w_slope = None
+    if cushing_series is not None and cushing_series.notna().sum() > 3:
+        cu = cushing_series.dropna().tail(4)
+        if len(cu) >= 2:
+            days = max(1, (cu.index[-1] - cu.index[0]).days)
+            cushing_4w_slope = float((cu.iloc[-1] - cu.iloc[0]) / days)
+
     # Calendar
     today = pd.Timestamp.utcnow().tz_localize(None).normalize()
     eia_next = _next_wednesday(today).strftime("%Y-%m-%d")
@@ -171,4 +189,18 @@ def build_context(
         session_is_open=bool(session_open),
         weekend_or_holiday=bool(weekend),
         user_z_threshold=float(z_threshold),
+        coint_p_value=float(coint_info.get("p_value", float("nan"))) if coint_info else float("nan"),
+        coint_verdict=str(coint_info.get("verdict", "inconclusive")) if coint_info else "inconclusive",
+        coint_hedge_ratio=float(coint_info.get("hedge_ratio", float("nan"))) if coint_info else float("nan"),
+        coint_half_life_days=(float(coint_info.get("half_life_days"))
+                              if coint_info and coint_info.get("half_life_days") is not None
+                              else None),
+        cushing_current_bbls=cushing_current,
+        cushing_4w_slope_bbls_per_day=cushing_4w_slope,
+        crack_321_usd=(float(crack_info.get("latest_crack_usd"))
+                       if crack_info and crack_info.get("latest_crack_usd") == crack_info.get("latest_crack_usd")
+                       else None),
+        crack_corr_30d=(float(crack_info.get("corr_30d_vs_brent_wti"))
+                        if crack_info and crack_info.get("corr_30d_vs_brent_wti") == crack_info.get("corr_30d_vs_brent_wti")
+                        else None),
     )

@@ -25,6 +25,8 @@ import requests
 _BASE = "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?n=pet&s={series}&f=W"
 _SERIES_COMMERCIAL = "WCESTUS1"
 _SERIES_SPR = "WCSSTUS1"
+# Cushing, OK delivery hub — primary driver of the WTI leg of the Brent-WTI spread.
+_SERIES_CUSHING = "W_EPC0_SAX_YCUOK_MBBL"
 
 
 def _fetch_dnav(series: str, timeout: int = 15) -> pd.Series:
@@ -94,28 +96,51 @@ def _fetch_dnav(series: str, timeout: int = 15) -> pd.Series:
     return series_obj * 1_000.0
 
 
-def fetch_inventory(start: str | None = "2018-01-01") -> pd.DataFrame:
-    """Return a DataFrame with columns Commercial_bbls, SPR_bbls, Total_Inventory_bbls.
+def fetch_cushing(start: str | None = "2018-01-01") -> pd.Series:
+    """Weekly Cushing, OK crude stocks (barrels). Keyless EIA dnav.
 
-    Both series come from the EIA dnav LeafHandler endpoint — no API key.
+    Cushing is the physical delivery point for the WTI contract. Its
+    utilisation is the dominant driver of the WTI leg of the Brent-WTI
+    spread — far more predictive than total US inventory.
+    """
+    s = _fetch_dnav(_SERIES_CUSHING)
+    if start is not None:
+        try:
+            s = s[s.index >= pd.Timestamp(start)]
+        except Exception:
+            pass
+    s.name = "Cushing_bbls"
+    return s
+
+
+def fetch_inventory(start: str | None = "2018-01-01") -> pd.DataFrame:
+    """Return a DataFrame with columns Commercial_bbls, SPR_bbls, Cushing_bbls, Total_Inventory_bbls.
+
+    Commercial, SPR, and Cushing all come from the EIA dnav LeafHandler
+    endpoint — no API key.
     """
     commercial = _fetch_dnav(_SERIES_COMMERCIAL)
     try:
         spr = _fetch_dnav(_SERIES_SPR)
     except Exception:
         spr = pd.Series(dtype=float)
+    try:
+        cushing = _fetch_dnav(_SERIES_CUSHING)
+    except Exception:
+        cushing = pd.Series(dtype=float)
 
     df = pd.concat(
         {
             "Commercial_bbls": commercial,
             "SPR_bbls": spr,
+            "Cushing_bbls": cushing,
         },
         axis=1,
     )
-    # Align weekly Fridays; SPR may not align perfectly -> ffill
     df = df.sort_index()
     df["SPR_bbls"] = df["SPR_bbls"].ffill()
     df["Commercial_bbls"] = df["Commercial_bbls"].ffill()
+    df["Cushing_bbls"] = df["Cushing_bbls"].ffill()
 
     if start is not None:
         try:
@@ -124,7 +149,6 @@ def fetch_inventory(start: str | None = "2018-01-01") -> pd.DataFrame:
             pass
 
     df["Total_Inventory_bbls"] = df["Commercial_bbls"].fillna(0) + df["SPR_bbls"].fillna(0)
-    # Drop leading rows where commercial is still NaN
     df = df.dropna(subset=["Commercial_bbls"])
     df.index.name = "Date"
     return df

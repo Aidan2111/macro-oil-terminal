@@ -27,10 +27,20 @@ def compute_spread_zscore(prices: pd.DataFrame, window: int = 90) -> pd.DataFram
     The Z-score is ``(spread - rolling_mean) / rolling_std`` over ``window``
     trading days. Rows with a still-NaN Z (first ``window-1`` observations)
     are retained so the user can see the warm-up period.
+
+    Also computes an **EWMA-of-squared-residuals** volatility proxy
+    (λ=0.94, the RiskMetrics default) and a *vol-normalised* dislocation
+    ``Z_Vol`` alongside the classic rolling-std version. ``Z_Vol`` is
+    what a desk quant would call "the real sigma" — it reacts to regime
+    change faster than the fixed-window rolling std.
     """
     if prices is None or prices.empty:
         return pd.DataFrame(
-            columns=["Brent", "WTI", "Spread", "Spread_Mean", "Spread_Std", "Z_Score"]
+            columns=[
+                "Brent", "WTI", "Spread",
+                "Spread_Mean", "Spread_Std", "Z_Score",
+                "Spread_EwmaStd", "Z_Vol",
+            ]
         )
 
     df = prices.copy()
@@ -40,10 +50,20 @@ def compute_spread_zscore(prices: pd.DataFrame, window: int = 90) -> pd.DataFram
     df["Spread"] = df["Brent"] - df["WTI"]
     df["Spread_Mean"] = df["Spread"].rolling(window=window, min_periods=max(5, window // 3)).mean()
     df["Spread_Std"] = df["Spread"].rolling(window=window, min_periods=max(5, window // 3)).std()
-    # Guard against divide-by-zero
     std_safe = df["Spread_Std"].replace(0, np.nan)
     df["Z_Score"] = (df["Spread"] - df["Spread_Mean"]) / std_safe
     df["Z_Score"] = df["Z_Score"].replace([np.inf, -np.inf], np.nan)
+
+    # EWMA variance on residuals (spread − rolling mean). λ=0.94 is the
+    # RiskMetrics convention for daily equity returns; it's reasonable for
+    # a daily spread too.
+    resid = df["Spread"] - df["Spread_Mean"]
+    ewm_var = (resid ** 2).ewm(alpha=1 - 0.94, min_periods=10, adjust=False).mean()
+    df["Spread_EwmaStd"] = np.sqrt(ewm_var)
+    ewm_std_safe = df["Spread_EwmaStd"].replace(0, np.nan)
+    df["Z_Vol"] = (df["Spread"] - df["Spread_Mean"]) / ewm_std_safe
+    df["Z_Vol"] = df["Z_Vol"].replace([np.inf, -np.inf], np.nan)
+
     return df
 
 
@@ -255,6 +275,13 @@ def backtest_zscore_meanreversion(
         "avg_days_held": 0.0,
         "avg_pnl_per_bbl": 0.0,
         "equity_curve": pd.DataFrame(columns=["Date", "cum_pnl_usd"]),
+        "max_drawdown_usd": 0.0,
+        "sharpe": 0.0,
+        "sortino": 0.0,
+        "calmar": 0.0,
+        "var_95": 0.0,
+        "es_95": 0.0,
+        "rolling_12m_sharpe": float("nan"),
     }
 
     if spread_df is None or spread_df.empty:
@@ -327,6 +354,41 @@ def backtest_zscore_meanreversion(
             (pnl_series.mean() / pnl_series.std(ddof=0)) * np.sqrt(trades_per_year)
         ) if pnl_series.std(ddof=0) > 0 else 0.0
 
+        # --- Desk-grade risk metrics (Sortino, Calmar, VaR-95, ES-95,
+        # rolling-12m Sharpe on trade PnL series).
+        # Downside-only stdev (Sortino denominator): stdev of negative returns
+        neg = pnl_series[pnl_series < 0]
+        downside_std = float(neg.std(ddof=0)) if len(neg) > 1 else 0.0
+        sortino = float(
+            (pnl_series.mean() / downside_std) * np.sqrt(trades_per_year)
+        ) if downside_std > 0 else float("inf") if pnl_series.mean() > 0 else 0.0
+
+        # Calmar = annualised total return / |max drawdown|
+        years = max(
+            1.0 / 12.0,
+            (tdf["exit_date"].max() - tdf["entry_date"].min()).days / 365.25,
+        )
+        ann_return = total / years
+        calmar = float(ann_return / abs(max_dd)) if max_dd < 0 else float("inf")
+
+        # Historical VaR-95 / ES-95 on per-trade PnL (5% worst trades)
+        sorted_pnl = pnl_series.sort_values().reset_index(drop=True)
+        cutoff_idx = max(0, int(0.05 * len(sorted_pnl)) - 1)
+        var95 = float(sorted_pnl.iloc[cutoff_idx]) if len(sorted_pnl) else 0.0
+        es95 = float(sorted_pnl.iloc[: cutoff_idx + 1].mean()) if cutoff_idx >= 0 and len(sorted_pnl) else 0.0
+
+        # Rolling 12-month Sharpe (window = trades fitting in ~365 days)
+        rolling_sharpe_last = float("nan")
+        if len(tdf) >= 6:
+            tdf_sorted = tdf.sort_values("exit_date").reset_index(drop=True)
+            pnl_by_date = tdf_sorted["pnl_usd"]
+            w = max(3, int(round(trades_per_year)))
+            rolling_mean = pnl_by_date.rolling(w).mean()
+            rolling_std = pnl_by_date.rolling(w).std(ddof=0)
+            rolling_sharpe = (rolling_mean / rolling_std.replace(0, np.nan)) * np.sqrt(trades_per_year)
+            if rolling_sharpe.dropna().shape[0]:
+                rolling_sharpe_last = float(rolling_sharpe.dropna().iloc[-1])
+
         out.update(
             {
                 "trades": tdf.sort_values("entry_date").reset_index(drop=True),
@@ -338,10 +400,20 @@ def backtest_zscore_meanreversion(
                 "equity_curve": equity.reset_index(drop=True),
                 "max_drawdown_usd": max_dd,
                 "sharpe": sharpe,
+                "sortino": sortino,
+                "calmar": calmar,
+                "var_95": var95,
+                "es_95": es95,
+                "rolling_12m_sharpe": rolling_sharpe_last,
             }
         )
     else:
-        out.update({"max_drawdown_usd": 0.0, "sharpe": 0.0})
+        out.update({
+            "max_drawdown_usd": 0.0, "sharpe": 0.0,
+            "sortino": 0.0, "calmar": 0.0,
+            "var_95": 0.0, "es_95": 0.0,
+            "rolling_12m_sharpe": float("nan"),
+        })
 
     return out
 

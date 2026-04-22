@@ -1,32 +1,60 @@
-test: pytest unit suite (71 tests, 73.5% cov) + Playwright e2e (13 tests)
+feat(quant): top-5 desk review items — cointegration, GARCH, Cushing, crack, extended risk
 
-Unit suite (tests/unit/, 71 tests @ 73.52% branch coverage):
-* conftest with autouse env-scrub, EIA fixture monkeypatch, synth prices,
-  sample ThesisContext + backtest fixtures.
-* Full coverage of data_ingestion (real EIA via fixture + placeholder
-  notice + InventoryUnavailable propagation), quantitative_models
-  (spread, depletion, backtest incl. slippage/commission monotonicity,
-  walk-forward, Monte Carlo percentiles, regime breakdown),
-  trade_thesis (schema, deployment resolver, guardrails,
-  fingerprint, materiality, diffs, streaming handler via mocked
-  AzureOpenAI, stream-fallback-to-sync, malformed-JSON retry),
-  thesis_context helpers + end-to-end build_context, provider impls
-  (_yfinance happy+sad, _fred keyed, _aisstream helpers + require-key),
-  observability no-op safety, webgpu template placeholders, input
-  clamp, workflow files, alerts.
+New modules:
+* cointegration.py — Engle-Granger test + ADF on residual + AR(1)-derived
+  half-life. Returns "cointegrated" / "weak" / "not_cointegrated" /
+  "inconclusive" + hedge ratio (β) + alpha. rolling_engle_granger()
+  slides the test for structural-break spotting.
+* vol_models.py — GARCH(1,1) wrapper via `arch`. Defensive: returns
+  ok=False on fit failure or short series, never raises. Exposes
+  conditional σ, Z, persistence (α+β).
+* crack_spread.py — pulls RB=F + HO=F + CL=F via yfinance, computes
+  3-2-1 crack in USD/bbl (2·RBOB + HO)/3 × 42 − WTI, plus 30d rolling
+  correlation vs Brent-WTI. Graceful ok=False on offline.
 
-E2E suite (tests/e2e/, 13 Playwright tests — 84s green locally):
-* Session-scope headless Streamlit on free port with /_stcore/health wait.
-* Dashboard smoke: title, all 4 plain-language tabs, ticker strip,
-  Dislocation-dominates-Z-score, AI tab body, "What would make us wrong",
-  URL query-param roundtrip.
-* Thesis flow: mode toggle shows gpt-4o + o4-mini, Regenerate button,
-  Recent theses expander, Things-to-keep-in-mind, disclaimer, context
-  expander exposes snapshot fields.
+quantitative_models.py:
+* compute_spread_zscore now emits Spread_EwmaStd + Z_Vol alongside the
+  rolling-window Z_Score. λ=0.94 RiskMetrics EWMA — reacts to regime
+  change faster than the rolling std.
+* backtest_zscore_meanreversion now returns sortino, calmar, var_95,
+  es_95, rolling_12m_sharpe. Empty-frame branch seeds all keys to 0.
 
-CI split (.github/workflows):
-* ci.yml now runs pytest (3.11 + 3.12 matrix with coverage.xml artifact)
-  + streamlit-smoke + legacy test_runner.py in parallel.
-* e2e.yml new job: Playwright Chromium + pytest tests/e2e.
+providers/_eia.py:
+* Pulls WCESTCUS1 (Cushing, OK) as a third series, now part of the
+  inventory frame. Cushing is the physical delivery hub for WTI and is
+  the dominant driver of the Brent-WTI spread.
 
-pyproject.toml: pytest + coverage config (70% fail_under).
+trade_thesis.py / thesis_context.py:
+* ThesisContext adds coint_p_value, coint_verdict, coint_hedge_ratio,
+  coint_half_life_days, cushing_current_bbls, cushing_4w_slope,
+  crack_321_usd, crack_corr_30d. All optional (default NaN/None) so
+  older audit-log records still load.
+* build_context now takes coint_info + crack_info kwargs, computes
+  Cushing slope over trailing 4 weekly observations.
+* _apply_guardrails adds a fourth clamp: when Brent-WTI fails
+  Engle-Granger (verdict == "not_cointegrated"), conviction is clamped
+  at 5/10 and a caveat is appended. Exactly the "don't trade mean
+  reversion when the pair isn't cointegrated" guardrail the desk wanted.
+
+app.py (Tab 1 + Tab 2):
+* Cointegration tile row: strength badge + half-life + hedge ratio +
+  3-2-1 crack tile + 30d corr delta.
+* Amber warning when verdict=="not_cointegrated", blue info when "weak".
+* Cushing tile row on the depletion tab: level + 4-week drawdown +
+  5-year percentile.
+* Extended risk row below the backtest card: Sortino, Calmar, VaR-95,
+  ES-95, 12m rolling Sharpe — each with a plain-language label and
+  the technical name exposed via the Advanced toggle.
+
+Tests:
+* 6 cointegration tests (synthetic cointegrated / independent random
+  walks / short-series inconclusive / to_dict shape / rolling /
+  positive half-life).
+* 4 GARCH tests (synthetic GARCH recoverable persistence / too-short
+  returns ok=False / zero input graceful / Z_Vol emitted).
+* 3 crack-spread tests (offline → ok=False / mocked happy path with
+  correlation finite / no-brent-wti panel path).
+* Cushing tile assertion + empty-backtest risk zeroes.
+* Cointegration guardrail: broken verdict clamps conviction ≤ 5 and
+  logs the calibration note.
+* **89/89 unit tests green, smoke test green.**

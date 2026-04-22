@@ -62,6 +62,8 @@ def eia_fixture(monkeypatch):
             return _R((fixtures_dir / "eia_WCESTUS1.html").read_text())
         if "WCSSTUS1" in url:
             return _R((fixtures_dir / "eia_WCSSTUS1.html").read_text())
+        if "W_EPC0_SAX_YCUOK_MBBL" in url:
+            return _R((fixtures_dir / "eia_W_EPC0_SAX_YCUOK_MBBL.html").read_text())
         return original(url, *args, **kwargs)
 
     monkeypatch.setattr(_requests, "get", _patched)

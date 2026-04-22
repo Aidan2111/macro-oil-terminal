@@ -62,6 +62,19 @@ def test_guardrail_conviction_clamp_on_weak_backtest(sample_ctx):
     assert any("calibration" in n.lower() for n in notes)
 
 
+def test_guardrail_cointegration_broken_clamps_conviction(sample_ctx):
+    from trade_thesis import _apply_guardrails, _rule_based_fallback
+    ctx_broken = sample_ctx.__class__(
+        **{**sample_ctx.__dict__, "coint_verdict": "not_cointegrated", "coint_p_value": 0.35}
+    )
+    raw = _rule_based_fallback(ctx_broken)
+    raw["conviction_0_to_10"] = 8.5
+    out, notes = _apply_guardrails(raw, ctx_broken)
+    assert out["conviction_0_to_10"] <= 5.0
+    assert any("cointegration" in n.lower() for n in notes)
+    assert any("cointegration" in c.lower() for c in out["data_caveats"])
+
+
 def test_guardrail_sizing_cap_at_20(sample_ctx):
     from trade_thesis import _apply_guardrails, _rule_based_fallback
     raw = _rule_based_fallback(sample_ctx)
