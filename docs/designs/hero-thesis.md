@@ -1,7 +1,9 @@
 # Hero Trade Thesis + Executable Instruments — Design Spec
 
-> **Status:** DRAFT — pending Aidan's answers to the five open questions in
-> `docs/brainstorms/hero-thesis.md`. Review time target: 5 minutes.
+> **Status:** APPROVED (2026-04-22). All five brainstorm questions
+> resolved with conservative defaults; see the bottom of the brainstorm
+> for the full answer set. Implementation proceeds per
+> `docs/plans/hero-thesis.md`.
 
 ## Goal
 
@@ -19,15 +21,36 @@ a tier appropriate to their mandate → run the checklist → act.*
    - Liveness annotation (already-shipped, unchanged).
    - Thesis card: stance pill, conviction bar, time-horizon chip, materiality
      badge, 2-3 sentence summary, "why this now" bullet list.
-   - Three instrument tiles (tier 1/2/3), horizontally arranged.
+   - **Portfolio sizing widget** — one `st.number_input` labelled "Portfolio
+     (USD)", default **$100,000**, stored in
+     `st.session_state["hero_portfolio_usd"]`. Every tier-tile dollar
+     figure multiplies against this input.
+   - Three instrument tiles (tier 1/2/3), horizontally arranged. Each tile
+     renders: tier badge, instrument name, symbol (where applicable), the
+     `rationale` copy, the suggested position size as both a % of capital
+     *and* an absolute USD using the portfolio widget above, and a small
+     row of four broker search-links (IBKR / Schwab / Fidelity /
+     TastyTrade) that linkify to each broker's own symbol lookup.
+     The Tier-2 tile additionally renders a single static caption with the
+     defined-risk options pattern: "Defined-risk alt: ATM ± 2 strikes on
+     BNO/USO, 30–60 DTE, OI > 100." No live options chain — intentional YAGNI.
    - Pre-trade checklist — 5 items, checkboxes, stateful within the session.
+     Each tick appends one row to `data/trade_executions.jsonl` (gitignored):
+     `{ts_utc, thesis_fingerprint, checklist_key, checked_by_user,
+     auto_check_value}`.
+   - **Disclaimer caption** immediately below the hero, always visible:
+     *"Research & education only. Not personalized financial advice.
+     Futures and options can lose more than the initial investment. Past
+     performance does not predict future results. Consult a licensed
+     advisor before executing. Data may be 15-min delayed."*
 2. **Tabs remain below** the hero. No tab is renamed in this change.
 3. **"AI Insights" tab is deleted.** Its content has been hero for several
-   months; the tab is redundant. (Confirms brainstorm question 4.)
-4. **Materiality gating:** when the thesis is `stance="flat"` AND
-   materiality badge is "low", the hero shows a flat card ("No tradeable
-   dislocation today. Next EIA release: X.") and instruments + checklist are
-   hidden. Liveness annotation still renders. (Confirms brainstorm question 5.)
+   months; the tab is redundant. Lands in its own commit inside Task 6 so
+   the deletion is a clean single-SHA revert target.
+4. **Materiality gating:** when the thesis is `stance="flat"` the hero
+   still renders but instruments + checklist are hidden. Flat card reads:
+   *"No tradeable dislocation today. Next EIA release in Xh."* Liveness
+   annotation still renders. The disclaimer caption still renders.
 
 ### Schema (`trade_thesis.py`)
 
@@ -118,28 +141,37 @@ that takes an existing `Thesis` + a `ThesisContext` and returns a copy with
 
 ## Out of scope (YAGNI)
 
-- Broker deeplinks and TradingView handoff (brainstorm question 3 picked
-  inline-display-only).
+- **Actual broker order submission** — the four broker "links" are
+  search/lookup anchors only, never auto-submit. Any change to that
+  policy is a separate design.
+- **Live options-chain pull** — the Tier-2 defined-risk line is a
+  static pattern reminder. Pulling real options data is its own
+  provider + cost conversation.
+- **TradingView handoff / clipboard ticker copy** — not in scope.
 - Checklist items that require external data we don't already have.
 - A/B testing between hero-band and the old tab layout.
 - User-configurable checklist items.
-- Persisting checklist state across sessions (session-only is fine).
+- Persisting checklist state across browser sessions (session-only is
+  fine; the append-only `trade_executions.jsonl` is the durable record).
 
-## Open items from brainstorm
+## Resolved items (from brainstorm)
 
-Three answers are required before the plan is sliced:
+All five brainstorm questions resolved 2026-04-22 with conservative
+defaults. The full answer set — including the six extra defaults Aidan
+pre-empted (portfolio size, disclaimer wording, broker deep-links,
+options-tier strike rule, checklist persistence scope, and a residual
+"most conservative, minimal, reversible" rule) — lives at the bottom
+of `docs/brainstorms/hero-thesis.md` under "Status: RESOLVED".
 
-1. **Tier 2 instrument:** ETF pair (USO/BNO) proposed. Aidan may pick
-   calendar spread instead, or both.
-2. **Checklist's five items:** listed above. Aidan may swap any.
-3. **Click-through:** inline-display only. Aidan may scope in a broker
-   deeplink.
-
-Questions 4 (delete AI Insights) and 5 (materiality gating of instruments)
-are answered above; Aidan may override.
+Applied to this spec above: portfolio sizing widget, disclaimer
+caption, broker search-link row on each tier, Tier-2 defined-risk
+options pattern caption, ETF-pair-as-default with a calendar-spread
+note line, single-commit deletion of the "AI Insights" tab inside
+Task 6, and the `trade_executions.jsonl` append-only log hook on
+every checklist tick.
 
 ## Review
 
-Aidan reviews this spec. Questions answered, changes applied, spec
-re-committed. Then the plan at `docs/plans/hero-thesis.md` freezes and
-implementation begins (TDD, one task at a time).
+This spec is frozen. Implementation proceeds per
+`docs/plans/hero-thesis.md`, one task at a time, TDD per Superpowers
+`subagent-driven-development`.
