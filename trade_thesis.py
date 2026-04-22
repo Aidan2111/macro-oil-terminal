@@ -247,12 +247,31 @@ class Thesis:
     latency_s: float = 0.0
     streamed: bool = False
     retried: bool = False
+    instruments: list = field(default_factory=list)
+    checklist: list = field(default_factory=list)
 
     def one_line(self) -> str:
         stance = self.raw.get("stance", "flat")
         conv = float(self.raw.get("conviction_0_to_10", 0.0))
         hz = int(self.raw.get("time_horizon_days", 0))
         return f"{stance} · {conv:.1f}/10 · {hz}d · {self.mode}"
+
+
+def decorate_thesis_for_execution(thesis: Thesis, ctx: ThesisContext) -> Thesis:
+    """Return a deepcopy of `thesis` with executable decorations attached.
+
+    The decoration — `instruments` and `checklist` — is a pure function
+    of `(thesis, ctx)` so it can be applied anywhere without touching
+    the LLM path. This task handles only the `stance == "flat"` case:
+    no instruments, no checklist. Non-flat decoration lands in later
+    tasks.
+    """
+    from copy import deepcopy
+    out = deepcopy(thesis)
+    if (out.raw or {}).get("stance") == "flat":
+        out.instruments = []
+        out.checklist = []
+    return out
 
 
 # ---------------------------------------------------------------------------
