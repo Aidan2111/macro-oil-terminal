@@ -741,15 +741,37 @@ def _render_checklist(checklist, thesis_fingerprint: str) -> None:
 def _render_hero_band(thesis, ctx, decorated) -> None:
     """Render the hero thesis band above the tabs (every page, every tab).
 
-    Emits an outermost div with data-testid="hero-band" so Playwright can
-    find it by role. Flat-with-no-instruments collapses the tier row +
-    checklist into a single caption but still renders the div and the
-    portfolio input + disclaimer.
+    The outermost element is a ``<div data-testid="hero-band">`` emitted
+    via ``st.markdown(unsafe_allow_html=True)``. DOMPurify preserves the
+    ``data-testid`` attribute so the Playwright role-based locator in
+    ``tests/e2e/test_hero_band.py`` resolves it. The same markdown block
+    includes a visible header stripe so the element has non-zero bounding
+    box dimensions (a requirement for Playwright ``to_be_visible``).
     """
-    # Open the hero wrapper — the e2e test asserts on this data-testid.
-    st.markdown('<div data-testid="hero-band">', unsafe_allow_html=True)
+    # The visible wrapper stripe — emitted as a single self-contained HTML
+    # block so Streamlit doesn't close the div prematurely.
+    stance_for_header = "flat"
+    if decorated is not None:
+        stance_for_header = (decorated.raw or {}).get("stance", "flat")
+    header_label, header_color = _hero_stance_label(stance_for_header)
+    st.markdown(
+        f'<div data-testid="hero-band" '
+        f'style="border-left:4px solid {header_color}; '
+        f'background:#111821; padding:10px 14px; margin:6px 0 10px 0; '
+        f'border-radius:6px; color:#e7ecf3;">'
+        f'<span style="background:{header_color}; color:#0b0f14; '
+        f'padding:4px 10px; border-radius:4px; font-weight:700; '
+        f'letter-spacing:1px; font-size:0.85rem;">HERO &middot; {header_label}</span>'
+        f'<span style="margin-left:10px; color:#c7cdd4; font-size:0.85rem;">'
+        f"Today's thesis, sizing, and pre-trade checklist.</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
-    with st.container():
+    # Body — rendered inside a regular container immediately below the
+    # wrapper div. The wrapper div above is what the e2e test asserts on;
+    # the container below holds the interactive widgets.
+    with st.container(key="hero-band-body"):
         if thesis is None or decorated is None:
             # Initial load before the LLM call fires. Show a placeholder flat
             # hero so the Playwright test's hero-band selector still resolves.
@@ -761,7 +783,6 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
             )
             _render_portfolio_input()
             st.caption(_HERO_DISCLAIMER)
-            st.markdown('</div>', unsafe_allow_html=True)
             return
 
         raw = decorated.raw or {}
@@ -788,9 +809,6 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
             )
 
         st.caption(_HERO_DISCLAIMER)
-
-    # Close the hero wrapper.
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # Build a pre-tabs thesis + decoration so the hero band can render above
@@ -827,11 +845,22 @@ try:
     _hero_decorated = _decorate(_hero_thesis, _hero_ctx)
     _render_hero_band(_hero_thesis, _hero_ctx, _hero_decorated)
 except Exception as _hero_exc:
-    # Never let the hero band break the rest of the app.
-    st.markdown('<div data-testid="hero-band">', unsafe_allow_html=True)
-    st.caption(f"Hero band unavailable: {_hero_exc!r}")
+    # Never let the hero band break the rest of the app. Emit a compact
+    # but still-visible hero wrapper so the e2e selector still resolves.
+    st.markdown(
+        '<div data-testid="hero-band" '
+        'style="border-left:4px solid #95a5a6; background:#111821; '
+        'padding:10px 14px; margin:6px 0 10px 0; border-radius:6px; '
+        'color:#e7ecf3;">'
+        '<span style="background:#95a5a6; color:#0b0f14; padding:4px 10px; '
+        'border-radius:4px; font-weight:700; letter-spacing:1px; '
+        'font-size:0.85rem;">HERO &middot; UNAVAILABLE</span>'
+        f'<span style="margin-left:10px; color:#c7cdd4; font-size:0.85rem;">'
+        f"{_hero_exc!r}</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     st.caption(_HERO_DISCLAIMER)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
