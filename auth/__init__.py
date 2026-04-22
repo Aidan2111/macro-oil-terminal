@@ -1,5 +1,17 @@
 """Authentication + user-store surface for Macro Oil Terminal (P1.1)."""
 
-from auth.user import InMemoryUserStore, User, UserStore
+from auth.user import (
+    InMemoryUserStore,
+    TableStorageUserStore,
+    User,
+    UserStore,
+    UserStoreError,
+)
 
-__all__ = ["InMemoryUserStore", "User", "UserStore"]
+__all__ = [
+    "InMemoryUserStore",
+    "TableStorageUserStore",
+    "User",
+    "UserStore",
+    "UserStoreError",
+]
