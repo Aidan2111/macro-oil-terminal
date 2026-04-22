@@ -585,5 +585,55 @@ The warm path — the everyday user experience — is **11x faster to interactiv
   gh secret delete AZURE_SUBSCRIPTION_ID
   ```
 
+---
+
+## 2026-04-22
+
+### 22:22 UTC — Azure region migration: westus2 → canadaeast (for NJ co-lo proximity)
+
+**Why:** oil-tracker-app-4281 was in westus2 (~70ms RTT to Secaucus, NJ / Equinix NY2/NY5). Prior quota scan had confirmed `eastus`, `eastus2`, `northcentralus`, `southcentralus` all at 0 App Service quota on this sub. This task extended the scan to Canada regions and `centralus`, picked the closest-to-NJ region with usable quota, migrated infra, and re-pointed CD.
+
+**Quota scan outcome:**
+- The documented `/locations/<region>/usages` ARM endpoint returned `Method Not Allowed` across all api-versions (2023-01-01, 2023-12-01, 2024-04-01, etc.) and across regions including the known-working westus2 — endpoint appears non-functional on this subscription. Cross-checked via `az appservice list-locations --sku B1 --linux-workers-enabled` which listed Canada Central, Canada East, Central US, North Central US, South Central US, West Central US as *capable* of B1 Linux — but capability ≠ quota. Fell back to the pragmatic probe: attempt `az appservice plan create`; on quota exhaustion the ARM call fails fast with no resource.
+- **canadaeast (Quebec, ~15ms to NJ):** B1 Linux plan created first try → `Succeeded`. Chosen.
+- canadacentral, centralus not tested (canadaeast succeeded, closer to NJ).
+
+**New infra (same RG `oil-price-tracker`):**
+- Plan: `oil-tracker-plan-canadaeast`, Linux, **B1** (always-on, no cold starts)
+- Web app: `oil-tracker-app-canadaeast-4474` — Python 3.11, Streamlit startup, websockets enabled, always-on true
+- All 11 app settings mirrored from `oil-tracker-app-4281` via temp file (`SCM_DO_BUILD_DURING_DEPLOYMENT`, `ENABLE_ORYX_BUILD`, `WEBSITES_PORT`, `AZURE_OPENAI_*` ×5, `APPLICATIONINSIGHTS_CONNECTION_STRING`, `EIA_API_KEY`). Temp file deleted.
+- SCM basic-auth publishing policy was `allow:false` by default — enabled (`allow:true`) to permit `az webapp deploy` through Kudu.
+
+**Deploy:**
+- `git checkout main && git pull --ff-only` (at `56aaaf2`)
+- Zipped repo (3.2 MB, excluding `.git/.venv/__pycache__/node_modules/.worktrees/tests/e2e/test-results`).
+- `az webapp deploy` client-side returned `504 GatewayTimeout` — red herring; Kudu `/api/deployments` showed Oryx build still running. Polled until `complete:true`.
+- Post-deploy: `GET /` = **200**, `GET /_stcore/health` = **200 "ok"**. Site healthy.
+
+**Latency measurement (ACI one-shot):**
+- ICMP is blocked in ACI sandboxes — switched from `busybox ping` to `curlimages/curl` measuring `time_connect` (TCP handshake RTT) to `www.nyse.com` and `www.nytimes.com`, 10 samples each.
+- **canadaeast → NJ targets:** steady-state TCP connect ≈ **20–25 ms** (NYSE: 19.1–40.7 ms excl. first 2 cold; NYTimes: 9.4–51.2 ms excl. first 2 cold).
+- **westus2 baseline re-measurement:** ACI create failed with `RegistryErrorResponse` from docker.io across two attempts. Skipped — using prior-task documented ~70 ms baseline.
+- Result: canadaeast cuts RTT to NJ by ~3× vs westus2. Clear win.
+- Test container deleted.
+
+**CD cutover:**
+- `.github/workflows/cd.yml`: `AZURE_WEBAPP_NAME: oil-tracker-app-4281` → `oil-tracker-app-canadaeast-4474`.
+- README live-URL updated; this PROGRESS entry added.
+- Commit + push to main pending — will land once this file is saved.
+
+**westus2 fallback (NOT decommissioned yet):**
+- `oil-tracker-app-4281` + `oil-tracker-plan-westus2` left running as a 24h fallback.
+- **TODO after bake-in:**
+  ```bash
+  az webapp delete -g oil-price-tracker -n oil-tracker-app-4281 --keep-empty-plan
+  az appservice plan delete -g oil-price-tracker -n oil-tracker-plan-westus2 --yes
+  ```
+
+**Follow-ups / caveats:**
+- ARM usages endpoint appears broken on this sub — future quota checks should use the probe-create pattern, not the documented GET.
+- `www.nyse.com` / `www.nytimes.com` are likely Akamai/Fastly — so measured TCP connect is to the nearest CDN POP, not necessarily NJ origin. Still apples-to-apples vs the westus2 baseline under the same methodology, so the ~3× delta holds as a relative result.
+- Secret hygiene: app-settings mirror went through `/tmp/settings.json` and was `rm`'d. No secrets written to repo.
+
 
 

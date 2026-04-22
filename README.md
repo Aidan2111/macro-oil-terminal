@@ -5,7 +5,7 @@ inventory drawdown velocity, and mock AIS-based tanker fleet exposure by
 regulatory regime, with a WebGPU/Three.js TSL hero shader, a textured
 day/night Earth globe, and an Azure OpenAI-backed market-commentary panel.
 
-- **Live (Azure App Service):** https://oil-tracker-app-4281.azurewebsites.net
+- **Live (Azure App Service):** https://oil-tracker-app-canadaeast-4474.azurewebsites.net
 - **Repo:** https://github.com/Aidan2111/macro-oil-terminal
 
 [![CI](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/ci.yml)
@@ -126,7 +126,7 @@ Copy `.env.example` → `.env` for local dev. On Azure, set via `az webapp confi
 **CD is push-to-deploy.** Any push to `main` triggers `.github/workflows/cd.yml`,
 which (a) installs requirements, (b) runs `test_runner.py` as a gate, (c) logs
 into Azure via OIDC (no long-lived secrets in the repo), (d) zips the app, and
-(e) deploys to `oil-tracker-app-4281`. A post-deploy health check retries
+(e) deploys to `oil-tracker-app-canadaeast-4474`. A post-deploy health check retries
 `/_stcore/health` up to 10 times. Concurrency group `deploy-prod` serialises
 runs so deploys can't overlap.
 
