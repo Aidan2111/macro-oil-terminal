@@ -2,6 +2,21 @@
 
 Timestamps are UTC (sandbox time).
 
+## 2026-04-23 — Overnight autonomous block (Aidan sleeping ~12h)
+
+### 02:40Z — Databento key stored; provider-decision ADR landed
+
+- `DATABENTO_API_KEY` appended to `.env` (gitignored) + set as App
+  Setting on both webapps.
+- Smoke-tested via `databento.Historical.metadata.list_datasets` —
+  **key valid; 29 datasets accessible**.
+- ADR `docs/adr/0004-data-provider-decision.md` — yfinance stays
+  primary due to cost; Databento keys provisioned-but-dormant;
+  upgrade path is a single `providers/_databento.py` drop-in.
+- Grepped repo for `massive|databento` references — zero hits
+  anywhere (main + `feat/ui-polish-pass` worktree). No cleanup
+  needed.
+
 ## 2026-04-23 — Secrets plumbed (AISStream + Alpaca paper)
 
 ### 02:33Z — AISSTREAM_API_KEY stored and active on canadaeast
