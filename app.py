@@ -73,6 +73,9 @@ from theme import (
     render_catalyst_countdown,
     render_checklist,
     render_conviction_bar,
+    render_empty,
+    render_error,
+    render_loading_status,
     render_stance_pill,
     render_ticker_strip,
     render_tier_card,
@@ -275,39 +278,54 @@ def _load_cftc_cached():
 
 
 # --- Defensive fetch: surface clear error states instead of fake data ---
+# UIP-T7: every top-level data fetch is wrapped + routed through
+# ``render_error`` so users never see a raw traceback. Each branch that
+# fails hard calls ``st.stop()`` after rendering the styled error card
+# so downstream rendering doesn't blow up on a missing frame.
 pricing_res: PricingResult | None = None
 inventory_res: InventoryResult | None = None
 ais_res: AISResult | None = None
 
-with st.spinner("Loading live market data..."):
+with render_loading_status("Loading live market data\u2026"):
     try:
         pricing_res = _load_pricing_cached()
     except PricingUnavailable as exc:
-        st.error(
+        render_error(
             "Pricing feed unavailable — yfinance returned no data. "
-            f"`{exc}`  Click below to retry."
+            f"{type(exc).__name__}: {exc}",
+            retry_fn=lambda: _load_pricing_cached.clear(),
         )
-        if st.button("Retry pricing fetch", key="retry_pricing"):
-            _load_pricing_cached.clear()
-            st.rerun()
+        st.stop()
+    except Exception as exc:
+        render_error(
+            f"Couldn't reach the pricing feed right now. {type(exc).__name__}",
+            retry_fn=lambda: _load_pricing_cached.clear(),
+        )
         st.stop()
 
     try:
         inventory_res = _load_inventory_cached()
     except InventoryUnavailable as exc:
-        st.error(
+        render_error(
             "Inventory feed unavailable — EIA dnav and FRED both failed. "
-            f"`{exc}`  Click below to retry."
+            f"{type(exc).__name__}: {exc}",
+            retry_fn=lambda: _load_inventory_cached.clear(),
         )
-        if st.button("Retry inventory fetch", key="retry_inventory"):
-            _load_inventory_cached.clear()
-            st.rerun()
+        st.stop()
+    except Exception as exc:
+        render_error(
+            f"Couldn't reach the inventory feed right now. {type(exc).__name__}",
+            retry_fn=lambda: _load_inventory_cached.clear(),
+        )
         st.stop()
 
     try:
         ais_res = _load_ais_cached()
     except Exception as exc:
-        st.error(f"AIS fetch raised unexpectedly: `{exc!r}`")
+        render_error(
+            f"Couldn't reach the AIS fleet feed right now. {type(exc).__name__}",
+            retry_fn=lambda: _load_ais_cached.clear(),
+        )
         st.stop()
 
     # CFTC positioning — soft failure: show a warning but keep the dashboard usable
@@ -995,7 +1013,15 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
         )
         _stance_for_card = str(raw.get("stance", "flat")).upper()
         if materiality_flat:
-            st.caption("No tradeable spread stretch today.")
+            # UIP-T7: surface a styled empty-state card so the "no trade
+            # today" branch feels intentional rather than empty. The three
+            # placeholder tier cards still render below so the skeleton
+            # + sentinel selectors stay consistent.
+            render_empty(
+                "inbox",
+                "No actionable trade idea today. Monitor the Spread "
+                "Stretch gauge above.",
+            )
             # UIP-T2: render three placeholder tier cards even on the
             # flat path so the hero keeps a consistent skeleton and the
             # sentinel selectors always resolve. Cards surface the
@@ -1629,7 +1655,16 @@ with tab_arb:
             st.caption("Run: " + "  \u00b7  ".join(_bits))
 
         # Recent trade-idea history --------------------------------------
-        _mi_history = _mi_read_recent(n=10)
+        # UIP-T7: wrap the thesis-history load so a corrupt jsonl never
+        # propagates a traceback into the expander.
+        try:
+            _mi_history = _mi_read_recent(n=10)
+        except Exception as _hist_exc:
+            render_error(
+                f"Couldn't load trade-idea history. {type(_hist_exc).__name__}",
+                retry_fn=lambda: None,
+            )
+            _mi_history = []
         _mi_stats = _mi_history_stats(_mi_history)
         if _mi_stats["n"]:
             st.caption(

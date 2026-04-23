@@ -222,6 +222,37 @@ _CSS_MOBILE = """
 }
 """
 
+# UIP-T7 — empty + error state cards. Both share the centered layout
+# + padding + border-radius; the error variant overrides the background
+# and border tint to the alert color at 6% / 30% opacity.
+_CSS_STATES = """
+.empty-state, .error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  gap: 8px;
+  margin: 16px 0;
+}
+.empty-state-icon, .error-state-icon {
+  opacity: 0.7;
+}
+.empty-state-icon svg, .error-state-icon svg {
+  width: 32px; height: 32px;
+}
+.empty-state-message { color: var(--text-secondary); font-size: 14px; }
+.error-state {
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.error-state-message { color: var(--alert); font-size: 14px; font-weight: 500; }
+"""
+
 _CSS = "<style>" + "".join([
     _CSS_ROOT_VARS,
     _CSS_TYPOGRAPHY,
@@ -234,6 +265,7 @@ _CSS = "<style>" + "".join([
     _CSS_TICKER_STRIP,
     _CSS_CHECKLIST,
     _CSS_COUNTDOWN,
+    _CSS_STATES,
     _CSS_MOBILE,
 ]) + "</style>"
 
@@ -849,3 +881,170 @@ def render_ticker_strip(quotes) -> None:
         + '</div>',
         unsafe_allow_html=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# T7 — loading + empty + error state primitives.
+#
+# Three helpers that harden the app against network / data failures and
+# give blank-data branches a centered illustrated state instead of a
+# silent empty chart. All three are no-ops outside a Streamlit runtime
+# so the module stays safe to import from tests and scripts.
+#
+# Icons are inlined Lucide SVGs (no CDN, no network dependency) so the
+# per-render cost stays sub-millisecond and the stroke color can be
+# data-bound to a PALETTE token.
+# ---------------------------------------------------------------------------
+_LUCIDE_INBOX = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+    'fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>'
+    '<path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'
+    '</svg>'
+)
+
+_LUCIDE_TRENDING_UP = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+    'fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>'
+    '<polyline points="17 6 23 6 23 12"/>'
+    '</svg>'
+)
+
+_LUCIDE_SEARCH = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+    'fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<circle cx="11" cy="11" r="8"/>'
+    '<line x1="21" y1="21" x2="16.65" y2="16.65"/>'
+    '</svg>'
+)
+
+_LUCIDE_ALERT_CIRCLE = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+    'fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<circle cx="12" cy="12" r="10"/>'
+    '<line x1="12" y1="8" x2="12" y2="12"/>'
+    '<line x1="12" y1="16" x2="12.01" y2="16"/>'
+    '</svg>'
+)
+
+_LUCIDE_ALERT_TRIANGLE = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+    'fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>'
+    '<line x1="12" y1="9" x2="12" y2="13"/>'
+    '<line x1="12" y1="17" x2="12.01" y2="17"/>'
+    '</svg>'
+)
+
+_EMPTY_ICONS = {
+    "inbox": _LUCIDE_INBOX,
+    "trending-up": _LUCIDE_TRENDING_UP,
+    "search": _LUCIDE_SEARCH,
+    "alert-circle": _LUCIDE_ALERT_CIRCLE,
+}
+
+
+class _NoopStatus:
+    """Fallback context manager used when there's no Streamlit runtime.
+
+    Mirrors the ``with st.status(...) as s:`` shape so callers can use
+    ``render_loading_status(...)`` unconditionally from scripts / tests
+    without wrapping each call site in a runtime check.
+    """
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def render_loading_status(label: str, *, expanded: bool = False):
+    """Return a context manager that wraps ``st.status(label, ...)`` (UIP-T7).
+
+    Usage::
+
+        with render_loading_status("Fetching live prices…"):
+            data = fetch_pricing()
+
+    Outside a Streamlit runtime, returns a no-op context manager so the
+    same code path is safe in tests / scripts. ``expanded`` defaults to
+    ``False`` so the status starts collapsed; pass ``expanded=True`` for
+    long-running fetches where the user wants to see progress detail.
+    """
+    status_fn = getattr(st, "status", None)
+    if status_fn is None or not callable(status_fn):
+        return _NoopStatus()
+    try:
+        return status_fn(label, expanded=expanded)
+    except Exception:
+        # Older Streamlit versions may not accept ``expanded=`` — fall
+        # back to the no-op so the calling ``with`` block is safe.
+        return _NoopStatus()
+
+
+def render_empty(icon: str, message: str) -> None:
+    """Render a centered empty-state card (UIP-T7).
+
+    ``icon`` selects from a small named set (``inbox`` / ``trending-up``
+    / ``search`` / ``alert-circle``); unknown values silently fall back
+    to ``inbox`` so the card always renders. The card carries
+    ``data-testid="empty-state"`` so Playwright can target it.
+    """
+    if not _has_streamlit_runtime():
+        return
+    svg = _EMPTY_ICONS.get(icon, _LUCIDE_INBOX)
+    st.markdown(
+        '<div class="empty-state" data-testid="empty-state">'
+        f'<div class="empty-state-icon">{svg}</div>'
+        f'<div class="empty-state-message">{message}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_error(message: str, retry_fn=None) -> None:
+    """Render a styled error card with an optional retry button (UIP-T7).
+
+    The card carries ``data-testid="error-state"`` and an inline
+    ``alert-triangle`` Lucide SVG. When ``retry_fn`` is not None, a
+    native ``st.button("Retry now", ...)`` renders below the markdown
+    block; clicking it invokes ``retry_fn()`` and calls ``st.rerun()``
+    so the next render re-fetches.
+
+    Outside a Streamlit runtime the helper returns silently.
+    """
+    if not _has_streamlit_runtime():
+        return
+    st.markdown(
+        '<div class="error-state" data-testid="error-state">'
+        f'<div class="error-state-icon">{_LUCIDE_ALERT_TRIANGLE}</div>'
+        f'<div class="error-state-message">{message}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    if retry_fn is None:
+        return
+    # Native Streamlit button — rendered OUTSIDE the markdown block so
+    # click handling works. ``key`` is stable per unique message so the
+    # same error card can render twice in a page without a key clash.
+    try:
+        clicked = st.button("Retry now", key=f"retry-btn-{hash(message)}")
+    except Exception:
+        clicked = False
+    if clicked:
+        try:
+            retry_fn()
+        except Exception:
+            # Never let a retry handler raise into the page.
+            pass
+        try:
+            st.rerun()
+        except Exception:
+            pass
