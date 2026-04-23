@@ -2,6 +2,55 @@
 
 Timestamps are UTC (sandbox time).
 
+## 2026-04-23 — Stage-3 Next.js + FastAPI scaffold (in flight)
+
+### 22:15Z+ — `feat/nextjs-fastapi-stack` branch pushed, not merged
+
+Aidan pivoted mid-run: skip Streamlit overhaul (Stage 1), go
+straight to Next.js 15 + FastAPI (Stage 3). Streamlit stays alive
+on `oil-tracker-app-canadaeast-4474` through migration.
+
+Four commits on the branch:
+- `876a244` — docs: brainstorm + design + plan at
+  `docs/{brainstorms,designs,plans}/nextjs-fastapi-migration.md`.
+- `dd2de77` — `backend/` FastAPI scaffold: 8 router stubs
+  (`/health`, `/api/build-info`, `/api/spread`, `/api/thesis/*`,
+  `/api/positions`, `/api/cftc`, `/api/inventory`, `/api/fleet`),
+  thin service adapters over existing Python modules, Pydantic
+  schemas, 4 passing tests on Python 3.11/3.13. Host venv is 3.9
+  so subagent ran tests against a throwaway 3.13 venv. CI uses
+  3.11.
+- `ff5ad50` — `frontend/` Next.js 15 app-router scaffold: Tailwind
+  3.4 + Inter + palette tokens (`#0a0e1a` / `#0f1a2e` / `#22d3ee` /
+  `#10b981` / `#f43f5e` / `#fbbf24`), Nav (sticky-left desktop /
+  bottom-tab mobile), Footer hitting `/api/build-info`,
+  Loading/Empty/Error states, five route shells.
+- `2f53321` — `.github/workflows/cd-nextjs.yml` dual-target CD
+  (FastAPI → new App Service placeholder;
+  Next.js → Azure Static Web Apps) with live-verify per side.
+  Existing `cd.yml` untouched — Streamlit deploy continues.
+
+Phases 2–10 remain in `docs/plans/nextjs-fastapi-migration.md`:
+backend endpoints port, frontend foundation (Vitest + route
+shells), hero card + ticker + charts, WebGPU/TSL globe with NASA
+Blue Marble + live AIS, positions + track record, cutover,
+Streamlit teardown.
+
+### Waiting on Aidan (new-stack unblocks)
+
+1. **Provision** a new App Service `oil-tracker-api-canadaeast-NNNN`
+   (same RG, F1 Linux Python 3.11, startup
+   `uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 2`).
+2. **Create** an Azure Static Web App (free tier); capture the
+   deploy token as GH secret `AZURE_STATIC_WEB_APPS_API_TOKEN`.
+3. **`npm install`** inside `frontend/` once locally; commit the
+   generated `package-lock.json` so CI's `npm ci` works.
+4. **Mirror** App Settings from the Streamlit app to the new API app
+   (all provider keys: AISSTREAM, ALPACA, DATABENTO, EIA, FRED,
+   AZURE_OPENAI_*, AZURE_AI_FOUNDRY_*).
+
+---
+
 ## 2026-04-23 — UX revision v2 (persona-11 follow-up)
 
 ### ~15:20Z — `feat/ux-revision-v2` shipped
