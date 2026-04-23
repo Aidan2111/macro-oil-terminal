@@ -325,3 +325,11 @@ Tasks 1 and 2 are independent; 3 depends on 2; 4 depends on 3.
   subdomain if env is empty, but clicking it 404s until the real
   key is present).
 
+
+---
+
+## See also — UI polish pass plan
+
+The active work has moved to `docs/plans/ui-polish.md` on branch
+`feat/ui-polish-pass`. The P1.1-clerk section above is ARCHIVED.
+
