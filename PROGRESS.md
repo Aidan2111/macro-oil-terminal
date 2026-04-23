@@ -2,6 +2,106 @@
 
 Timestamps are UTC (sandbox time).
 
+## 2026-04-22 — P1.1 auth + user store landed (Superpowers flow)
+
+### 23:30Z–23:55Z — P1.1-0: brainstorm + design + plan
+
+- Six open questions in `docs/brainstorms/p1-auth.md` resolved in-place
+  with conservative defaults under the "most-conservative, minimal,
+  reversible" rule (hero-thesis precedent). Key defaults:
+  **Google OIDC only** (Microsoft as P2 if a user asks),
+  **Azure Table Storage in canadaeast** (same RG as App Service),
+  **new user on first login** with implicit ToS-accept in the sign-in
+  button caption, **consent-screen branding = "Macro Oil Terminal" /
+  aidan.marshall@youbiquity.com**, **rotate cookie secret on compromise
+  only**, **sign-out link inside the hero-band header row**.
+- Material divergence from Aidan's P1 escalation: his brief named Clerk
+  as the default IdP. Research showed (a) Alpaca is OAuth 2.0 not
+  OIDC, so "Clerk relaying to Alpaca" was never the right lever, and
+  (b) Streamlit v1.42+ ships native `st.login()` / `st.user` via
+  Authlib — behind it, any OIDC provider works via a `secrets.toml`
+  edit. We picked Google OIDC behind `st.login()`: zero vendors
+  added, reversible to Clerk/Auth0/Microsoft with a single config
+  change if we outgrow it.
+- Commits: `e988547` brainstorm + `70df0ce` design+plan +
+  `cbcf947` resolution.
+
+### 23:55Z–00:20Z — P1.1.1..P1.1.6: TDD subagent loop
+
+Fresh subagent per task; RED→GREEN→REFACTOR→commit. All six landed
+clean on first dispatch, following the HT1..HT6 pattern.
+
+- **P1.1.1** (`65f632f`) — `User` frozen dataclass + `UserStore` Protocol
+  + `InMemoryUserStore`. 3 unit tests.
+- **P1.1.2** (`f7f1c05`) — `TableStorageUserStore` + `UserStoreError`,
+  `_entity_from_user` / `_user_from_entity` translators, MERGE
+  write-mode (preserves P1.2/P1.6/P1.7 fields on round-trip).
+  4 unit tests. `requirements.txt` adds `azure-data-tables>=12.5.0`.
+- **P1.1.3** (`8970295`) — `current_user()` with three branches
+  (prod-safety / `MOCK_AUTH_USER` mock / Streamlit native), per-session
+  caching via `st.session_state["_auth_user"]`, dep-injection via
+  `get_user_store` / `set_user_store`, `clear_cached_user` for
+  sign-out. 5 unit tests.
+- **P1.1.4** (`6a75231`) — `@requires_auth` decorator + route-level
+  `require_auth()` + `render_login_gate()` widget. Inline gate
+  prompt embeds `/legal/terms` + `/legal/risk` links (P1.9 targets).
+  4 unit tests.
+- **P1.1.5** (`76a331f`) — `app.py` wiring: `_render_header_signin()`
+  inside the hero-band container, `_render_execute_button_stub(tier_key)`
+  inside each of the 3 tier tiles. Two sentinel divs for Playwright
+  (`data-testid="signin-button"` + `"signed-in-as"`). Divergence from
+  plan: used an inline `current_user() is None` check for the execute
+  stub rather than the decorator, to avoid triple-stacked login
+  prompts on the hero band. Decorator is still correct for the P1.6
+  onboarding route. 3 new e2e tests + a second session-scoped fixture
+  `streamlit_server_mock_auth`.
+- **P1.1.6** (`8245172`) — `auth/config.py` with `is_configured()` +
+  `boot_check()` + `AuthNotConfigured`. `infra/provision_auth.sh`
+  (idempotent Storage + Key Vault + App Settings provisioner).
+  `.streamlit/secrets.toml.example`, `.env.example` appended,
+  `requirements.txt` bumps `streamlit>=1.42.0`, `DEPLOY.md` gains
+  an auth-provisioning section. `app.py` boot-time `boot_check()`
+  wrapped in try/except so config-missing warns (dev) or surfaces
+  a banner (prod); never crashes the public view. 5 unit tests.
+
+### 00:20Z — P1.1.7: finishing-a-development-branch
+
+- `git merge --no-ff feat/p1-auth` into `main` — no conflicts (main
+  hadn't moved). Merge commit `3f39ff4`, pushed to origin.
+- CI / CD / CodeQL / E2E triggered on the merge commit.
+- Worktree + remote + local branch cleanup pending CD+verify.
+
+### Waiting on Aidan (P1.1 unblock)
+
+1. **Create a Google Cloud OAuth 2.0 Web client** —
+   https://console.cloud.google.com/apis/credentials → OAuth 2.0 Client
+   IDs → Create. Scopes: `openid email profile`. Redirect URIs:
+   - `http://localhost:8501/oauth2callback` (dev)
+   - `https://oil-tracker-app-canadaeast-4474.azurewebsites.net/oauth2callback` (prod)
+   Capture the `client_id` and `client_secret`.
+2. **Run `infra/provision_auth.sh`** on the host with `az login` active.
+   The script creates the storage account, the `users` table, three
+   Key Vault secrets (client id / client secret / cookie secret +
+   storage connection string), and sets six App Service app settings
+   (Key Vault references + `STREAMLIT_ENV=prod` +
+   `AUTH_USER_STORE=table`). It will prompt for the two Google values.
+   Until this runs, the deployed site is in "auth-not-fully-configured"
+   mode — public research still works, but the Sign-in button is inert
+   (shows the fallback banner on click).
+
+### P1.1 totals
+
+- 6 tasks + finishing flow. Zero subagent retries.
+- 18 new unit tests + 3 new e2e tests = **21 new tests**. Full suite
+  locally: **182 passed, 1 skipped, 0 failures**.
+- 18 new/changed files, **+1521 / –24 lines**.
+- Reversibility: swap Google → Clerk / Auth0 / Microsoft via
+  `secrets.toml`. Swap Table Storage → Cosmos / Postgres via a new
+  `UserStore` implementation. Rip out entirely by removing `auth/`
+  and the two app.py hooks.
+
+---
+
 ## 2026-04-22 — Hero-thesis branch landed (Superpowers flow)
 
 ### 21:35Z–22:05Z — HT0: brainstorm + design freeze
