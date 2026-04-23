@@ -48,16 +48,28 @@ def compute_spread_zscore(prices: pd.DataFrame, window: int = 90) -> pd.DataFram
         raise ValueError("prices must contain 'Brent' and 'WTI' columns")
 
     df["Spread"] = df["Brent"] - df["WTI"]
-    df["Spread_Mean"] = df["Spread"].rolling(window=window, min_periods=max(5, window // 3)).mean()
-    df["Spread_Std"] = df["Spread"].rolling(window=window, min_periods=max(5, window // 3)).std()
+    # Shift by one bar BEFORE the rolling window so the mean/std at bar t
+    # are computed from the closed interval [t-W, t-1] — i.e. information
+    # a trader would actually know at the close of bar t, not including
+    # spread[t] itself. Without this shift, the Z at bar t is contaminated
+    # by its own value (same-bar look-ahead) and |Z| shrinks on exactly
+    # the bar the backtest transacts on. See Persona 01 Finding #1 and
+    # synthesis Row 1. Equivalent to ``.rolling(window=window, closed="left")``
+    # but the shift(1) form is more portable across pandas versions.
+    min_p = max(5, window // 3)
+    shifted_spread = df["Spread"].shift(1)
+    df["Spread_Mean"] = shifted_spread.rolling(window=window, min_periods=min_p).mean()
+    df["Spread_Std"] = shifted_spread.rolling(window=window, min_periods=min_p).std()
     std_safe = df["Spread_Std"].replace(0, np.nan)
     df["Z_Score"] = (df["Spread"] - df["Spread_Mean"]) / std_safe
     df["Z_Score"] = df["Z_Score"].replace([np.inf, -np.inf], np.nan)
 
     # EWMA variance on residuals (spread − rolling mean). λ=0.94 is the
     # RiskMetrics convention for daily equity returns; it's reasonable for
-    # a daily spread too.
-    resid = df["Spread"] - df["Spread_Mean"]
+    # a daily spread too. Mirror the shift(1) semantics on the residual
+    # stream so the ewm variance at bar t does not include residual[t] —
+    # otherwise the same same-bar look-ahead bias leaks into Z_Vol.
+    resid = (df["Spread"] - df["Spread_Mean"]).shift(1)
     ewm_var = (resid ** 2).ewm(alpha=1 - 0.94, min_periods=10, adjust=False).mean()
     df["Spread_EwmaStd"] = np.sqrt(ewm_var)
     ewm_std_safe = df["Spread_EwmaStd"].replace(0, np.nan)
@@ -298,6 +310,11 @@ def backtest_zscore_meanreversion(
     entry_date = None
     entry_spread = 0.0
 
+    # After Row 1, the Z at bar t is computed from spread[t-W .. t-1] — it
+    # is known at close-of-t. We transact at close-of-t's Spread, which is
+    # also known at that instant, so the pairing is now legitimate. A
+    # stricter "fill at next open" model (Row 23 / synthesis Row 3 / 10)
+    # is deliberately NOT in scope for this branch — that's its own fix.
     for date, row in df.iterrows():
         z = float(row["Z_Score"])
         s = float(row["Spread"])
