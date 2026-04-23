@@ -62,9 +62,14 @@ from language import (
 )
 
 # UIP-T1: theme palette + CSS injection (idempotent per session).
+# UIP-T5: apply_theme + axis-label + money-hover helpers routed through
+# the same module so every Plotly call site has one import surface.
 from theme import (
     SYMBOL_DISPLAY_NAMES,
+    apply_theme,
+    format_money_hover,  # noqa: F401 — available for future hover refinements
     inject_css,
+    pretty_axis_label,
     render_catalyst_countdown,
     render_checklist,
     render_conviction_bar,
@@ -1276,10 +1281,10 @@ with tab_arb:
         template="plotly_dark",
     )
     fig.update_yaxes(title_text="USD / bbl", row=1, col=1)
-    fig.update_yaxes(title_text="Z-Score", row=2, col=1)
+    fig.update_yaxes(title_text=pretty_axis_label("stretch"), row=2, col=1)
     fig.update_xaxes(title_text="Date", row=2, col=1)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(apply_theme(fig), use_container_width=True)
 
     with st.expander("Recent observations"):
         st.dataframe(
@@ -1407,7 +1412,7 @@ with tab_arb:
             xaxis_title="Trade exit date",
             showlegend=False,
         )
-        st.plotly_chart(eq_fig, use_container_width=True)
+        st.plotly_chart(apply_theme(eq_fig), use_container_width=True)
 
         # PnL distribution histogram
         pnl_fig = go.Figure()
@@ -1433,7 +1438,7 @@ with tab_arb:
             showlegend=False,
             bargap=0.03,
         )
-        st.plotly_chart(pnl_fig, use_container_width=True)
+        st.plotly_chart(apply_theme(pnl_fig), use_container_width=True)
 
         with st.expander("Trade blotter"):
             st.dataframe(bt["trades"], use_container_width=True)
@@ -1487,7 +1492,7 @@ with tab_arb:
                     showlegend=False,
                 )
                 st.markdown("**Walk-forward (12m window, 3m step)**")
-                st.plotly_chart(wf_fig, use_container_width=True)
+                st.plotly_chart(apply_theme(wf_fig), use_container_width=True)
             else:
                 st.info("Not enough history for a 12-month walk-forward window.")
 
@@ -1542,7 +1547,7 @@ with tab_arb:
                         margin=dict(l=40, r=20, t=30, b=40),
                     )
                     st.markdown("**Regime breakdown (high-vol vs low-vol at entry)**")
-                    st.plotly_chart(rb_fig, use_container_width=True)
+                    st.plotly_chart(apply_theme(rb_fig), use_container_width=True)
     else:
         st.info(
             f"No trades triggered at \u00b1{z_threshold:.1f}\u03c3 on the "
@@ -1730,7 +1735,7 @@ with tab_arb:
                     yaxis2=dict(title="Z-score (~3y)", overlaying="y", side="right", showgrid=False),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(apply_theme(fig), use_container_width=True)
                 st.caption(
                     ":grey[Z-score thresholds: ±1.5σ historically mark extended positioning; "
                     "±2.0σ flags crowded regimes that often mean-revert within 4-8 weeks.]"
@@ -1887,7 +1892,7 @@ with tab_depl:
         xaxis_title="Date",
     )
 
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(apply_theme(fig2), use_container_width=True)
 
     st.caption(
         f"Linear regression on trailing {depletion_weeks}-week inventory window. "
@@ -2012,7 +2017,7 @@ with tab_fleet:
         ),
     )
 
-    st.plotly_chart(bar, use_container_width=True)
+    st.plotly_chart(apply_theme(bar), use_container_width=True)
 
     # Per-country drill-down (Mbbl by flag state, colored by category)
     drill = (
@@ -2056,7 +2061,7 @@ with tab_fleet:
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     st.markdown("#### Per-country breakdown")
-    st.plotly_chart(drill_fig, use_container_width=True)
+    st.plotly_chart(apply_theme(drill_fig), use_container_width=True)
 
     st.markdown("#### Live globe")
     st.caption(

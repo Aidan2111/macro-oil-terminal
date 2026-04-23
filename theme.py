@@ -657,6 +657,179 @@ def _ticker_item_html(q: dict) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# T5 — apply_theme(fig) + chart polish helpers.
+#
+# ``apply_theme(fig)`` is the single entry point every Plotly call site in
+# ``app.py`` routes through. It mutates the figure's layout in place and
+# returns the same figure so callers can one-line it:
+#
+#     st.plotly_chart(apply_theme(fig), ...)
+#
+# Plotly is imported lazily inside the function so importing ``theme`` in a
+# stripped-down environment (e.g. a script that only needs ``inject_css``)
+# does not pull in plotly. The type hint is stringified for the same reason.
+#
+# ``pretty_axis_label`` + ``format_money_hover`` are small string helpers
+# shared by the app.py chart-polish sweep — kept pure so they unit-test
+# cleanly without any figure fixture.
+# ---------------------------------------------------------------------------
+_FONT_FAMILY = "Source Sans Pro, -apple-system, sans-serif"
+
+
+def apply_theme(fig):
+    """Apply the brand palette to a Plotly figure (UIP-T5).
+
+    Mutates ``fig.layout`` in place *and* returns the same figure, so
+    callers can inline the call: ``st.plotly_chart(apply_theme(fig))``.
+
+    What gets set:
+    * ``paper_bgcolor`` / ``plot_bgcolor`` — ``PALETTE.bg_1`` so charts
+      blend with the page chrome.
+    * ``font`` — primary-text color, Source Sans Pro stack.
+    * ``xaxis`` / ``yaxis`` — faint gridlines + zerolines, border-tinted
+      axis lines, secondary-text tick labels.
+    * ``hoverlabel`` — dark ``bg_2`` box, bordered in ``PALETTE.border``,
+      primary-text contents. Per-trace ``hovertemplate`` strings are
+      left intact — Plotly merges them with the layout default.
+    * ``margin`` — ``l=40, r=20, t=40, b=30`` per design spec.
+    * ``colorway`` — cyan-primary first so the first trace inherits the
+      brand colour without needing per-trace overrides.
+    * ``legend`` — bg_2 box + border + primary-text.
+    * ``title.font`` — only touched when a title already exists, so
+      untitled figures don't grow a phantom title frame.
+    """
+    update = dict(
+        paper_bgcolor=PALETTE.bg_1,
+        plot_bgcolor=PALETTE.bg_1,
+        font=dict(color=PALETTE.text_primary, family=_FONT_FAMILY),
+        xaxis=dict(
+            gridcolor=PALETTE.gridline,
+            zerolinecolor=PALETTE.gridline,
+            linecolor=PALETTE.border,
+            tickfont=dict(color=PALETTE.text_secondary),
+        ),
+        yaxis=dict(
+            gridcolor=PALETTE.gridline,
+            zerolinecolor=PALETTE.gridline,
+            linecolor=PALETTE.border,
+            tickfont=dict(color=PALETTE.text_secondary),
+        ),
+        hoverlabel=dict(
+            bgcolor=PALETTE.bg_2,
+            bordercolor=PALETTE.border,
+            font=dict(color=PALETTE.text_primary, family=_FONT_FAMILY),
+        ),
+        margin=dict(l=40, r=20, t=40, b=30),
+        colorway=[
+            PALETTE.primary,
+            PALETTE.warn,
+            PALETTE.positive,
+            PALETTE.alert,
+            PALETTE.text_secondary,
+        ],
+        legend=dict(
+            bgcolor=PALETTE.bg_2,
+            bordercolor=PALETTE.border,
+            font=dict(color=PALETTE.text_primary),
+        ),
+    )
+
+    # Only restyle the title when one already exists — otherwise Plotly
+    # reserves vertical space for an empty title frame and the chart
+    # shifts down visibly.
+    try:
+        existing_title = getattr(fig.layout.title, "text", None)
+    except Exception:
+        existing_title = None
+    if existing_title:
+        update["title"] = dict(
+            text=existing_title,
+            font=dict(color=PALETTE.text_primary, size=18),
+        )
+
+    fig.update_layout(**update)
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Axis-label + hover helpers.
+#
+# ``pretty_axis_label`` translates snake-case keys to plain-English via
+# ``language.TERMS``, with a small table of extra synonyms (``z_score`` →
+# stretch) + suffix rules so the call sites don't have to hand-maintain a
+# second mapping. Unknown keys fall through to title-case — safe for any
+# random identifier a chart might hand in.
+# ---------------------------------------------------------------------------
+_AXIS_LABEL_ALIASES = {
+    # Common quant-side aliases that don't appear verbatim in TERMS.
+    "z_score": "stretch",
+    "zscore": "stretch",
+    "dislocation": "stretch",
+    "conviction": "confidence",
+}
+
+_AXIS_SUFFIX_RULES = (
+    ("_usd", " ($)"),
+    ("_pct", " (%)"),
+    ("_mbbl", " (Mbbl)"),
+    ("_bbls", " (bbls)"),
+    ("_bbl", " (bbl)"),
+)
+
+
+def pretty_axis_label(raw: str) -> str:
+    """Translate a snake_case axis label to plain-English.
+
+    Resolution order:
+    1. If ``raw`` is a known alias, map it to the canonical ``TERMS`` key
+       (``"z_score"`` → ``"stretch"`` → ``"Spread Stretch"``).
+    2. If the alias-resolved key exists in ``language.TERMS``, return
+       that display string.
+    3. Otherwise strip a known suffix (``_usd`` → ``" ($)"`` etc.), then
+       title-case what's left and reattach the suffix. So ``"spread_usd"``
+       → ``"Spread ($)"``, ``"inventory_mbbl"`` → ``"Inventory (Mbbl)"``.
+    4. If no suffix matched, plain ``title()`` on the snake-case string
+       (underscores → spaces). ``"unknown_field"`` → ``"Unknown Field"``.
+
+    Unknown / empty inputs coerce to ``str`` and fall through to step 4
+    — never raises. T5 is about applying the theme, not exhaustively
+    renaming every axis; extend this table as new call sites surface.
+    """
+    from language import TERMS  # local import — avoid module cycle risk.
+
+    key = str(raw or "").strip().lower()
+    if not key:
+        return ""
+
+    # Step 1 — alias collapse.
+    resolved = _AXIS_LABEL_ALIASES.get(key, key)
+    # Step 2 — TERMS lookup.
+    if resolved in TERMS:
+        return TERMS[resolved]
+
+    # Step 3 — strip a known suffix, title-case the stem, reattach.
+    for suffix, pretty_suffix in _AXIS_SUFFIX_RULES:
+        if key.endswith(suffix):
+            stem = key[: -len(suffix)]
+            stem_pretty = stem.replace("_", " ").title() if stem else ""
+            return f"{stem_pretty}{pretty_suffix}".strip()
+
+    # Step 4 — plain title-case fallback.
+    return key.replace("_", " ").title()
+
+
+def format_money_hover(value: float) -> str:
+    """Format a numeric value as ``$X,XXX.XX`` for hover templates.
+
+    Uses Python's locale-independent ``:,`` thousands separator with two
+    decimal places. Raises the usual ``TypeError`` / ``ValueError`` if
+    the caller hands in something that can't be coerced to ``float`` —
+    hover-template callers are expected to feed already-numeric values.
+    """
+    return f"${float(value):,.2f}"
+
+
 def render_ticker_strip(quotes) -> None:
     """Render the Bloomberg-tape ticker strip (UIP-T4).
 
