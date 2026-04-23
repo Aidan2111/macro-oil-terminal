@@ -79,5 +79,7 @@ def test_hero_disclaimer_footer(streamlit_server, page):
 def test_hero_stance_pill_renders(streamlit_server, page):
     _goto(page, streamlit_server)
     body = page.inner_text("body")
-    # The hero band emits one of the three plain-language stance labels
-    assert any(s in body for s in ("BUY SPREAD", "SELL SPREAD", "STAND ASIDE"))
+    # The hero band emits one of the three plain-language stance labels.
+    # UIP-T0 renamed: BUY SPREAD -> BUY THE SPREAD, SELL SPREAD -> SELL THE SPREAD,
+    # STAND ASIDE -> WAIT.
+    assert any(s in body for s in ("BUY THE SPREAD", "SELL THE SPREAD", "WAIT"))
