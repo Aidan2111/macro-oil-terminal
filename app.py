@@ -62,7 +62,12 @@ from language import (
 )
 
 # UIP-T1: theme palette + CSS injection (idempotent per session).
-from theme import inject_css
+from theme import (
+    inject_css,
+    render_conviction_bar,
+    render_stance_pill,
+    render_tier_card,
+)
 
 _AI_ACTIVE = _obs_configure()
 
@@ -649,6 +654,25 @@ _HERO_DISCLAIMER = (
     "Past performance does not predict future results. Consult a licensed "
     "advisor before executing. Data may be 15-min delayed."
 )
+
+
+class _TierPlaceholder:
+    """Lightweight stand-in for an ``Instrument`` used when the hero has
+    no tradeable stance but still wants three tier-card sentinels on
+    the DOM. Carries only the fields ``theme.render_tier_card`` reads.
+    """
+
+    def __init__(self, tier: int, name: str, symbol: str | None) -> None:
+        self.tier = tier
+        self.name = name
+        self.symbol = symbol
+        self.legs = (
+            [s.strip() for s in symbol.split("/") if s.strip()]
+            if symbol and "/" in symbol
+            else ([symbol] if symbol else [])
+        )
+        self.size_usd = None
+
 def _hero_audit_log(thesis_fingerprint: str, checklist_key: str, checked_by_user: bool, auto_check_value) -> None:
     """Append one checklist-tick row to data/trade_executions.jsonl.
 
@@ -688,25 +712,29 @@ def _hero_stance_label(stance: str) -> tuple[str, str]:
 
 
 def _render_thesis_mini(decorated) -> None:
-    """Render the stance pill / confidence / horizon / 2-line summary."""
+    """Render the stance pill / conviction bar / horizon / 2-line summary.
+
+    UIP-T2 replaced the inline stance pill + confidence text with
+    ``theme.render_stance_pill`` + ``theme.render_conviction_bar`` so
+    both widgets pick up the frozen palette + classes declared in
+    ``theme._CSS``. The horizon byline and summary caption are still
+    rendered inline — they're low-churn and T3 will rewire them
+    alongside the countdown + checklist pass.
+    """
     raw = decorated.raw or {}
     stance = raw.get("stance", "flat")
-    label, color = _hero_stance_label(stance)
-    conv = float(raw.get("conviction_0_to_10", 0.0))
+    conv_int = int(round(float(raw.get("conviction_0_to_10", 0.0))))
     horizon = int(raw.get("time_horizon_days", 0))
     summary = raw.get("thesis_summary", "")
+
+    # Stance stored lowercase in the JSON schema; the new helper accepts
+    # either case but we normalize here for clarity.
+    render_stance_pill(stance.upper() if isinstance(stance, str) else "FLAT")
+    render_conviction_bar(conv_int, stance.upper() if isinstance(stance, str) else "FLAT")
+
     st.markdown(
-        f"""
-        <div style="display:flex; gap:14px; align-items:center; margin:4px 0 8px 0;">
-          <span style="background:{color}; color:#0b0f14; padding:6px 14px;
-                       border-radius:6px; font-weight:700; letter-spacing:1px;
-                       font-size:0.95rem;">{label}</span>
-          <span style="color:#e7ecf3; font-family:ui-monospace,Menlo,monospace;
-                       font-size:0.88rem;">
-            confidence <b>{conv:.1f}/10</b> &nbsp;·&nbsp; horizon <b>{horizon} days</b>
-          </span>
-        </div>
-        """,
+        f'<div class="caption" style="color: var(--text-secondary); '
+        f'margin-top: 4px;">horizon <b>{horizon} days</b></div>',
         unsafe_allow_html=True,
     )
     if summary:
@@ -725,45 +753,62 @@ def _render_portfolio_input() -> float:
     ))
 
 
-def _render_tier_tile(col, inst, portfolio_usd: float) -> None:
-    """Render a single instrument tile into the given column."""
+def _render_tier_tile(col, inst, portfolio_usd: float, stance: str = "flat") -> None:
+    """Render a single instrument tile into the given column.
+
+    UIP-T2 replaced the inline bespoke ``col.markdown(...)`` block with
+    ``theme.render_tier_card``. To keep the dollar-sizing + broker links
+    visible (they were live under the old tile) we emit them as compact
+    captions below the new card; the P1.1.5 auth-gated execute stub
+    still renders below the card, unchanged. The stub's "below the card"
+    placement is a pragmatic compromise — moving it inside the card
+    would require refactoring ``render_tier_card`` to accept a callable
+    slot, which is out of scope for T2.
+    """
     pct = float(getattr(inst, "suggested_size_pct", 0.0) or 0.0)
     dollars = portfolio_usd * pct / 100.0
-    symbol = inst.symbol or "—"
-    tier_color = {1: "#6c7a89", 2: "#3498db", 3: "#9b59b6"}.get(inst.tier, "#6c7a89")
-    broker_bits = " · ".join(
-        f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
-        f'style="color:#7fb4ff; text-decoration:none;">{name}</a>'
-        for name, url in _HERO_BROKER_LINKS.items()
-    )
-    col.markdown(
-        f"""
-        <div style="border:1px solid #2a3442; border-radius:8px; padding:10px 12px;
-                    background:#111821; height:100%;">
-          <div>
-            <span style="background:{tier_color}; color:#0b0f14; padding:2px 8px;
-                         border-radius:4px; font-weight:700; font-size:0.75rem;
-                         letter-spacing:0.5px;">TIER {inst.tier}</span>
-            <span style="color:#e7ecf3; font-weight:600; margin-left:8px;">{inst.name}</span>
-            <span style="color:#95a5a6; margin-left:6px; font-family:ui-monospace,Menlo,monospace;
-                         font-size:0.82rem;">{symbol}</span>
-          </div>
-          <div style="color:#c7cdd4; font-size:0.84rem; margin-top:6px;">{inst.rationale}</div>
-          <div style="color:#e7ecf3; font-size:0.85rem; margin-top:6px;
-                      font-family:ui-monospace,Menlo,monospace;">
-            size <b>{pct:.1f}%</b> &nbsp;·&nbsp; <b>${dollars:,.0f}</b>
-          </div>
-          <div style="font-size:0.78rem; margin-top:6px;">{broker_bits}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    if inst.tier == 2:
-        col.caption("Defined-risk alt: ATM \u00b1 2 strikes on BNO/USO, 30\u201360 DTE, OI > 100.")
-    # P1.1.5 — auth-gated execute stub. P1.3 swaps the caption for a real
-    # order-placement button wired to the Alpaca broker via user.sub.
+    # Attach size_usd on the instrument so render_tier_card's P&L preview
+    # stub can render a dollar number instead of "TBD". This is a live
+    # attribute set per-render — cheap, and P1.2 will replace it with a
+    # real broker-side computation.
+    try:
+        inst.size_usd = float(dollars)
+    except Exception:
+        pass
+    # Same for legs — derive from symbol if the Instrument doesn't carry
+    # an explicit list. "USO/BNO" / "CL=F/BZ=F" split cleanly on "/".
+    if not getattr(inst, "legs", None):
+        sym = getattr(inst, "symbol", None) or ""
+        if "/" in sym:
+            inst.legs = [s.strip() for s in sym.split("/") if s.strip()]
+        elif sym:
+            inst.legs = [sym]
+
     with col:
-        _render_execute_button_stub(f"tier{inst.tier}")
+        render_tier_card(inst, f"tier{getattr(inst, 'tier', 0)}", stance)
+        # Preserve the sizing byline + broker links — this context lived
+        # under the old tile and users rely on it. The execute stub from
+        # P1.1.5 renders immediately after so the auth gate still feels
+        # attached to this column.
+        broker_bits = " · ".join(
+            f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
+            f'style="color:var(--primary); text-decoration:none;">{name}</a>'
+            for name, url in _HERO_BROKER_LINKS.items()
+        )
+        st.markdown(
+            f'<div class="caption" style="color: var(--text-secondary); '
+            f'margin-top: 6px;">size <b>{pct:.1f}%</b> &middot; '
+            f'<b>${dollars:,.0f}</b></div>'
+            f'<div class="caption" style="margin-top: 2px;">{broker_bits}</div>',
+            unsafe_allow_html=True,
+        )
+        if getattr(inst, "tier", None) == 2:
+            st.caption(
+                "Defined-risk alt: ATM \u00b1 2 strikes on BNO/USO, 30\u201360 DTE, OI > 100."
+            )
+        # P1.1.5 — auth-gated execute stub. P1.3 swaps the caption for a real
+        # order-placement button wired to the Alpaca broker via user.sub.
+        _render_execute_button_stub(f"tier{getattr(inst, 'tier', 0)}")
 
 
 def _render_checklist(checklist, thesis_fingerprint: str) -> None:
@@ -908,16 +953,31 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
         materiality_flat = (
             raw.get("stance") == "flat" and not (decorated.instruments or [])
         )
+        _stance_for_card = str(raw.get("stance", "flat")).upper()
         if materiality_flat:
             hrs = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
             hrs_txt = f"{hrs:.0f}" if isinstance(hrs, (int, float)) else "??"
             st.caption(
                 f"No tradeable spread stretch today. Next EIA release in {hrs_txt}h."
             )
+            # UIP-T2: render three placeholder tier cards even on the
+            # flat path so the hero keeps a consistent skeleton and the
+            # sentinel selectors always resolve. Cards surface the
+            # "waiting for a tradeable stretch" story rather than
+            # actual sizing numbers.
+            _placeholder_instruments = [
+                _TierPlaceholder(tier=1, name="Paper", symbol=None),
+                _TierPlaceholder(tier=2, name="USO/BNO ETF pair", symbol="USO/BNO"),
+                _TierPlaceholder(tier=3, name="CL=F / BZ=F futures", symbol="CL=F/BZ=F"),
+            ]
+            cols = st.columns(3)
+            for col, inst in zip(cols, _placeholder_instruments):
+                with col:
+                    render_tier_card(inst, f"tier{inst.tier}", _stance_for_card)
         else:
             cols = st.columns(3)
             for col, inst in zip(cols, decorated.instruments):
-                _render_tier_tile(col, inst, portfolio_usd)
+                _render_tier_tile(col, inst, portfolio_usd, _stance_for_card)
             _render_checklist(
                 decorated.checklist or [],
                 decorated.context_fingerprint or "",
