@@ -253,3 +253,46 @@ az group delete --name oil-price-tracker --yes --no-wait
 2. `gh repo create macro-oil-terminal --public --source=. --remote=origin --push`
 3. `az login --tenant youbiquity`
 4. Paste the Azure block above, replacing `<SUBSCRIPTION_ID>` where needed.
+
+---
+
+## Auth provisioning (P1.1)
+
+One-shot setup for Google OAuth sign-in + Table Storage user store.
+After this runs once, normal `gh workflow run cd.yml` deploys pick up
+the App Service settings unchanged.
+
+### 1. Google Cloud OAuth client (manual, ~5 min)
+
+1. Open https://console.cloud.google.com/apis/credentials — pick or
+   create a project (e.g. `macro-oil-terminal`).
+2. Configure the OAuth consent screen (external, internal testing is
+   fine until we ship). Scopes: `openid`, `email`, `profile` only.
+3. Create Credentials → OAuth 2.0 Client ID → Web application.
+   - Authorised redirect URIs:
+     - `http://localhost:8501/oauth2callback` (local dev)
+     - `https://oil-tracker-app-canadaeast-4474.azurewebsites.net/oauth2callback`
+4. Save the client ID + client secret — the provisioning script will
+   prompt for them.
+
+### 2. Run the provisioner on the host
+
+```bash
+cd /Users/aidanbothost/Documents/macro_oil_terminal-p1-auth  # or main clone
+az login --tenant youbiquity
+./infra/provision_auth.sh
+```
+
+The script is idempotent: it creates the storage account + `users`
+table if missing, writes four Key Vault secrets (cookie secret is
+auto-generated; Google creds are prompted only if absent), and wires
+six App Service settings. Re-run safely after any secret rotation.
+
+### 3. Deploy
+
+```bash
+gh workflow run cd.yml --ref main
+```
+
+No further manual steps. Env vars flow from Key Vault -> App Service
+-> `os.environ` -> `auth.boot_check()`.

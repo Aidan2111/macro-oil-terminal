@@ -49,6 +49,7 @@ from alerts import maybe_send_zscore_alert
 from observability import configure as _obs_configure, span as _obs_span, trace_event
 from cointegration import engle_granger
 from crack_spread import compute_crack
+from auth import clear_cached_user, current_user
 
 _AI_ACTIVE = _obs_configure()
 
@@ -61,6 +62,16 @@ st.set_page_config(
     page_icon="\U0001f6e2\ufe0f",
     layout="wide",
 )
+
+# P1.1 auth boot check — surface a banner if misconfigured, but never crash in dev.
+try:
+    from auth import boot_check
+    boot_check()
+except Exception as _auth_boot_err:  # AuthNotConfigured or import-time issue
+    st.warning(
+        f"Auth not fully configured: {_auth_boot_err}. "
+        "Public research remains available; execute actions are disabled."
+    )
 
 st.markdown(
     """
@@ -730,6 +741,10 @@ def _render_tier_tile(col, inst, portfolio_usd: float) -> None:
     )
     if inst.tier == 2:
         col.caption("Defined-risk alt: ATM \u00b1 2 strikes on BNO/USO, 30\u201360 DTE, OI > 100.")
+    # P1.1.5 — auth-gated execute stub. P1.3 swaps the caption for a real
+    # order-placement button wired to the Alpaca broker via user.sub.
+    with col:
+        _render_execute_button_stub(f"tier{inst.tier}")
 
 
 def _render_checklist(checklist, thesis_fingerprint: str) -> None:
@@ -748,6 +763,70 @@ def _render_checklist(checklist, thesis_fingerprint: str) -> None:
                 help=("Auto-checked from today's data." if auto_val is not None
                       else "User must tick before executing."),
             )
+
+
+def _render_header_signin() -> None:
+    """Render a compact sign-in / sign-out row at the top of the hero band.
+
+    Emits an empty sentinel ``<div data-testid="...">`` immediately before
+    the Streamlit button/caption so Playwright can locate the control
+    (Streamlit widgets don't accept arbitrary ``data-testid`` attributes).
+
+    The real ``st.login("google")`` / ``st.logout()`` wiring lands in
+    Task 6 — here we use ``getattr(...)`` fallbacks so the app keeps
+    rendering on older Streamlit versions and the button press never
+    crashes the page (per the design spec's "Sign-in is temporarily
+    unavailable" fallback).
+    """
+    user = current_user()
+    # Right-align the header row so it doesn't crowd the stance pill below.
+    _spacer, col = st.columns([6, 2])
+    if user is not None:
+        col.markdown(
+            f'<div data-testid="signed-in-as" '
+            f'style="text-align:right; color:#c7cdd4; font-size:0.82rem;">'
+            f"Signed in as {user.email}</div>",
+            unsafe_allow_html=True,
+        )
+        if col.button("Sign out", key="auth-signout-btn"):
+            try:
+                clear_cached_user()
+                getattr(st, "logout", lambda: None)()
+                st.rerun()
+            except Exception as exc:  # pragma: no cover - defensive
+                st.warning(f"Sign-out failed: {exc}")
+        return
+
+    col.markdown(
+        '<div data-testid="signin-button" style="text-align:right;"></div>',
+        unsafe_allow_html=True,
+    )
+    if col.button(
+        "Sign in with Google",
+        key="auth-signin-btn",
+        type="primary",
+    ):
+        try:
+            getattr(st, "login", lambda *_: None)("google")
+        except Exception:  # pragma: no cover - real login wired in Task 6/7
+            st.info(
+                "Sign-in is temporarily unavailable. "
+                "Public research remains available below."
+            )
+
+
+def _render_execute_button_stub(tier_key) -> None:
+    """Placeholder for the P1.3 broker-wired execute button.
+
+    Inline auth gating (vs. ``@requires_auth``) avoids stacking three
+    login prompts when the hero band renders three tier tiles on an
+    unauthed view. The decorator is still the right tool for
+    route-level gates like the P1.6 onboarding wizard — just not here.
+    """
+    if current_user() is None:
+        st.caption("Sign in to execute this tier.")
+        return
+    st.caption(f"\u25b8 Execute {tier_key} (auth ready \u2014 P1.3 wires broker)")
 
 
 def _render_hero_band(thesis, ctx, decorated) -> None:
@@ -784,6 +863,9 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
     # wrapper div. The wrapper div above is what the e2e test asserts on;
     # the container below holds the interactive widgets.
     with st.container(key="hero-band-body"):
+        # Task 5 (P1.1.5): sign-in / sign-out header row sits at the top
+        # of the hero body so the auth surface is always first-paint.
+        _render_header_signin()
         if thesis is None or decorated is None:
             # Initial load before the LLM call fires. Show a placeholder flat
             # hero so the Playwright test's hero-band selector still resolves.
