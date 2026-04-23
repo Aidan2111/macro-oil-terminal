@@ -66,6 +66,7 @@ from language import (
 # the same module so every Plotly call site has one import surface.
 from theme import (
     SYMBOL_DISPLAY_NAMES,
+    _resolve_build_version,
     apply_theme,
     format_money_hover,  # noqa: F401 — available for future hover refinements
     inject_css,
@@ -75,6 +76,7 @@ from theme import (
     render_conviction_bar,
     render_empty,
     render_error,
+    render_footer,
     render_loading_status,
     render_onboarding,
     render_stance_pill,
@@ -88,10 +90,25 @@ _AI_ACTIVE = _obs_configure()
 # ---------------------------------------------------------------------------
 # Page config + sidebar
 # ---------------------------------------------------------------------------
+# UIP-T9: page_icon tries the favicon.ico path first. Streamlit 1.42
+# accepts a path-like string; if the version in use doesn't, fall back
+# to a PIL Image so the icon still renders. The emoji default is a last
+# resort so boot never breaks in a stripped-down environment.
+_PAGE_ICON = "static/favicon.ico"
+try:  # best-effort: some Streamlit versions only accept PIL.Image for files.
+    from PIL import Image as _PILImage
+    _PAGE_ICON = _PILImage.open("static/favicon.ico")
+except Exception:
+    pass
+
 st.set_page_config(
-    page_title="Oil Terminal | Spread Arbitrage & AIS Fleet",
-    page_icon="\U0001f6e2\ufe0f",
+    page_title="Macro Oil Terminal",
+    page_icon=_PAGE_ICON,
     layout="wide",
+    menu_items={
+        "Get help": "https://github.com/Aidan2111/macro-oil-terminal",
+        "Report a bug": "https://github.com/Aidan2111/macro-oil-terminal/issues",
+    },
 )
 inject_css()
 # UIP-T8: first-visit onboarding toasts — self-guarded on localStorage,
@@ -99,15 +116,20 @@ inject_css()
 # downstream render writes to the DOM.
 render_onboarding()
 
-# P1.1 auth boot check — surface a banner if misconfigured, but never crash in dev.
-try:
-    from auth import boot_check
-    boot_check()
-except Exception as _auth_boot_err:  # AuthNotConfigured or import-time issue
-    st.warning(
-        f"Auth not fully configured: {_auth_boot_err}. "
-        "Public research remains available; execute actions are disabled."
-    )
+# P1.1 auth boot check — surface a banner if misconfigured, but never crash
+# in dev. UIP-T9: gate the banner behind non-prod (or an explicit opt-in)
+# so production deploys stay quiet when the expected auth env is wired up.
+_is_prod = os.environ.get("STREAMLIT_ENV") == "prod"
+_auth_banner_in_prod = os.environ.get("AUTH_BANNER_IN_PROD") == "true"
+if not _is_prod or _auth_banner_in_prod:
+    try:
+        from auth import boot_check
+        boot_check()
+    except Exception as _auth_boot_err:  # AuthNotConfigured or import-time issue
+        st.warning(
+            f"Auth not fully configured: {_auth_boot_err}. "
+            "Public research remains available; execute actions are disabled."
+        )
 
 st.markdown(
     """
@@ -2160,3 +2182,7 @@ st.caption(
     "(15-min delayed futures). Inventory via EIA dnav (keyless). AIS placeholder with "
     "aisstream.io upgrade path. Not investment advice."
 )
+
+# UIP-T9: app footer — single-line disclaimer + build version + region.
+# Zero personalization; copy is fixed by ``theme.render_footer``.
+render_footer(_resolve_build_version())

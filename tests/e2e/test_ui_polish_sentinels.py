@@ -7,6 +7,8 @@ visual look lives in the design doc, not in a test.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 
@@ -146,3 +148,47 @@ def test_onboarding_toast_attaches_on_first_visit(browser, streamlit_server):
             )
     finally:
         ctx.close()
+
+
+def test_page_title_is_generic(streamlit_server, page):
+    """UIP-T9: the browser page title must be the generic product name
+    ``"Macro Oil Terminal"``. No personalization — no "Aidan's Desk",
+    no "Spread Arbitrage & AIS Fleet" strapline. Locked by the meta
+    polish pass.
+    """
+    page.goto(streamlit_server, wait_until="domcontentloaded", timeout=60_000)
+    # Streamlit sets document.title after the script config runs; wait a
+    # beat for the set_page_config side-effect to land.
+    page.locator("h1", has_text="Inventory-Adjusted").first.wait_for(
+        state="visible", timeout=90_000
+    )
+    title = page.title()
+    assert title == "Macro Oil Terminal", (
+        f"expected page title 'Macro Oil Terminal', got {title!r}"
+    )
+
+
+def test_footer_sentinel_attached_and_matches_pattern(streamlit_server, page):
+    """UIP-T9: ``[data-testid="app-footer"]`` must attach to the DOM and
+    its text must match the one-line disclaimer pattern ::
+
+        Research … education only · v<anything> · deployed to <region>
+
+    Region defaults to ``canadaeast``; version is whatever
+    ``BUILD_VERSION`` resolves to at boot (``"dev"`` in test runs).
+    """
+    _goto(page, streamlit_server)
+
+    footer = page.locator('[data-testid="app-footer"]').first
+    footer.wait_for(state="attached", timeout=60_000)
+
+    text = footer.text_content() or ""
+    # Collapse whitespace so multiline HTML doesn't break the regex.
+    text = re.sub(r"\s+", " ", text).strip()
+
+    pattern = re.compile(
+        r"^Research.*education only\s*[·•]\s*v.+\s*[·•]\s*deployed to .+$"
+    )
+    assert pattern.match(text), (
+        f"footer text {text!r} did not match expected pattern"
+    )

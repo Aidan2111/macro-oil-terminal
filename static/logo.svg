@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Macro Oil Terminal logo">
+  <!-- Dark brand tile (PALETTE.bg_1) with rounded corners so the logo reads as an icon. -->
+  <rect x="0" y="0" width="64" height="64" rx="8" fill="#0A0E1A"/>
+
+  <!-- Oil barrel silhouette, stroked in the cyan primary (#22D3EE).
+       Three horizontal stripes echo the classic steel-drum rib pattern. -->
+  <g stroke="#22D3EE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Barrel body: slightly rounded rectangle. -->
+    <rect x="12" y="14" width="22" height="36" rx="3" ry="5"/>
+    <!-- Top + bottom ellipses to suggest a cylinder. -->
+    <ellipse cx="23" cy="14" rx="11" ry="2.5"/>
+    <ellipse cx="23" cy="50" rx="11" ry="2.5"/>
+    <!-- Three rib stripes. -->
+    <line x1="12" y1="23" x2="34" y2="23"/>
+    <line x1="12" y1="32" x2="34" y2="32"/>
+    <line x1="12" y1="41" x2="34" y2="41"/>
+  </g>
+
+  <!-- Dislocation arrow — one shaft splitting into two heads (up-right, down-right).
+       Represents the Brent / WTI spread divergence the terminal tracks. -->
+  <g stroke="#22D3EE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Shaft from the right edge of the barrel outward. -->
+    <line x1="36" y1="32" x2="46" y2="32"/>
+    <!-- Upper branch (bullish / positive split). -->
+    <line x1="46" y1="32" x2="54" y2="22"/>
+    <polyline points="49,22 54,22 54,27"/>
+    <!-- Lower branch (bearish / negative split). -->
+    <line x1="46" y1="32" x2="54" y2="42"/>
+    <polyline points="49,42 54,42 54,37"/>
+  </g>
+</svg>

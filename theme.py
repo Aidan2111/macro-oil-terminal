@@ -254,6 +254,17 @@ _CSS_STATES = """
 .error-state-message { color: var(--alert); font-size: 14px; font-weight: 500; }
 """
 
+_CSS_FOOTER = """
+.app-footer {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 24px 16px;
+  margin-top: 48px;
+  border-top: 1px solid var(--border);
+}
+"""
+
 _CSS = "<style>" + "".join([
     _CSS_ROOT_VARS,
     _CSS_TYPOGRAPHY,
@@ -267,6 +278,7 @@ _CSS = "<style>" + "".join([
     _CSS_CHECKLIST,
     _CSS_COUNTDOWN,
     _CSS_STATES,
+    _CSS_FOOTER,
     _CSS_MOBILE,
 ]) + "</style>"
 
@@ -1308,3 +1320,66 @@ def render_onboarding() -> None:
         # Never let a components mount failure crash the page render.
         # The onboarding is a nice-to-have; the app must still boot.
         pass
+
+
+# ---------------------------------------------------------------------------
+# T9 — meta polish: build version resolver + footer.
+#
+# ``_resolve_build_version()`` reads ``BUILD_VERSION`` from the environment
+# so CD can bake ``git rev-parse --short HEAD`` in at container build
+# time. Local dev falls through to ``"dev"`` so the footer never surfaces
+# a blank version.
+#
+# ``render_footer(version, region)`` writes a single centered line at
+# the bottom of the page — the research-and-education disclaimer,
+# resolved version, and deploy region. No personalization, no name — a
+# unit test locks that invariant. The ``.app-footer`` CSS rule is
+# declared alongside the other ``_CSS_*`` chunks above and composed into
+# the single-injection ``_CSS`` blob.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_build_version() -> str:
+    """Return the deployed build version, or ``"dev"`` if unset.
+
+    CD bakes ``BUILD_VERSION=<git sha>`` into the container env so the
+    footer shows the actual deployed revision. Local dev / tests leave
+    the env var unset and get the ``"dev"`` literal.
+    """
+    import os
+
+    value = os.environ.get("BUILD_VERSION", "").strip()
+    return value or "dev"
+
+
+def render_footer(version: str | None = None, region: str = "canadaeast") -> None:
+    """Render the app footer (UIP-T9).
+
+    Emits a single centered line carrying the research-and-education
+    disclaimer, the resolved build version, and the deploy region. The
+    block carries ``data-testid="app-footer"`` so Playwright can target
+    it. When ``version`` is ``None`` the resolver reads it from
+    ``BUILD_VERSION`` (fallback ``"dev"``) so call sites can pass
+    nothing and still get a well-formed footer.
+
+    Copy is fixed — generic "Macro Oil Terminal" branding, zero
+    personalization. A parametrised unit test enforces that invariant
+    against a banned-strings set ({aidan, youbiquity, personal, ...}).
+    Outside a Streamlit runtime the helper returns silently (mirrors
+    the other theme helpers).
+    """
+    if not _has_streamlit_runtime():
+        return
+    resolved = version if version is not None else _resolve_build_version()
+    # Render as "v<resolved>" — but skip the prefix if the caller already
+    # passed a "v"-tagged string (e.g. ``v0.4.1``) so the footer doesn't
+    # read ``vv0.4.1``. Git short-SHAs and ``"dev"`` get the ``v`` prefix
+    # for visual consistency.
+    display_version = resolved if resolved.startswith("v") else f"v{resolved}"
+    st.markdown(
+        f'<div class="app-footer" data-testid="app-footer">'
+        f"Research &amp; education only \u00b7 {display_version} "
+        f"\u00b7 deployed to {region}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
