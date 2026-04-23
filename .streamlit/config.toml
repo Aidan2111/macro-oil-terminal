@@ -2,7 +2,6 @@
 headless = true
 runOnSave = false
 fileWatcherType = "none"
-enableStaticServing = true
 
 [browser]
 gatherUsageStats = false
