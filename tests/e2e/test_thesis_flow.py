@@ -80,6 +80,7 @@ def test_hero_stance_pill_renders(streamlit_server, page):
     _goto(page, streamlit_server)
     body = page.inner_text("body")
     # The hero band emits one of the three plain-language stance labels.
-    # UIP-T0 renamed: BUY SPREAD -> BUY THE SPREAD, SELL SPREAD -> SELL THE SPREAD,
-    # STAND ASIDE -> WAIT.
-    assert any(s in body for s in ("BUY THE SPREAD", "SELL THE SPREAD", "WAIT"))
+    # Phase-C Row 13 renamed: "BUY THE SPREAD" -> "LEAN LONG",
+    # "SELL THE SPREAD" -> "LEAN SHORT", "WAIT" -> "STAND ASIDE".
+    # Hypothetical, not imperative — pairs with the new hedging layer.
+    assert any(s in body for s in ("LEAN LONG", "LEAN SHORT", "STAND ASIDE"))
