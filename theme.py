@@ -90,11 +90,44 @@ _CSS_TABS = """
   color: var(--primary);
   border-bottom: 2px solid var(--primary);
 }
+/* UX-R2 fix #5 — tab bar sticky at top so tab switches on long hero
+   pages don't require scrolling. Ships as a few-line CSS tweak
+   instead of a DOM reorder in ``app.py``. */
+[data-baseweb="tab-list"] {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-1);
+}
+"""
+
+# UX-R2 fix #4 — hide Streamlit's dev chrome (Stop / Deploy /
+# script-runner buttons) in prod so users don't see them top-right.
+# None of these selectors are user-facing controls — they're the
+# Streamlit devtools surface intended for the author during `streamlit
+# run`, and they leak into the deployed app.
+_CSS_CHROME_HIDE = """
+[data-testid="stDeployButton"],
+[data-testid="stAppDeployButton"],
+button[data-testid="stBaseButton-header"] {
+  display: none !important;
+}
 """
 
 _CSS_BUTTONS = """
 .stButton > button[data-baseweb="button"][kind="primary"]:hover {
   box-shadow: 0 0 20px var(--primary-glow);
+}
+/* UX-R2 fix #3 — primary CTA (Sign in with Google) shipped as
+   white-on-cyan which reads 1.81:1 (WCAG AA fail). Swap the label to
+   the near-black ``--bg-1`` token on the filled cyan surface: contrast
+   lands ~11:1. The hover box-shadow rule above still applies. */
+.stButton > button[data-baseweb="button"][kind="primary"] {
+  color: #0A0E1A !important;
+  font-weight: 600;
+}
+.stButton > button[data-baseweb="button"][kind="primary"] * {
+  color: #0A0E1A !important;
 }
 """
 
@@ -278,6 +311,35 @@ _CSS_MOBILE_SURFACES = """
   /* Empty / error cards: keep inside the viewport without the
      default 16px vertical margins stacking up visually. */
   .empty-state, .error-state { margin: 12px 0; padding: 18px 12px; }
+
+  /* UX-R2 fix #2 — sidebar-open chevron was 28x28 (sole access path
+     to every control on mobile). Bump to the 44x44 WCAG / Apple HIG
+     minimum; also widens the sidebar-collapse + hamburger buttons so
+     the entire primary-nav row meets spec. */
+  [data-testid="stExpandSidebarButton"],
+  [data-testid="stSidebarCollapseButton"],
+  [data-testid="stMainMenuButton"] {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    padding: 10px !important;
+  }
+  [data-testid="stExpandSidebarButton"] svg,
+  [data-testid="stSidebarCollapseButton"] svg,
+  [data-testid="stMainMenuButton"] svg {
+    width: 24px !important;
+    height: 24px !important;
+  }
+
+  /* UX-R2 fix #6 — global tap-target floor. 31 buttons on iPhone 13
+     landed under 44x44; lift every Streamlit button + anchor inside
+     the main surface to the floor without stretching vertical
+     rhythm past 44px visibly. */
+  .stButton > button,
+  .stDownloadButton > button,
+  button[data-testid="stBaseButton-secondary"],
+  button[data-testid="stBaseButton-primary"] {
+    min-height: 44px;
+  }
 }
 """
 
@@ -400,6 +462,7 @@ _CSS = "<style>" + "".join([
     _CSS_TYPOGRAPHY,
     _CSS_SPACING,
     _CSS_TABS,
+    _CSS_CHROME_HIDE,
     _CSS_BUTTONS,
     _CSS_STANCE_PILL,
     _CSS_CONVICTION_BAR,

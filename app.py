@@ -994,7 +994,7 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
         f'border-radius:6px; color:#e7ecf3;">'
         f'<span style="background:{header_color}; color:#0b0f14; '
         f'padding:4px 10px; border-radius:4px; font-weight:700; '
-        f'letter-spacing:1px; font-size:0.85rem;">HERO &middot; {header_label}</span>'
+        f'letter-spacing:1px; font-size:0.85rem;">{header_label}</span>'
         f'<span style="margin-left:10px; color:#c7cdd4; font-size:0.85rem;">'
         f"Today's {_T['trade_idea'].lower()}, sizing, and pre-trade checklist.</span>"
         f"</div>",
@@ -1172,7 +1172,7 @@ except Exception as _hero_exc:
         'color:#e7ecf3;">'
         '<span style="background:#95a5a6; color:#0b0f14; padding:4px 10px; '
         'border-radius:4px; font-weight:700; letter-spacing:1px; '
-        'font-size:0.85rem;">HERO &middot; UNAVAILABLE</span>'
+        'font-size:0.85rem;">UNAVAILABLE</span>'
         f'<span style="margin-left:10px; color:#c7cdd4; font-size:0.85rem;">'
         f"{_hero_exc!r}</span>"
         "</div>",
