@@ -1,9 +1,11 @@
 # P1.1 — Authentication + User Store (Design spec)
 
-> **Status:** APPROVED (2026-04-22). Brainstorm defaults adopted.
-> Plan (`docs/plans/p1-auth.md`) is the source of truth for execution.
-> This doc is the 5-minute review target — skim the top 40 lines and
-> you know the shape.
+> **Status:** ARCHIVED (2026-04-22 00:55Z). Two pivots in, ending up
+> with a simplified single-user product scope: the shipped P1.1
+> Google-OIDC infrastructure remains (merged at `3f39ff4`), but no
+> IdP is actively wired. UI polish has been promoted to the
+> critical path. This doc, including the Clerk pivot section, is
+> preserved as a warm-start for any future multi-user return.
 
 ## One-paragraph summary
 
@@ -281,3 +283,148 @@ E2E (Playwright):
   a one-off script reading the source's iteration API.
 - Rip out entirely: delete `auth/`, remove decorators. Left with the
   pre-P1.1 public dashboard.
+
+---
+
+## Clerk pivot (2026-04-22 00:40Z)
+
+Design delta — what changes from the Google-OIDC shape above. Everything
+not mentioned here stays as shipped.
+
+### New module: `auth/clerk.py`
+
+```python
+"""Clerk JWT verification + hosted sign-in URL helpers."""
+
+def clerk_subdomain_from_publishable_key(pk: str) -> str: ...
+def clerk_jwks_url() -> str: ...                    # derives from env or override
+def clerk_sign_in_url(redirect_url: str) -> str: ... # https://<sub>.clerk.accounts.dev/sign-in?redirect_url=...
+def clerk_sign_out_url(redirect_url: str) -> str: ...
+def verify_clerk_jwt(token: str) -> dict | None: ... # returns verified claims, None on invalid
+```
+
+`verify_clerk_jwt` fetches the JWKS (cached for 10 min), picks the key
+matching the token's `kid`, and verifies RS256 signature + `iss` +
+`exp` + `nbf`. Returns a dict with at minimum `{sub, email, name, picture}`.
+
+### `auth/session.py` rewrite (surgical)
+
+Swap the `_user_from_streamlit_session` branch for
+`_user_from_clerk_session()`:
+
+```python
+def _user_from_clerk_session() -> User | None:
+    # 1. If we cached a user this session, reuse.
+    # 2. Else look for __clerk_db_jwt in st.query_params (the handshake token).
+    # 3. If present, verify via auth.clerk.verify_clerk_jwt(token).
+    # 4. If valid: upsert user store from claims, cache, strip the token
+    #    from the URL with st.query_params.clear("__clerk_db_jwt"), return User.
+    # 5. If no token AND no cached user: return None.
+```
+
+The `MOCK_AUTH_USER` short-circuit + `STREAMLIT_ENV=prod` safety-net
+stay exactly as shipped. No Playwright / test-surface change for
+those paths.
+
+### `auth/widgets.py` delta
+
+`render_login_gate` + `_render_header_signin` change the button into
+a link rendered via `st.link_button("Sign in", url=clerk_sign_in_url(...))`.
+The `data-testid="signin-button"` sentinel stays. On sign-out, link
+to `clerk_sign_out_url(return_to=<app root>)` + call
+`clear_cached_user()` when the user lands back.
+
+### `auth/config.py` delta
+
+Required env vars become:
+- `CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+- `STREAMLIT_COOKIE_SECRET` (unchanged — used for our own session cookie, not Clerk's)
+- `STORAGE_ACCOUNT_CONNECTION_STRING` (or `_NAME` — unchanged).
+
+Optional: `CLERK_JWKS_URL` (override; default derived from publishable key).
+
+### `infra/provision_auth.sh` delta
+
+Replace the two Google prompts:
+
+```bash
+read -p "Clerk publishable key (pk_live_... or pk_test_...): " CLERK_PK
+read -s -p "Clerk secret key (sk_live_... or sk_test_...): " CLERK_SK
+```
+
+Write `clerk-publishable-key` and `clerk-secret-key` to Key Vault.
+Key Vault reference names for App Settings:
+`CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY`.
+
+Drop the three Google-specific secret writes.
+
+### `.streamlit/secrets.toml.example` delta
+
+Delete the `[auth]` + `[auth.google]` blocks (Streamlit's native
+`st.login()` is no longer in the path). Replace with a short commented
+reminder that Clerk env vars come from App Settings / `.env` in dev.
+
+### `.env.example` delta
+
+Drop `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`. Add
+`CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` / `CLERK_JWKS_URL=`
+(blank default — derived from publishable key).
+
+### `requirements.txt` delta
+
+Add `PyJWT[crypto]>=2.8.0` for JWT verify (installs `cryptography`
+transitively). Drop nothing — `streamlit>=1.42.0` still useful for
+`st.context.cookies` and `st.link_button`.
+
+### Test delta
+
+- **New:** `tests/unit/test_auth_clerk.py` — 4 tests:
+  1. `test_verify_clerk_jwt_valid_signature` — sign a token with a
+     test RSA key, expose JWKS via a monkeypatch'd fetcher, verify
+     returns the claims dict.
+  2. `test_verify_clerk_jwt_invalid_signature` — tamper with the
+     token; verify returns `None`.
+  3. `test_verify_clerk_jwt_expired` — `exp` in the past; verify
+     returns `None`.
+  4. `test_clerk_sign_in_url_contains_redirect` — `clerk_sign_in_url("https://x/y")`
+     returns a URL whose `redirect_url` query param equals the input.
+
+- **Updated:** `tests/unit/test_auth_session.py` — rename the
+  `test_current_user_returns_real_user_when_st_user_logged_in` test
+  to `test_current_user_returns_real_user_when_clerk_jwt_in_query_params`;
+  stub `auth.clerk.verify_clerk_jwt` to return fake claims; confirm
+  the `MOCK_AUTH_USER` tests are unchanged (still 5 total).
+
+- **Updated:** `tests/unit/test_auth_config.py` — the required env
+  vars change; updated assertions list the new Clerk vars. Still 5
+  tests.
+
+- **Updated:** `tests/e2e/test_auth_public_and_gated.py` — the
+  `test_sign_in_button_visible_when_unauth` test now also asserts
+  the link's `href` contains `clerk.accounts.dev`. Three e2e tests
+  total, unchanged.
+
+- **Unchanged:** `test_auth_user.py` (3), `test_auth_table_storage.py` (4),
+  `test_auth_decorator.py` (4).
+
+- **Net:** 18 unit + 3 e2e = 21 tests, same count as P1.1. Clerk
+  tests replace the Google-specific test, plus a new clerk module
+  file.
+
+### Live-verify delta
+
+`.agent-scripts/verify_p1_auth_live.py` adds one more assertion —
+the sign-in link's `href` attribute contains `clerk.accounts.dev`.
+
+### Acceptance criteria delta
+
+- Redirect to `clerk.accounts.dev/sign-in` + sign-up / sign-in via
+  email or GitHub works end-to-end.
+- On redirect back, `__clerk_db_jwt` is verified, claims land in
+  the user store, and the "Signed in as <email>" caption renders.
+- With `STREAMLIT_ENV=prod` and Clerk env unset, `boot_check()`
+  raises → app.py try/except catches → "Auth not fully configured"
+  banner appears, public research still works.
+- All 21 tests pass locally and in CI.
+

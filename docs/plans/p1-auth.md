@@ -227,3 +227,101 @@ This is the `finishing-a-development-branch` skill.
 - [ ] GCP OAuth client id + secret captured (waiting on Aidan).
 - [ ] Storage account region + RG approved (`canadaeast`,
       `oil-price-tracker`).
+
+---
+
+## Clerk pivot plan (2026-04-22 00:40Z)
+
+Short rebuild on a new branch `feat/p1-auth-clerk` off `main` (main
+already has the Google-OIDC P1.1 merged as `3f39ff4`).
+
+**Four TDD tasks**, each fresh subagent, RED→GREEN→REFACTOR→commit.
+Tasks 1 and 2 are independent; 3 depends on 2; 4 depends on 3.
+
+### Task C1 — Env-var swap + strip Google-specific wiring
+
+- `auth/config.py`: `_REQUIRED_ENV_VARS` becomes
+  `("CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY", "STREAMLIT_COOKIE_SECRET")`.
+- `tests/unit/test_auth_config.py`: the 5 existing tests re-expressed
+  against the new var list. No test count change.
+- `.env.example`: drop Google block, add Clerk block.
+- `.streamlit/secrets.toml.example`: drop `[auth]` + `[auth.google]`;
+  leave a short comment pointing at Clerk App Settings.
+- `infra/provision_auth.sh`: swap the two `read` prompts; write
+  `clerk-publishable-key` + `clerk-secret-key` KV secrets; set
+  `CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` App Settings; drop
+  the three Google-specific writes.
+- Commit: `feat(auth): swap env vars Google → Clerk (P1.1-clerk C1)`.
+
+### Task C2 — `auth/clerk.py` with JWT verify + sign-in URL helpers
+
+- New `auth/clerk.py` with: `clerk_subdomain_from_publishable_key`,
+  `clerk_jwks_url`, `clerk_sign_in_url`, `clerk_sign_out_url`,
+  `verify_clerk_jwt`.
+- Add `PyJWT[crypto]>=2.8.0` to `requirements.txt`.
+- Module-level JWKS cache (10-minute TTL) fetched via `requests.get`.
+  Tests monkeypatch the fetcher to return a canned JWKS.
+- `tests/unit/test_auth_clerk.py` — 4 tests:
+  C2.1 verify valid signature round-trip,
+  C2.2 invalid signature returns None,
+  C2.3 expired token returns None,
+  C2.4 `clerk_sign_in_url("https://x/y")` url-encodes the redirect.
+  Use `cryptography.hazmat.primitives.asymmetric.rsa` to generate a
+  2048-bit keypair once in a fixture; sign with `pyjwt.encode(...,
+  algorithm="RS256", headers={"kid": "test"})`.
+- Commit: `feat(auth): auth/clerk.py — JWT verify + sign-in URL helpers (P1.1-clerk C2)`.
+
+### Task C3 — Rewire `auth/session.py` Clerk branch
+
+- Replace `_user_from_streamlit_session` with `_user_from_clerk_session`.
+  Reads `__clerk_db_jwt` from `st.query_params`; if present calls
+  `auth.clerk.verify_clerk_jwt(token)`; if valid, upserts the store,
+  caches the User in `st.session_state["_auth_user"]`, and clears
+  the query param.
+- Keep the `MOCK_AUTH_USER` path + the `STREAMLIT_ENV=prod` safety-net
+  byte-for-byte.
+- `tests/unit/test_auth_session.py`: the `test_current_user_returns_real_user_…`
+  test renames to `test_current_user_verifies_clerk_jwt_from_query_params`
+  and monkeypatches `auth.clerk.verify_clerk_jwt` + a fake
+  `st.query_params` + `st.session_state`. Idempotency test
+  (`test_current_user_cached_across_calls_within_session`) preserved.
+- Commit: `feat(auth): current_user() reads Clerk JWT from query_params (P1.1-clerk C3)`.
+
+### Task C4 — Widgets + e2e + live-verify update
+
+- `auth/widgets.py`: `_render_header_signin` (currently in `app.py`)
+  renders `st.link_button("Sign in", url=clerk_sign_in_url(app_url))`
+  when unauthed, with the existing `data-testid="signin-button"`
+  sentinel div above it. Sign-out link → `clerk_sign_out_url(app_url)`.
+- `app.py`: unchanged surface, but `_render_header_signin` now delegates
+  to `auth.widgets.render_header_signin` (move the helper into the
+  package; leave the tier-tile execute stub as-is).
+- `tests/e2e/test_auth_public_and_gated.py`: `test_sign_in_button_visible_when_unauth`
+  adds one assertion — the anchor's `href` contains `clerk.accounts.dev`.
+- `.agent-scripts/verify_p1_auth_live.py`: grep the rendered DOM
+  for a `clerk.accounts.dev` href; fail if absent when unauthed.
+- Commit: `feat(auth): sign-in link targets Clerk hosted UI (P1.1-clerk C4)`.
+
+### Finishing flow (Task C5)
+
+1. Merge `main` into `feat/p1-auth-clerk` (should be clean — main
+   hasn't moved since P1.1 merge + PROGRESS commit).
+2. Full pytest + e2e locally. Target: **182 passed** (same count —
+   Clerk tests replace Google tests 1:1, plus 4 new `test_auth_clerk`
+   offset by 4 old passing).
+3. `git push -u origin feat/p1-auth-clerk` → PR → CI → CD.
+4. Live verify: button renders, href points at Clerk.
+5. Merge `feat/p1-auth-clerk` → `main` via `--no-ff`. CD redeploys.
+6. Delete worktree + branch (local + remote).
+7. PROGRESS.md entry.
+
+### Env / signup state
+
+- **Waiting on Aidan (parallel signup task):** Clerk publishable key
+  + secret key + the hosted subdomain. Until they land in App
+  Settings, the deployed site runs in "auth-not-fully-configured"
+  mode — the boot-check banner shows and the signin link is inert
+  (it still renders at a Clerk URL built from a placeholder
+  subdomain if env is empty, but clicking it 404s until the real
+  key is present).
+

@@ -1,17 +1,76 @@
 # P1.1 — Authentication + User Store (Brainstorm)
 
-> **Status:** RESOLVED (2026-04-22). All six open questions adopted the
-> proposed defaults under the "most-conservative, minimal, reversible"
-> rule Aidan set during hero-thesis HT0. Design spec (`docs/designs/
-> p1-auth.md`) and plan (`docs/plans/p1-auth.md`) are the live artefacts;
-> this brainstorm is retained as the record of *why* the choices came out
-> the way they did. Material divergence from Aidan's P1 escalation:
-> his brief named Clerk as the default IdP; research showed Alpaca is
-> OAuth 2.0 (not OIDC) so "Clerk relaying to Alpaca" was never the
-> right lever, and Streamlit's native `st.login()` (v1.42+) gives us
-> a drop-in OIDC flow behind any IdP. We picked Google OIDC behind
-> `st.login()` — zero vendors added, swap to Clerk / Auth0 / Microsoft
-> in `secrets.toml` later if we outgrow it.
+> **Status:** ARCHIVED (2026-04-22 00:55Z). The Clerk pivot was
+> paused before execution when Aidan reprioritised: **UI polish
+> first, then simplified single-user Alpaca (static env-var API
+> keys, not OAuth)**. The shipped P1.1 auth scaffolding (`User`,
+> `UserStore`, `current_user()`, `@requires_auth`, sign-in button
+> placeholder) stays in place as infrastructure — the product is
+> now "Aidan's personal oil research desk", so a multi-user IdP
+> (Google, Clerk, or otherwise) is not on the critical path. If we
+> ever return to multi-user, the Clerk delta at the bottom of this
+> doc + the parallel delta in the design spec + plan addendum are
+> the warm-start.
+
+> **Prior status (historical):** RESOLVED 2026-04-22 with Streamlit
+> native `st.login()` + Google OIDC — shipped in P1.1 (SHAs
+> `65f632f..8245172` merged as `3f39ff4`). Aidan dropped Google and
+> picked Clerk, then before Clerk was built, dropped the multi-user
+> premise entirely.
+
+## Clerk pivot (2026-04-22)
+
+Aidan's directive: drop Google. Use Clerk.
+
+**Why the pivot is cheap:** the P1.1 architecture split the IdP
+(`auth/session.py::_user_from_streamlit_session`) from the rest of
+the auth stack (user store, decorator, widgets, mock-auth seam).
+Every provider-agnostic surface stays — only the "how does a user
+prove who they are" branch swaps.
+
+**Clerk integration shape** (lowest-friction option surveyed):
+
+1. **Sign-in button is a link**, not a `st.button()` click-handler.
+   The link target is Clerk's hosted sign-in page:
+   `https://<clerk-subdomain>.clerk.accounts.dev/sign-in?redirect_url=<app>`.
+   Clerk owns the entire sign-in UX (email+password, magic link,
+   GitHub). No custom UI we maintain.
+
+2. **Return leg** — Clerk redirects to our app with the session JWT
+   appended as a query parameter (the `__clerk_db_jwt` handshake
+   pattern for cross-origin hosts that don't embed Clerk's frontend
+   SDK). We read the JWT from `st.query_params`, verify the signature
+   against Clerk's JWKS (`https://<subdomain>.clerk.accounts.dev/.well-known/jwks.json`),
+   and extract the standard claims (`sub`, `email`, `name`,
+   `picture_url`).
+
+3. **Session persistence** — after a successful verify, we persist
+   the validated claims into `st.session_state["_auth_user"]` AND
+   into a Streamlit signed cookie (native `st.context.cookies` in
+   v1.42, or `streamlit-cookies-controller` as a fallback). The
+   Clerk JWT itself is not stored — only the verified claims are.
+
+4. **Logout** — link to Clerk's hosted sign-out URL. Local cleanup
+   (`clear_cached_user()`) happens on the redirect back.
+
+**Env var change:** drop `GOOGLE_OAUTH_CLIENT_ID` /
+`GOOGLE_OAUTH_CLIENT_SECRET`. Add:
+- `CLERK_PUBLISHABLE_KEY` — prefixed `pk_live_` or `pk_test_`; its
+  tail encodes the Clerk subdomain.
+- `CLERK_SECRET_KEY` — prefixed `sk_live_` or `sk_test_`; used for
+  backend-API calls (e.g. user lookup by id). Not needed for JWT
+  verify; needed for later features like "disable user".
+- `CLERK_JWKS_URL` — optional override; we derive this from
+  `CLERK_PUBLISHABLE_KEY` by default.
+
+**Same guardrails hold.** `STREAMLIT_ENV=prod` still gates the
+`MOCK_AUTH_USER` bypass. `boot_check()` still validates required
+env vars. User store shape is unchanged (Clerk's `sub` is stable —
+drop-in replacement for Google's `sub`).
+
+**Reversibility.** If Clerk goes sideways, swap to Auth0 / Supabase
+Auth / Azure AD B2C by rewriting only `auth/clerk.py` (and renaming
+to `auth/<provider>.py`). The session.py seam stays.
 
 ## The user problem, restated
 
