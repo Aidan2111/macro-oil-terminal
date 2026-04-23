@@ -51,6 +51,16 @@ from cointegration import engle_granger
 from crack_spread import compute_crack
 from auth import clear_cached_user, current_user
 
+# UIP-T0: language pass — every UI string that names a finance concept
+# pulls from ``language.TERMS`` so the rename stays in one place.
+from language import (
+    TERMS as _T,
+    describe_stretch as _describe_stretch,
+    describe_confidence as _describe_confidence,
+    describe_correlation as _describe_correlation,
+    describe_stance as _describe_stance,
+)
+
 _AI_ACTIVE = _obs_configure()
 
 
@@ -118,7 +128,7 @@ show_advanced = st.sidebar.checkbox(
 )
 
 z_threshold = st.sidebar.slider(
-    "Dislocation alert level" + (" (σ, Z-score)" if show_advanced else ""),
+    _T["stretch_alert"] + (" (σ, Z-score)" if show_advanced else ""),
     min_value=0.5,
     max_value=5.0,
     value=_q_default("z", 0.5, 5.0, 3.0),
@@ -126,7 +136,7 @@ z_threshold = st.sidebar.slider(
     help=(
         "How far the Brent-WTI spread has to drift from its normal range "
         "before we flag it. Measured in standard deviations (Z-score). "
-        "3.0σ ≈ extreme dislocation, triggers once every few years on average."
+        "3.0σ ≈ extreme stretch, triggers once every few years on average."
     ),
 )
 floor_mbbl_default = int(_q_default("floor", 100, 700, 300))
@@ -193,10 +203,10 @@ with st.sidebar.expander("Data sources (health)"):
         st.caption(f"{icon} **{r['label']}** — {lat} ms · {note}")
 
 alert_on = st.sidebar.toggle(
-    "Email me on Z-score breach",
+    "Email me when the spread gets stretched",
     value=False,
     help="Requires ALERT_SMTP_* env vars. Without them, the UI will show the "
-    "exact message that would have been sent.",
+    "exact message that would have been sent. (Technically a Z-score breach.)",
 )
 
 live_mode = st.sidebar.toggle(
@@ -376,8 +386,8 @@ bt = _backtest_cached(
 # ---------------------------------------------------------------------------
 st.title("Inventory-Adjusted Spread Arbitrage & AIS Fleet Analytics")
 st.caption(
-    "Macro oil desk terminal — Brent/WTI dislocations, inventory drawdown velocity, "
-    "and tanker fleet composition by regulatory regime."
+    f"Macro oil desk terminal — Brent/WTI {_T['stretch'].lower()}, inventory "
+    "drawdown velocity, and tanker fleet composition by regulatory regime."
 )
 
 
@@ -466,18 +476,19 @@ def _ticker_strip() -> None:
 
     z_tail = spread_df["Z_Score"].dropna().tail(120)
     z_val = z_tail.iloc[-1] if not z_tail.empty else 0.0
-    dislocation_label = (
-        f"Dislocation {z_val:+.2f}\u03c3" if show_advanced
-        else f"Dislocation {z_val:+.2f}"
+    stretch_band = _describe_stretch(z_val)
+    stretch_label = (
+        f"{stretch_band}: {z_val:+.2f}\u03c3" if show_advanced
+        else f"{stretch_band}: {z_val:+.2f}"
     )
     cols[2].metric(
         f"Spread ${latest_spread_v:+.2f}",
-        dislocation_label,
+        stretch_label,
         delta=("ALERT" if abs(z_val) >= z_threshold else "calm"),
         delta_color=("inverse" if abs(z_val) >= z_threshold else "normal"),
         help=(
-            "Dislocation measures how far today's Brent-WTI spread is from "
-            "its normal range. +2 = spread is about 2× its usual daily wobble "
+            f"**{_T['stretch']}** — how far today's Brent-WTI spread is from "
+            "its normal range. +2 = spread is about 2x its usual daily wobble "
             "above average; statistically extreme. Technically a Z-score."
         ),
     )
@@ -510,10 +521,10 @@ try:
     _last_thesis = st.session_state.get("_thesis_obj")
     _stance = (_last_thesis.raw.get("stance") if _last_thesis else "—")
     _stance_display = {
-        "long_spread": "BUY spread",
-        "short_spread": "SELL spread",
-        "flat": "STAND ASIDE",
-        "—": "thesis not yet generated",
+        "long_spread": "BUY SPREAD",
+        "short_spread": "SELL SPREAD",
+        "flat": "WAIT",
+        "—": "trade idea not yet generated",
     }.get(_stance, str(_stance))
     _conf = float(_last_thesis.raw.get("conviction_0_to_10", 0.0)) if _last_thesis else 0.0
 
@@ -529,9 +540,9 @@ try:
 
     _pill_bg = "#e74c3c" if _alert else "#1b2838"
     _stance_bg = {
-        "BUY spread": "#2ecc71",
-        "SELL spread": "#e74c3c",
-        "STAND ASIDE": "#95a5a6",
+        "BUY SPREAD": "#2ecc71",
+        "SELL SPREAD": "#e74c3c",
+        "WAIT": "#95a5a6",
     }.get(_stance_display, "#444a54")
     st.markdown(
         f"""
@@ -545,11 +556,11 @@ try:
                        padding:2px 10px; border-radius:4px; font-weight:700;">
             {_stance_display}
           </span>
-          <span>conf <b>{_conf:.1f}/10</b></span>
+          <span>confidence <b>{_conf:.1f}/10</b></span>
           <span>·  Brent <b>${_latest_brent:,.2f}</b></span>
           <span>WTI <b>${_latest_wti:,.2f}</b></span>
           <span>spread <b>{_latest_spread:+.2f}</b></span>
-          <span>dislocation <b>{_z:+.2f}</b>{' ⚠' if _alert else ''}</span>
+          <span>stretch <b>{_z:+.2f}</b>{' ⚠' if _alert else ''}</span>
           <span style="margin-left:auto; opacity:0.85;">
             next EIA in <b>{_h_left}h {_m_left}m</b>
           </span>
@@ -605,7 +616,7 @@ st.markdown(
          box-shadow: 0 8px 24px rgba(0,0,0,0.45);">
       <b>Keyboard shortcuts</b><br/>
       <b>1 2 3</b> — switch tabs<br/>
-      <b>R</b> — regenerate thesis<br/>
+      <b>R</b> — regenerate trade idea<br/>
       <b>?</b> — toggle this cheat sheet
     </div>
     """,
@@ -659,13 +670,17 @@ def _hero_audit_log(thesis_fingerprint: str, checklist_key: str, checked_by_user
 
 
 def _hero_stance_label(stance: str) -> tuple[str, str]:
-    """Return (display_label, bg_color) for a stance string."""
+    """Return (display_label, bg_color) for a stance string.
+
+    Display labels come from ``language.TERMS`` so the language pass stays
+    in one place. The pill uses an uppercased display form.
+    """
     mapping = {
-        "long_spread":  ("BUY SPREAD",   "#2ecc71"),
-        "short_spread": ("SELL SPREAD",  "#e74c3c"),
-        "flat":         ("STAND ASIDE",  "#95a5a6"),
+        "long_spread":  (_T["long_spread"].upper(),  "#2ecc71"),
+        "short_spread": (_T["short_spread"].upper(), "#e74c3c"),
+        "flat":         (_T["flat"].upper(),         "#95a5a6"),
     }
-    return mapping.get(stance, ("STAND ASIDE", "#95a5a6"))
+    return mapping.get(stance, (_T["flat"].upper(), "#95a5a6"))
 
 
 def _render_thesis_mini(decorated) -> None:
@@ -854,7 +869,7 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
         f'padding:4px 10px; border-radius:4px; font-weight:700; '
         f'letter-spacing:1px; font-size:0.85rem;">HERO &middot; {header_label}</span>'
         f'<span style="margin-left:10px; color:#c7cdd4; font-size:0.85rem;">'
-        f"Today's thesis, sizing, and pre-trade checklist.</span>"
+        f"Today's {_T['trade_idea'].lower()}, sizing, and pre-trade checklist.</span>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -869,10 +884,12 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
         if thesis is None or decorated is None:
             # Initial load before the LLM call fires. Show a placeholder flat
             # hero so the Playwright test's hero-band selector still resolves.
+            _placeholder_label = _T["flat"].upper()
             st.markdown(
-                '<span style="background:#95a5a6; color:#0b0f14; padding:6px 14px; '
-                'border-radius:6px; font-weight:700;">STAND ASIDE</span>'
-                '<span style="margin-left:10px; color:#c7cdd4;">Thesis pending\u2026</span>',
+                f'<span style="background:#95a5a6; color:#0b0f14; padding:6px 14px; '
+                f'border-radius:6px; font-weight:700;">{_placeholder_label}</span>'
+                f'<span style="margin-left:10px; color:#c7cdd4;">'
+                f'{_T["trade_idea"]} pending\u2026</span>',
                 unsafe_allow_html=True,
             )
             _render_portfolio_input()
@@ -891,7 +908,7 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
             hrs = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
             hrs_txt = f"{hrs:.0f}" if isinstance(hrs, (int, float)) else "??"
             st.caption(
-                f"No tradeable dislocation today. Next EIA release in {hrs_txt}h."
+                f"No tradeable spread stretch today. Next EIA release in {hrs_txt}h."
             )
         else:
             cols = st.columns(3)
@@ -962,7 +979,7 @@ except Exception as _hero_exc:
 # ---------------------------------------------------------------------------
 tab_arb, tab_depl, tab_fleet = st.tabs(
     [
-        "Spread dislocation",
+        _T["stretch"],
         "Inventory drawdown",
         "Tanker fleet",
     ]
@@ -972,7 +989,7 @@ tab_arb, tab_depl, tab_fleet = st.tabs(
 # ---- Tab 1 --------------------------------------------------------------
 with tab_arb:
     st.subheader(
-        "Brent vs WTI — price and spread dislocation"
+        f"Brent vs WTI — price and {_T['stretch'].lower()}"
         + (" (Z-score)" if show_advanced else "")
     )
     st.caption(
@@ -988,14 +1005,14 @@ with tab_arb:
     col1.metric("Latest Brent", f"${float(prices['Brent'].iloc[-1]):,.2f}")
     col2.metric("Latest WTI", f"${float(prices['WTI'].iloc[-1]):,.2f}")
     col3.metric(
-        "90-day dislocation" + (" (Z-score)" if show_advanced else ""),
+        f"90-day {_T['stretch'].lower()}" + (" (Z-score)" if show_advanced else ""),
         f"{latest_z:+.2f}",
         delta=f"{'ALERT' if z_flag else 'calm'}  |  spread ${latest_spread:,.2f}",
         delta_color="inverse" if z_flag else "normal",
         help=(
             "How far the Brent-WTI spread is from its 90-day normal, in "
-            "standard deviations. |Dislocation| > 2 = statistically unusual; "
-            "> 3 = extreme."
+            "standard deviations. |Stretch| > 2 = statistically unusual; "
+            "> 3 = extreme. Technically a Z-score."
         ),
     )
 
@@ -1062,13 +1079,13 @@ with tab_arb:
     if coint_verdict == "not_cointegrated":
         st.warning(
             "⚠️  Brent & WTI fail the cointegration test right now "
-            f"(p={coint_p:.3f}). The dislocation signal below should be "
+            f"(p={coint_p:.3f}). The spread-stretch signal below should be "
             "treated as trend-follow rather than snap-back to normal."
         )
     elif coint_verdict == "weak":
         st.info(
-            f"Cointegration weak (p={coint_p:.3f}) — thesis card will "
-            "size more conservatively than normal."
+            f"Cointegration weak (p={coint_p:.3f}) — {_T['trade_idea'].lower()} card "
+            "will size more conservatively than normal."
         )
 
     if alert_on:
@@ -1091,7 +1108,7 @@ with tab_arb:
         row_heights=[0.62, 0.38],
         subplot_titles=(
             "Brent & WTI (USD / barrel)",
-            "How stretched is the spread? — 90-day dislocation"
+            f"How stretched is the spread? — 90-day {_T['stretch'].lower()}"
             + (" (Z-score)" if show_advanced else ""),
         ),
     )
@@ -1176,11 +1193,11 @@ with tab_arb:
         )
 
     st.markdown(
-        "#### Snap-back to normal — historical backtest"
+        f"#### {_T['mean_reversion']} — {_T['backtest_label'].lower()}"
         + (" (Z-score mean reversion)" if show_advanced else "")
     )
     st.caption(
-        f"Enters when dislocation reaches \u00b1{z_threshold:.1f}, exits when "
+        f"Enters when the stretch reaches \u00b1{z_threshold:.1f}, exits when "
         "the spread is back near normal. 10,000 barrels per trade, with the "
         "slippage and commission drag you set in the sidebar. "
         "Think of the PnL as a signal-quality indicator, not a P&L forecast."
@@ -1260,12 +1277,12 @@ with tab_arb:
     )
     roll = bt.get("rolling_12m_sharpe", float("nan"))
     rx_c5.metric(
-        "12m rolling Sharpe",
+        "12m rolling risk-adjusted return" + (" (Sharpe)" if show_advanced else ""),
         f"{roll:.2f}" if roll == roll else "—",
         help=(
-            "Trailing-year Sharpe on the trade PnL series. A sharp drop "
-            "versus the full-sample Sharpe means the strategy's edge has "
-            "decayed recently — re-examine before sizing up."
+            "Trailing-year Sharpe ratio on the trade PnL series. A sharp "
+            "drop versus the full-sample number means the strategy's edge "
+            "has decayed recently — re-examine before sizing up."
         ),
     )
 
@@ -1416,7 +1433,9 @@ with tab_arb:
                         height=280,
                         template="plotly_dark",
                         yaxis_title="Total PnL (USD)",
-                        xaxis_title="Volatility regime (30d realised, median-split)",
+                        xaxis_title=(
+                            "Price-jumpiness regime (30d realised, median-split)"
+                        ),
                         showlegend=False,
                         margin=dict(l=40, r=20, t=30, b=40),
                     )
@@ -1465,7 +1484,7 @@ with tab_arb:
             "Regenerate",
             type="primary",
             key="_mi_regen_btn",
-            help="Regenerates the thesis now; the hero band will refresh on rerun.",
+            help=f"Regenerates the {_T['trade_idea'].lower()} now; the hero band will refresh on rerun.",
         )
         if _mi_regen:
             try:
@@ -1479,7 +1498,7 @@ with tab_arb:
                 st.session_state["_thesis_last_generated_at"] = (
                     pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
                 )
-                st.success("Thesis regenerated. Scroll up to see the refreshed hero band.")
+                st.success(f"{_T['trade_idea']} regenerated. Scroll up to see the refreshed hero band.")
             except Exception as _exc:
                 st.error(f"Regenerate failed: `{_exc!r}`")
 
@@ -1502,19 +1521,19 @@ with tab_arb:
                 _bits.append(f"{len(_mi_thesis.guardrails_applied)} guardrails")
             st.caption("Run: " + "  \u00b7  ".join(_bits))
 
-        # Recent theses history -----------------------------------------
+        # Recent trade-idea history --------------------------------------
         _mi_history = _mi_read_recent(n=10)
         _mi_stats = _mi_history_stats(_mi_history)
         if _mi_stats["n"]:
             st.caption(
-                f"**Last {_mi_stats['n']} theses:** "
+                f"**Last {_mi_stats['n']} trade ideas:** "
                 f"{_mi_stats['long']} buy \u00b7 {_mi_stats['short']} sell \u00b7 "
-                f"{_mi_stats['flat']} stand-aside \u00b7 "
+                f"{_mi_stats['flat']} wait \u00b7 "
                 f"average confidence {_mi_stats['avg_conf']:.1f}/10."
             )
-        with st.expander(f"Recent theses ({_mi_stats.get('n', 0)})"):
+        with st.expander(f"Recent trade ideas ({_mi_stats.get('n', 0)})"):
             if not _mi_history:
-                st.caption("No theses logged yet.")
+                st.caption("No trade ideas logged yet.")
             else:
                 _mi_rows = []
                 for r in _mi_history:

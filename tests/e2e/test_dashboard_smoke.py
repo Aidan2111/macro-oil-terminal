@@ -21,7 +21,8 @@ def _goto(page, url):
         state="visible", timeout=90_000
     )
     # Streamlit renders tabs after the main script finishes; wait for one.
-    page.get_by_role("tab", name="Spread dislocation").first.wait_for(
+    # UIP-T0: tab renamed "Spread dislocation" -> "Spread Stretch".
+    page.get_by_role("tab", name="Spread Stretch").first.wait_for(
         state="visible", timeout=90_000
     )
 
@@ -36,9 +37,9 @@ def test_all_three_tabs_render(streamlit_server, page):
     _goto(page, streamlit_server)
     # The fourth "AI trade thesis" tab was retired in Task 6c — its content
     # now lives in the always-visible hero band + a Model-internals expander
-    # at the bottom of Tab 1.
+    # at the bottom of Tab 1. UIP-T0 renamed Tab 1 -> "Spread Stretch".
     for tab_name in (
-        "Spread dislocation",
+        "Spread Stretch",
         "Inventory drawdown",
         "Tanker fleet",
     ):
@@ -56,26 +57,32 @@ def test_ticker_strip_shows_brent_and_wti(streamlit_server, page):
     assert "Brent" in body and "WTI" in body
 
 
-def test_dislocation_label_replaced_z_score(streamlit_server, page):
+def test_stretch_label_replaced_z_score(streamlit_server, page):
+    """UIP-T0: the default-view spread-stretch label should dominate Z-score."""
     _goto(page, streamlit_server)
     body = page.inner_text("body")
-    assert "Dislocation" in body
-    # "Dislocation" must be at least as frequent as "Z-Score" / "Z-score"
+    # The language pass renamed "Dislocation" -> "Spread Stretch" / "stretch".
+    assert ("Stretch" in body) or ("stretch" in body)
+    # The plain-English label must be at least as frequent as the technical one.
     zscore_hits = len(re.findall(r"Z-[Ss]core", body))
-    disloc_hits = body.count("Dislocation")
-    assert disloc_hits >= zscore_hits, (
-        f"Expected Dislocation ≥ Z-Score; got Dislocation={disloc_hits}, Z-Score={zscore_hits}"
+    stretch_hits = body.count("Stretch") + body.count("stretch")
+    assert stretch_hits >= zscore_hits, (
+        f"Expected Stretch >= Z-Score; got Stretch={stretch_hits}, Z-Score={zscore_hits}"
     )
 
 
 def test_hero_band_shows_plain_language_stance(streamlit_server, page):
-    """The old AI tab's stance labels now live in the always-visible hero band."""
+    """The old AI tab's stance labels now live in the always-visible hero band.
+
+    UIP-T0 renamed stance pills: "BUY SPREAD" -> "BUY THE SPREAD",
+    "SELL SPREAD" -> "SELL THE SPREAD", "STAND ASIDE" -> "WAIT".
+    """
     _goto(page, streamlit_server)
     hero = page.locator('[data-testid="hero-band"]').first
     hero.wait_for(state="visible", timeout=30_000)
     body = page.inner_text("body")
     # Hero band renders one of the three plain-language stance pills.
-    assert any(s in body for s in ("BUY SPREAD", "SELL SPREAD", "STAND ASIDE"))
+    assert any(s in body for s in ("BUY THE SPREAD", "SELL THE SPREAD", "WAIT"))
 
 
 def test_model_internals_expander_exposes_mode_toggle(streamlit_server, page):

@@ -41,7 +41,8 @@ def test_ai_insights_tab_is_gone(streamlit_server, page):
     _wait_for_app(page, streamlit_server)
     # Wait for each remaining tab to actually attach to the DOM before
     # asserting. Streamlit renders tabs asynchronously after the tab-list.
-    for name in ("Spread dislocation", "Inventory drawdown", "Tanker fleet"):
+    # UIP-T0 renamed "Spread dislocation" -> "Spread Stretch".
+    for name in ("Spread Stretch", "Inventory drawdown", "Tanker fleet"):
         page.get_by_role("tab", name=name).first.wait_for(
             state="attached", timeout=60_000
         )
@@ -49,7 +50,7 @@ def test_ai_insights_tab_is_gone(streamlit_server, page):
     ai_tab = page.get_by_role("tab", name="AI trade thesis")
     assert ai_tab.count() == 0, "AI Insights tab must be removed in Task 6c"
     # Three remaining tabs still present
-    for name in ("Spread dislocation", "Inventory drawdown", "Tanker fleet"):
+    for name in ("Spread Stretch", "Inventory drawdown", "Tanker fleet"):
         assert page.get_by_role("tab", name=name).count() >= 1
 
 

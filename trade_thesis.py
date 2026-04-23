@@ -188,13 +188,23 @@ THESIS_JSON_SCHEMA = {
             # In deep/reasoning mode the model provides a plain-language
             # summary of its reasoning trace. Optional by design.
             "reasoning_summary": {"type": "string"},
+            # UIP-T0: one-sentence plain-English headline for non-finance
+            # readers. The hero card renders this as the top line.
+            "plain_english_headline": {
+                "type": "string",
+                "description": (
+                    "One sentence, anyone-understands. No jargon. State "
+                    "what's happening in the market in plain words and one "
+                    "concrete suggestion if relevant. Max 30 words."
+                ),
+            },
         },
         "required": [
             "stance", "conviction_0_to_10", "time_horizon_days",
             "entry", "exit", "position_sizing",
             "thesis_summary", "key_drivers", "invalidation_risks",
             "catalyst_watchlist", "data_caveats", "disclaimer_shown",
-            "reasoning_summary",
+            "reasoning_summary", "plain_english_headline",
         ],
     },
     "strict": True,
@@ -207,6 +217,12 @@ SYSTEM_PROMPT = (
     "ONLY in the structured data provided. You do not speculate beyond what the "
     "data supports. You state confidence honestly. You always flag risks that "
     "would invalidate the thesis. Output must be valid JSON matching the provided schema.\n\n"
+    "First, write a one-sentence headline a non-finance reader would understand. "
+    "No jargon. Put it in the ``plain_english_headline`` field. Example: "
+    "\"Brent is trading unusually expensive vs WTI right now. This kind of gap "
+    "usually closes within 3 weeks, so it's a good moment to bet on the gap "
+    "narrowing.\" Max 30 words. A smart friend with no finance background should "
+    "read that sentence and understand the situation + what to do.\n\n"
     "Your output JSON uses technical field names, but a translation layer renders "
     "them in plain language for traders without quant backgrounds. Prefer terms "
     "like \"dislocation\" over \"Z-score\" and \"snap-back to normal\" over "
@@ -250,6 +266,10 @@ class Thesis:
     generated_at: str
     source: str                          # "Azure OpenAI: <deployment>" or "rule-based (fallback)"
     model: Optional[str] = None
+    # UIP-T0: plain-English headline rendered as the top line of the hero
+    # card. Default empty for grandfather compatibility with existing
+    # ``data/trade_theses.jsonl`` rows that predate this field.
+    plain_english_headline: str = ""
     context_fingerprint: str = ""
     guardrails_applied: list[str] = field(default_factory=list)
     mode: str = "fast"                   # "fast" | "deep" | "legacy" | "rule-based"
@@ -516,6 +536,9 @@ def _rule_based_fallback(ctx: ThesisContext) -> dict:
             "Rule-based path: compare dislocation to the user threshold; "
             "pick a stance; size by |dislocation|/threshold. No model reasoning."
         ),
+        # UIP-T0: rule-based fallback seeds the plain-English headline too;
+        # ``generate_thesis`` will still backstop it if it ends up empty.
+        "plain_english_headline": "",
     }
 
 
@@ -898,11 +921,32 @@ def generate_thesis(
 
     raw, notes = _apply_guardrails(raw, ctx)
 
+    # UIP-T0: plain-English headline post-validation fallback. If the model
+    # returned an empty string (or a >30-word blob), synthesize a simple
+    # template headline from the stance and stretch band so the hero card
+    # always has a non-empty top line.
+    _headline = str(raw.get("plain_english_headline") or "").strip()
+    _word_count = len(_headline.split())
+    if (not _headline) or _word_count > 30:
+        try:
+            from language import describe_stretch, describe_stance
+            _band = describe_stretch(abs(float(raw.get("entry", {}).get("suggested_z_level", ctx.current_z)) or 0.0))
+            _verb = describe_stance(str(raw.get("stance", "flat")))
+            raw["plain_english_headline"] = (
+                f"Brent vs WTI is at a {_band.lower()} level; "
+                f"the model suggests {_verb.lower()}."
+            )
+        except Exception:
+            raw["plain_english_headline"] = (
+                "Brent vs WTI is within normal range; the model suggests wait."
+            )
+
     thesis = Thesis(
         raw=raw,
         generated_at=generated_at,
         source=model_label,
         model=meta.get("deployment") if "Azure" in model_label else None,
+        plain_english_headline=str(raw.get("plain_english_headline") or ""),
         context_fingerprint=fingerprint,
         guardrails_applied=notes,
         mode=effective_mode,

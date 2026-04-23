@@ -19,6 +19,14 @@ def test_schema_required_keys():
     }.issubset(required)
 
 
+def test_thesis_schema_includes_plain_english_headline():
+    """UIP-T0: plain_english_headline must be in the schema properties AND required list."""
+    from trade_thesis import THESIS_JSON_SCHEMA
+    schema = THESIS_JSON_SCHEMA["schema"]
+    assert "plain_english_headline" in schema["properties"]
+    assert "plain_english_headline" in schema["required"]
+
+
 def test_deployment_for_env_precedence(monkeypatch):
     from trade_thesis import _deployment_for
     # No env → default
