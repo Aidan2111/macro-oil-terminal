@@ -61,6 +61,9 @@ from language import (
     describe_stance as _describe_stance,
 )
 
+# UIP-T1: theme palette + CSS injection (idempotent per session).
+from theme import inject_css
+
 _AI_ACTIVE = _obs_configure()
 
 
@@ -72,6 +75,7 @@ st.set_page_config(
     page_icon="\U0001f6e2\ufe0f",
     layout="wide",
 )
+inject_css()
 
 # P1.1 auth boot check — surface a banner if misconfigured, but never crash in dev.
 try:
