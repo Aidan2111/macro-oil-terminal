@@ -63,6 +63,16 @@ st.set_page_config(
     layout="wide",
 )
 
+# P1.1 auth boot check — surface a banner if misconfigured, but never crash in dev.
+try:
+    from auth import boot_check
+    boot_check()
+except Exception as _auth_boot_err:  # AuthNotConfigured or import-time issue
+    st.warning(
+        f"Auth not fully configured: {_auth_boot_err}. "
+        "Public research remains available; execute actions are disabled."
+    )
+
 st.markdown(
     """
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
