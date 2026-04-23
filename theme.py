@@ -163,6 +163,34 @@ _CSS_TICKER_STRIP = """
 }
 """
 
+_CSS_CHECKLIST = """
+.checklist {
+  list-style: none; padding: 0; margin: 12px 0 0 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.checklist-item {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.checklist-item[data-checked="true"] {
+  color: var(--text-secondary); /* muted when checked, so unchecked rows pop */
+}
+.checklist-item svg { flex-shrink: 0; }
+"""
+
+_CSS_COUNTDOWN = """
+.catalyst-countdown {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(34, 211, 238, 0.08);
+  letter-spacing: 0.2px;
+}
+"""
+
 _CSS_MOBILE = """
 @media (max-width: 768px) {
   .block-container { padding: 0.5rem !important; }
@@ -183,6 +211,8 @@ _CSS = "<style>" + "".join([
     _CSS_CONVICTION_BAR,
     _CSS_TIER_CARD,
     _CSS_TICKER_STRIP,
+    _CSS_CHECKLIST,
+    _CSS_COUNTDOWN,
     _CSS_MOBILE,
 ]) + "</style>"
 
@@ -372,5 +402,128 @@ def render_tier_card(instrument, tier_key: str, stance: str) -> None:
         f'<div class="tier-card-pl">{pl_preview}</div>'
         f'<div class="tier-card-footer">[execute — wiring]</div>'
         f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# T3 — styled checklist + EIA catalyst countdown.
+#
+# Lucide SVGs are inlined (no CDN) so the helpers render with zero network
+# dependency and the stroke color can be data-bound to a PALETTE token.
+# The check-circle mark uses a path + polyline; the empty circle uses a
+# single <circle> element — the two signatures are distinct enough that
+# the unit tests can assert each independently.
+# ---------------------------------------------------------------------------
+_LUCIDE_CHECK_CIRCLE = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" '
+    'viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>'
+    '<polyline points="22 4 12 14.01 9 11.01"/></svg>'
+)
+
+_LUCIDE_CIRCLE = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" '
+    'viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2">'
+    '<circle cx="12" cy="12" r="10"/></svg>'
+)
+
+
+def render_checklist(items) -> None:
+    """Render the pre-trade checklist as a styled ``<ul>`` (UIP-T3).
+
+    ``items`` is a list of ``trade_thesis.ChecklistItem`` (or any object
+    exposing ``.prompt`` + ``.auto_check``). An item is considered
+    "satisfied" when ``auto_check is True``; ``False`` and ``None`` both
+    render as unchecked — ``None`` means the user must tick it manually,
+    and the interactive ``st.checkbox`` toggles live in an expander
+    alongside the styled list (see ``app._render_checklist``).
+
+    The list carries ``data-testid="checklist"`` so Playwright can target
+    it; each row carries ``data-checked="true"|"false"`` for CSS tinting
+    and sentinel assertions. Outside a Streamlit runtime the helper
+    returns silently (mirrors ``inject_css`` / the T2 helpers).
+    """
+    if not _has_streamlit_runtime():
+        return
+
+    if not items:
+        # Emit the empty wrapper so the data-testid still resolves.
+        st.markdown(
+            '<ul class="checklist" data-testid="checklist"></ul>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    rows: list[str] = []
+    for item in items:
+        auto = getattr(item, "auto_check", None)
+        checked = auto is True
+        if checked:
+            svg = _LUCIDE_CHECK_CIRCLE.format(color=PALETTE.positive)
+        else:
+            svg = _LUCIDE_CIRCLE.format(color=PALETTE.text_secondary)
+        label = str(getattr(item, "prompt", "") or "")
+        rows.append(
+            f'<li class="checklist-item" data-checked="{str(checked).lower()}">'
+            f'{svg}<span>{label}</span></li>'
+        )
+
+    st.markdown(
+        '<ul class="checklist" data-testid="checklist">' + "".join(rows) + "</ul>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_catalyst_countdown(hours_to_eia) -> None:
+    """Render the EIA catalyst countdown pill (UIP-T3).
+
+    ``hours_to_eia`` is a float from ``ThesisContext.hours_to_next_eia``.
+    ``None`` or a negative value both render the neutral
+    ``"⏱ No scheduled catalyst"`` sentinel in ``text_secondary``; a
+    non-negative float renders ``"⏱ EIA release in Xd Yh"`` in the
+    ``primary`` token.
+
+    Hour remainder uses Python's built-in ``round()`` — banker's
+    rounding — so 14.5 → 14, not 15. This choice is locked in by the
+    unit tests; T5 chart tick labels should match so the UI stays
+    numerically consistent across surfaces. ``0.4`` → ``"0d 0h"``,
+    ``5.0`` → ``"0d 5h"``, ``48.0`` → ``"2d 0h"``.
+    """
+    if not _has_streamlit_runtime():
+        return
+
+    if hours_to_eia is None or hours_to_eia < 0:
+        st.markdown(
+            f'<div class="catalyst-countdown" data-testid="catalyst-countdown" '
+            f'style="color: {PALETTE.text_secondary};">'
+            f'\u23f1 No scheduled catalyst</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    try:
+        hrs = float(hours_to_eia)
+    except (TypeError, ValueError):
+        st.markdown(
+            f'<div class="catalyst-countdown" data-testid="catalyst-countdown" '
+            f'style="color: {PALETTE.text_secondary};">'
+            f'\u23f1 No scheduled catalyst</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    d = int(hrs // 24)
+    h = int(round(hrs % 24))
+    # Wrap-over: round() can push 23.5h → 24, which should then roll a day.
+    if h == 24:
+        d += 1
+        h = 0
+
+    st.markdown(
+        f'<div class="catalyst-countdown" data-testid="catalyst-countdown" '
+        f'style="color: {PALETTE.primary};">'
+        f'\u23f1 EIA release in {d}d {h}h</div>',
         unsafe_allow_html=True,
     )

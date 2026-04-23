@@ -64,6 +64,8 @@ from language import (
 # UIP-T1: theme palette + CSS injection (idempotent per session).
 from theme import (
     inject_css,
+    render_catalyst_countdown,
+    render_checklist,
     render_conviction_bar,
     render_stance_pill,
     render_tier_card,
@@ -673,6 +675,19 @@ class _TierPlaceholder:
         )
         self.size_usd = None
 
+
+class _ChecklistView:
+    """Lightweight shim passed into ``theme.render_checklist`` so the
+    styled list reflects the live session_state tick without mutating
+    the original ``trade_thesis.ChecklistItem`` objects (UIP-T3).
+    """
+
+    def __init__(self, key: str, prompt: str, auto_check) -> None:
+        self.key = key
+        self.prompt = prompt
+        self.auto_check = auto_check
+
+
 def _hero_audit_log(thesis_fingerprint: str, checklist_key: str, checked_by_user: bool, auto_check_value) -> None:
     """Append one checklist-tick row to data/trade_executions.jsonl.
 
@@ -812,21 +827,52 @@ def _render_tier_tile(col, inst, portfolio_usd: float, stance: str = "flat") -> 
 
 
 def _render_checklist(checklist, thesis_fingerprint: str) -> None:
-    """Render the 5-item pre-trade checklist inside a bordered container."""
+    """Render the 5-item pre-trade checklist.
+
+    UIP-T3 swaps the plain-Streamlit checkboxes for the styled
+    ``theme.render_checklist`` list (Lucide SVG icons + data-testid
+    hook). The interactive toggles still need to live somewhere so the
+    user can tick ``stop_in_place`` / ``half_life_ack`` /
+    ``no_conflicting_recent_thesis`` — we stash them inside a collapsed
+    ``st.expander`` below the styled list so the visible hero stays
+    clean. Current ``auto_check`` state is reflected through the
+    session_state mirror that the expander checkboxes write to.
+    """
     with st.container(border=True):
         st.markdown("**Pre-trade checklist**")
+
+        # Mirror any user-toggle state from session_state back onto the
+        # ChecklistItem objects so the styled row reflects the current
+        # tick. ``auto_check`` stays authoritative when the context
+        # already resolved it (True/False); ``None`` items defer to the
+        # user toggle.
+        mirrored = []
         for item in checklist:
-            auto_val = item.auto_check
-            default = bool(auto_val) if auto_val is not None else False
-            st.checkbox(
-                item.prompt,
-                value=default,
-                key=f"hero_check_{item.key}",
-                on_change=_hero_audit_log,
-                args=(thesis_fingerprint, item.key, True, auto_val),
-                help=("Auto-checked from today's data." if auto_val is not None
-                      else "User must tick before executing."),
-            )
+            session_key = f"hero_check_{item.key}"
+            user_ticked = bool(st.session_state.get(session_key, False))
+            effective_auto = item.auto_check
+            if effective_auto is None:
+                effective_auto = user_ticked
+            # Build a lightweight shim so we don't mutate the original.
+            mirrored.append(_ChecklistView(
+                key=item.key, prompt=item.prompt, auto_check=effective_auto,
+            ))
+
+        render_checklist(mirrored)
+
+        with st.expander("Toggle checklist items", expanded=False):
+            for item in checklist:
+                auto_val = item.auto_check
+                default = bool(auto_val) if auto_val is not None else False
+                st.checkbox(
+                    item.prompt,
+                    value=default,
+                    key=f"hero_check_{item.key}",
+                    on_change=_hero_audit_log,
+                    args=(thesis_fingerprint, item.key, True, auto_val),
+                    help=("Auto-checked from today's data." if auto_val is not None
+                          else "User must tick before executing."),
+                )
 
 
 def _render_header_signin() -> None:
@@ -941,12 +987,22 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
                 f'{_T["trade_idea"]} pending\u2026</span>',
                 unsafe_allow_html=True,
             )
+            # UIP-T3: emit the countdown sentinel even on the pending
+            # placeholder so the e2e selector resolves during first paint.
+            _placeholder_hrs = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
+            render_catalyst_countdown(_placeholder_hrs)
             _render_portfolio_input()
             st.caption(_HERO_DISCLAIMER)
             return
 
         raw = decorated.raw or {}
         _render_thesis_mini(decorated)
+
+        # UIP-T3: EIA catalyst countdown sits immediately under the stance
+        # pill + conviction bar so the "when does this thesis expire"
+        # signal lives next to the stance itself.
+        _hrs_to_eia = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
+        render_catalyst_countdown(_hrs_to_eia)
 
         portfolio_usd = _render_portfolio_input()
 
@@ -955,11 +1011,7 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
         )
         _stance_for_card = str(raw.get("stance", "flat")).upper()
         if materiality_flat:
-            hrs = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
-            hrs_txt = f"{hrs:.0f}" if isinstance(hrs, (int, float)) else "??"
-            st.caption(
-                f"No tradeable spread stretch today. Next EIA release in {hrs_txt}h."
-            )
+            st.caption("No tradeable spread stretch today.")
             # UIP-T2: render three placeholder tier cards even on the
             # flat path so the hero keeps a consistent skeleton and the
             # sentinel selectors always resolve. Cards surface the

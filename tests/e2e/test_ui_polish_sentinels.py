@@ -39,3 +39,16 @@ def test_hero_sentinels_attached_unauthed(streamlit_server, page):
 
     cards = page.locator('[data-testid="tier-card"]').count()
     assert cards == 3, f"expected 3 tier-card sentinels, got {cards}"
+
+
+def test_checklist_and_countdown_attached(streamlit_server, page):
+    """UIP-T3: the styled checklist and catalyst countdown must attach to
+    the hero band DOM within 60 s of first paint."""
+    _goto(page, streamlit_server)
+
+    page.locator('[data-testid="checklist"]').first.wait_for(
+        state="attached", timeout=60_000
+    )
+    page.locator('[data-testid="catalyst-countdown"]').first.wait_for(
+        state="attached", timeout=60_000
+    )
