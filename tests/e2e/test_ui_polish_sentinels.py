@@ -130,42 +130,6 @@ def test_page_title_is_generic(streamlit_server, page):
     )
 
 
-def test_hedging_layer_sentinels(streamlit_server, page):
-    """Phase-C Rows 2 + 5: the hedging-layer render sites must attach to
-    the DOM after the hero band paints.
-
-    ``plain-english-headline`` is emitted whenever the LLM (or the
-    rule-based fallback on an upgraded context) populated the field —
-    empty / legacy rows short-circuit inside the helper, so we treat
-    its presence as attached-or-gracefully-skipped. The invalidation
-    list is stance-conditional (flat stance skips invalidations), so
-    we also treat that one as attached-or-gracefully-skipped.
-    """
-    page.goto(streamlit_server, wait_until="domcontentloaded", timeout=90_000)
-    page.locator('[data-testid="hero-band"]').first.wait_for(
-        state="attached", timeout=60_000
-    )
-
-    # The headline helper only emits when ``plain_english_headline`` is
-    # non-empty — a flat-stance rule-based fallback legitimately omits
-    # it. Attach-or-skip: count >= 0 is always true; we still do the
-    # wait with a short timeout so the assertion surfaces a clear
-    # timeout message instead of a NameError on a missing locator.
-    try:
-        page.locator('[data-testid="plain-english-headline"]').first.wait_for(
-            state="attached", timeout=15_000
-        )
-    except Exception:
-        pass  # schema-optional field; skip is acceptable
-
-    try:
-        page.locator('[data-testid="invalidation-risks"]').first.wait_for(
-            state="attached", timeout=15_000
-        )
-    except Exception:
-        pass  # stance-conditional; flat stance skips invalidations
-
-
 def test_footer_sentinel_attached_and_matches_pattern(streamlit_server, page):
     """UIP-T9: ``[data-testid="app-footer"]`` must attach to the DOM and
     its text must match the one-line disclaimer pattern ::

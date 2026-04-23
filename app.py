@@ -72,16 +72,13 @@ from theme import (
     inject_css,
     pretty_axis_label,
     render_catalyst_countdown,
-    render_caveat_strip,
     render_checklist,
     render_conviction_bar,
     render_empty,
     render_error,
     render_footer,
-    render_invalidations,
     render_loading_status,
     render_onboarding,
-    render_plain_english_headline,
     render_stance_pill,
     render_ticker_strip,
     render_tier_card,
@@ -1028,14 +1025,6 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
             return
 
         raw = decorated.raw or {}
-
-        # Phase-C Row 2: render the plain-English headline as the top
-        # line of the hero so a non-finance reader catches the gist
-        # before the stance pill. Empty / legacy rows short-circuit
-        # inside the helper.
-        render_plain_english_headline(getattr(decorated, "plain_english_headline", "")
-                                      or raw.get("plain_english_headline", ""))
-
         _render_thesis_mini(decorated)
 
         # UIP-T3: EIA catalyst countdown sits immediately under the stance
@@ -1043,19 +1032,6 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
         # signal lives next to the stance itself.
         _hrs_to_eia = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
         render_catalyst_countdown(_hrs_to_eia)
-
-        # Phase-C Row 5 (first site): invalidation risks sit between the
-        # conviction bar + countdown and the tier tiles, so the "what
-        # would make this wrong" list lives adjacent to the "how much to
-        # risk" sizing block. Capped to the top 3 inside the helper.
-        render_invalidations(raw.get("invalidation_risks") or [])
-
-        # Phase-C Row 5 (second site): guardrail-appended caveats render
-        # as an amber strip immediately above the tier tiles — every time
-        # the guardrail fn clamped conviction / size / stance, the user
-        # must see the reason. Helper short-circuits when the list is
-        # empty, so the strip only appears when there's something to say.
-        render_caveat_strip(raw.get("data_caveats") or [])
 
         portfolio_usd = _render_portfolio_input()
 
@@ -1110,16 +1086,6 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
             )
 
         st.caption(_HERO_DISCLAIMER)
-
-        # Phase-C Row 2 (second site): drivers caption below the
-        # disclaimer. ``key_drivers`` is schema-required + capped at
-        # 6 items; we show up to 5 so the line stays scannable on
-        # mobile. Rendered only when the list is non-empty — short
-        # theses or rule-based fallbacks legitimately skip this field.
-        _drivers = [str(d or "").strip() for d in (raw.get("key_drivers") or [])]
-        _drivers = [d for d in _drivers if d][:5]
-        if _drivers:
-            st.caption("Drivers: " + " · ".join(_drivers))
 
 
 # UIP-T4: Bloomberg-tape ticker strip renders at the very top of the page,

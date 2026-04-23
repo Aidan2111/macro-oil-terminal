@@ -28,42 +28,28 @@ def _capture_markdown(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 1. render_stance_pill — LONG_SPREAD → "LEAN LONG" + positive color
+# 1. render_stance_pill — LONG_SPREAD → "BUY THE SPREAD" + positive color
 # ---------------------------------------------------------------------------
 def test_render_stance_pill_emits_data_testid_and_translated_string(monkeypatch):
-    """LONG_SPREAD pill must carry data-testid, translated verb, positive hex.
-
-    Row 13 renamed "Buy the spread" → "Lean long" so the hedging copy
-    reads as hypothetical rather than prescriptive. Glow opacity also
-    reduced from 0x55 → 0x33 so the directional pill doesn't
-    out-dramatise the hedging content below.
-    """
+    """LONG_SPREAD pill must carry data-testid, translated verb, positive hex."""
     calls = _capture_markdown(monkeypatch)
     render_stance_pill("LONG_SPREAD")
     html = "".join(body for body, _ in calls)
     assert 'data-testid="stance-pill"' in html
-    assert "LEAN LONG" in html
+    assert "BUY THE SPREAD" in html
     assert "#84CC16" in html  # PALETTE.positive
-    # Row 13 glow de-saturation — the "dramatic" 55-alpha shadow was
-    # reduced to 33-alpha so hedging content below the pill holds focus.
-    assert "#84CC1633" in html, "stance-pill glow must use 33-alpha, not 55"
 
 
 # ---------------------------------------------------------------------------
-# 2. render_stance_pill — FLAT → "STAND ASIDE" + amber warn color
+# 2. render_stance_pill — FLAT → "WAIT" + text_secondary color
 # ---------------------------------------------------------------------------
-def test_render_stance_pill_flat_uses_stand_aside_and_amber_color(monkeypatch):
-    """FLAT pill must render 'STAND ASIDE' in the amber ``warn`` token.
-
-    Row 13: grey was "boring" and signalled the absence of a decision.
-    Amber ``PALETTE.warn`` signals active caution — the right semantic
-    for a stand-aside stance.
-    """
+def test_render_stance_pill_flat_uses_wait_label_and_secondary_color(monkeypatch):
+    """FLAT pill must render the WAIT verb in the secondary-text token."""
     calls = _capture_markdown(monkeypatch)
     render_stance_pill("FLAT")
     html = "".join(body for body, _ in calls)
-    assert "STAND ASIDE" in html
-    assert "#F59E0B" in html  # PALETTE.warn — amber, not grey
+    assert "WAIT" in html
+    assert "#9AA4B8" in html  # PALETTE.text_secondary
 
 
 # ---------------------------------------------------------------------------
