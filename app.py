@@ -76,6 +76,7 @@ from theme import (
     render_empty,
     render_error,
     render_loading_status,
+    render_onboarding,
     render_stance_pill,
     render_ticker_strip,
     render_tier_card,
@@ -93,6 +94,10 @@ st.set_page_config(
     layout="wide",
 )
 inject_css()
+# UIP-T8: first-visit onboarding toasts — self-guarded on localStorage,
+# no-op on repeat visits. Lives here so the component mounts before any
+# downstream render writes to the DOM.
+render_onboarding()
 
 # P1.1 auth boot check — surface a banner if misconfigured, but never crash in dev.
 try:

@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import streamlit as st
+from streamlit.components.v1 import html as _components_html
 
 
 # ---------------------------------------------------------------------------
@@ -1048,3 +1049,262 @@ def render_error(message: str, retry_fn=None) -> None:
             st.rerun()
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# T8 — first-visit onboarding toasts.
+#
+# Rendered once at app boot (right after ``inject_css()``). The component
+# is a self-contained HTML+JS blob mounted via ``st.components.v1.html``
+# so the JS runs in its own iframe — localStorage in the iframe is
+# sandboxed *per-origin*, and for Streamlit-served components the origin
+# matches the parent page, so the flag is shared with any future
+# localStorage reads the parent wants to make.
+#
+# The three copy strings are fixed per the design spec — generic "Macro
+# Oil Terminal" branding, no personalization. A unit test enforces that
+# invariant so a future copy edit that slips an "Aidan" back in fails in
+# CI.
+#
+# CSS variables from the parent page do NOT reliably inherit into the
+# components iframe, so colors are hardcoded to the brand hex values.
+# ---------------------------------------------------------------------------
+_ONB_COPY_1 = (
+    "Welcome to Macro Oil Terminal \u2014 a research desk for crude "
+    "spread dislocations. Hover any metric for the math."
+)
+_ONB_COPY_2 = (
+    "The hero card is the current trade idea. Confidence tells you "
+    "how strong the signal is."
+)
+_ONB_COPY_3 = "Scroll or click the tabs for the data behind the signal."
+
+_ONB_CSS = """
+.onb-root {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  max-width: 340px;
+  font-family: -apple-system, 'Segoe UI', sans-serif;
+  pointer-events: none;
+}
+.onb-toast {
+  background: #121826;
+  border: 1px solid #2A3245;
+  border-left: 3px solid #22D3EE;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 8px;
+  color: #E6EBF5;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  position: relative;
+  pointer-events: auto;
+}
+.onb-toast.onb-toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.onb-toast .onb-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #E6EBF5;
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.onb-toast .onb-dismiss:hover {
+  opacity: 1;
+}
+.onb-toast .onb-message {
+  padding-right: 20px;
+}
+"""
+
+# JS kept readable — string-escapes the three copy strings into a JSON
+# array so the JS path is a single source-of-truth. The copy literals
+# flow in via an f-string below.
+_ONB_JS = """
+(function () {
+  var FLAG_KEY = "mot_onboarding_done";
+  try {
+    if (localStorage.getItem("mot_onboarding_done")) {
+      return;
+    }
+  } catch (e) {
+    return;
+  }
+
+  var MESSAGES = __ONB_MESSAGES__;
+  var FADE_IN_MS = 200;
+  var HOLD_MS = 8000;
+  var FADE_OUT_MS = 400;
+
+  var root = document.createElement("div");
+  root.className = "onb-root";
+  document.body.appendChild(root);
+
+  var dismissed = false;
+  var activeToasts = [];
+  var timers = [];
+
+  function clearTimers() {
+    timers.forEach(function (t) { clearTimeout(t); });
+    timers = [];
+  }
+
+  function fadeOut(toast) {
+    toast.classList.remove("onb-toast-visible");
+    var t = setTimeout(function () {
+      if (toast && toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, FADE_OUT_MS);
+    timers.push(t);
+  }
+
+  function markDone() {
+    try {
+      localStorage.setItem("mot_onboarding_done", "1");
+    } catch (e) { /* ignore */ }
+  }
+
+  function dismissAll() {
+    if (dismissed) return;
+    dismissed = true;
+    clearTimers();
+    activeToasts.forEach(fadeOut);
+    activeToasts = [];
+    markDone();
+  }
+
+  function spawnToast(message, onComplete) {
+    var toast = document.createElement("div");
+    toast.className = "onb-toast";
+    // Sentinel attribute for Playwright — literal form: data-testid="onboarding-toast"
+    toast.setAttribute("data-testid", "onboarding-toast");
+
+    var msg = document.createElement("span");
+    msg.className = "onb-message";
+    msg.textContent = message;
+    toast.appendChild(msg);
+
+    var btn = document.createElement("button");
+    btn.className = "onb-dismiss";
+    btn.setAttribute("aria-label", "dismiss");
+    btn.textContent = "\u2715";
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      dismissAll();
+    });
+    toast.appendChild(btn);
+
+    root.appendChild(toast);
+    activeToasts.push(toast);
+
+    var tIn = setTimeout(function () {
+      toast.classList.add("onb-toast-visible");
+    }, 20);
+    timers.push(tIn);
+
+    var tOut = setTimeout(function () {
+      if (dismissed) return;
+      fadeOut(toast);
+      var idx = activeToasts.indexOf(toast);
+      if (idx >= 0) activeToasts.splice(idx, 1);
+      if (onComplete) onComplete();
+    }, FADE_IN_MS + HOLD_MS);
+    timers.push(tOut);
+  }
+
+  function runSequence() {
+    var i = 0;
+    function next() {
+      if (dismissed) return;
+      if (i >= MESSAGES.length) {
+        markDone();
+        return;
+      }
+      var msg = MESSAGES[i];
+      i += 1;
+      spawnToast(msg, next);
+    }
+    next();
+  }
+
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" || ev.keyCode === 27) {
+      dismissAll();
+    }
+  });
+  document.addEventListener("click", function () {
+    dismissAll();
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", runSequence);
+  } else {
+    runSequence();
+  }
+})();
+"""
+
+
+def _build_onboarding_html() -> str:
+    """Assemble the onboarding HTML body.
+
+    Kept as a function rather than a module-level constant so the three
+    copy strings don't need to be escaped at import time and the unit
+    tests can assert the final-rendered body rather than a template.
+    """
+    import json
+
+    # ``ensure_ascii=False`` preserves the em-dash and other unicode
+    # characters verbatim so the unit-test substring assertions match.
+    messages_json = json.dumps(
+        [_ONB_COPY_1, _ONB_COPY_2, _ONB_COPY_3],
+        ensure_ascii=False,
+    )
+    js = _ONB_JS.replace("__ONB_MESSAGES__", messages_json)
+    return (
+        "<style>"
+        + _ONB_CSS
+        + "</style>"
+        + "<script>"
+        + js
+        + "</script>"
+    )
+
+
+def render_onboarding() -> None:
+    """Render the first-visit onboarding toast sequence (UIP-T8).
+
+    Emits a tiny HTML+JS component at the current page position via
+    ``st.components.v1.html`` (height=0 so it contributes no vertical
+    space). The component guards on ``localStorage["mot_onboarding_done"]``
+    and spawns three fixed toasts in sequence on first visit — ESC or a
+    click anywhere dismisses the stack and sets the flag.
+
+    Call once at app boot, right after ``inject_css()``. Outside a
+    Streamlit runtime the helper returns silently (mirrors the other
+    theme helpers) so tests / scripts can import this module freely.
+    """
+    if not _has_streamlit_runtime():
+        return
+    body = _build_onboarding_html()
+    try:
+        _components_html(body, height=0)
+    except Exception:
+        # Never let a components mount failure crash the page render.
+        # The onboarding is a nice-to-have; the app must still boot.
+        pass
