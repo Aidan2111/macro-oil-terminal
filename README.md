@@ -11,6 +11,17 @@ day/night Earth globe, and an Azure OpenAI-backed market-commentary panel.
 [![CI](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/ci.yml)
 [![CD](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/cd.yml/badge.svg)](https://github.com/Aidan2111/macro-oil-terminal/actions/workflows/cd.yml)
 
+## Latest UI (v0.4)
+
+2-up before/after on the hero band:
+
+<p align="center">
+  <img src="docs/screenshots/before/hero_desktop.png" alt="before" width="45%" />
+  <img src="docs/screenshots/after/hero_desktop.png" alt="after" width="45%" />
+</p>
+
+Full 5-screenshot set: see `docs/screenshots/{before,after}/`.
+
 ## Screens
 
 ![Macro Arbitrage](docs/screenshots/01_macro_arbitrage.png)
