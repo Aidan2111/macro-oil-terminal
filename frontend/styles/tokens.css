@@ -1,0 +1,21 @@
+/* Palette tokens — single source of truth.
+ * Every component references these via Tailwind class names
+ * (bg-bg-1, text-text-primary, ...) wired up in tailwind.config.ts.
+ * Lifted verbatim from docs/brainstorms/ui-polish.md.
+ */
+:root {
+  --bg-1: #0a0e1a;
+  --bg-2: #121826;
+  --bg-3: #1b2232;
+  --border: #2a3245;
+  --text-primary: #e6ebf5;
+  --text-secondary: #9aa4b8;
+  --text-muted: #5b6578;
+  --primary: #22d3ee;
+  --primary-glow: rgba(34, 211, 238, 0.35);
+  --warn: #f59e0b;
+  --alert: #ef4444;
+  --positive: #84cc16;
+  --negative: #f43f5e;
+  --gridline: rgba(255, 255, 255, 0.06);
+}
