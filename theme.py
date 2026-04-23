@@ -223,6 +223,64 @@ _CSS_MOBILE = """
 }
 """
 
+# UIP-T6 — surface-specific mobile overrides. Kept in a second named
+# chunk so the T1 mobile block stays intact (a unit test asserts the
+# original ``[data-testid="column"] { flex-direction: column; }`` rule
+# survives) and so reviewers can see the T6 additions in one place.
+#
+# The ``!important`` markers are load-bearing in three spots:
+#   * ``.block-container`` padding — Streamlit's theme override wins
+#     without it, so the page never actually narrows to the 0.75rem pad.
+#   * ``[data-testid="column"]`` flex rules — Streamlit ships a flex-row
+#     default inline that needs the cascade bump to flip to column
+#     stacking.
+#   * ``.js-plotly-plot .main-svg`` width — Plotly pins the SVG width in
+#     JS, so CSS has to raise its hand with ``!important`` to keep the
+#     chart inside the viewport after the tab-switch rerender.
+_CSS_MOBILE_SURFACES = """
+@media (max-width: 768px) {
+  /* Tighter page padding — overrides Streamlit's default. */
+  .block-container { padding: 0.75rem 0.75rem !important; }
+
+  /* Ticker strip: already wraps from T1; narrow items so more fit. */
+  .ticker-item { min-width: 140px; font-size: 13px; }
+  .ticker-sparkline { width: 60px; }
+
+  /* Hero surfaces — stance pill flexes, countdown full-width. */
+  .stance-pill { min-width: 0; width: auto; padding: 6px 12px; font-size: 13px; }
+  .conviction-bar, .conviction-bar-fill { height: 10px; }
+  .catalyst-countdown { width: 100%; text-align: center; box-sizing: border-box; }
+
+  /* Tier tiles stack with breathing room between them. */
+  .tier-card { width: 100%; margin-bottom: 12px; }
+
+  /* Checklist: tighter padding + smaller rows. */
+  .checklist { padding-left: 4px; }
+  .checklist-item { font-size: 13px; gap: 8px; }
+
+  /* Charts: force Plotly SVG to recompute to the column width. */
+  .js-plotly-plot .main-svg { width: 100% !important; }
+  .js-plotly-plot, .stPlotlyChart { max-width: 100% !important; }
+
+  /* Streamlit column flex — force stacking on narrow viewports.
+     Without this the three tier-card columns sit side-by-side on
+     phones and horizontally overflow the 375px viewport. */
+  [data-testid="column"] {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
+
+  /* Footer: trim padding, shrink copy. */
+  .app-footer { padding: 16px 8px; font-size: 11px; }
+
+  /* Empty / error cards: keep inside the viewport without the
+     default 16px vertical margins stacking up visually. */
+  .empty-state, .error-state { margin: 12px 0; padding: 18px 12px; }
+}
+"""
+
 # UIP-T7 — empty + error state cards. Both share the centered layout
 # + padding + border-radius; the error variant overrides the background
 # and border tint to the alert color at 6% / 30% opacity.
@@ -280,6 +338,7 @@ _CSS = "<style>" + "".join([
     _CSS_STATES,
     _CSS_FOOTER,
     _CSS_MOBILE,
+    _CSS_MOBILE_SURFACES,
 ]) + "</style>"
 
 
@@ -1140,6 +1199,16 @@ _ONB_CSS = """
 }
 .onb-toast .onb-message {
   padding-right: 20px;
+}
+/* UIP-T6 — mobile: hug the bottom-right with tighter insets and cap the
+   toast width against the viewport so it never clips. The 340px desktop
+   max-width can overflow a 375px phone once the 24px gutters are in. */
+@media (max-width: 768px) {
+  .onb-root {
+    right: 12px;
+    bottom: 12px;
+    max-width: calc(100vw - 24px);
+  }
 }
 """
 
