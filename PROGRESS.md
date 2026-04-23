@@ -2,6 +2,47 @@
 
 Timestamps are UTC (sandbox time).
 
+## 2026-04-23 — Overnight autonomous block (Aidan sleeping ~12h)
+
+### 02:40Z — Databento key stored; provider-decision ADR landed
+
+- `DATABENTO_API_KEY` appended to `.env` (gitignored) + set as App
+  Setting on both webapps.
+- Smoke-tested via `databento.Historical.metadata.list_datasets` —
+  **key valid; 29 datasets accessible**.
+- ADR `docs/adr/0004-data-provider-decision.md` — yfinance stays
+  primary due to cost; Databento keys provisioned-but-dormant;
+  upgrade path is a single `providers/_databento.py` drop-in.
+- Grepped repo for `massive|databento` references — zero hits
+  anywhere (main + `feat/ui-polish-pass` worktree). No cleanup
+  needed.
+
+## 2026-04-23 — Secrets plumbed (AISStream + Alpaca paper)
+
+### 02:33Z — AISSTREAM_API_KEY stored and active on canadaeast
+
+- Stored in `.env` (gitignored) and set as App Setting on both webapps
+  (`oil-tracker-app-canadaeast-4474`, `oil-tracker-app-4281`) via
+  `az webapp config appsettings set`.
+- Verified by NAME-only query on canadaeast.
+- Restarted canadaeast; `/_stcore/health` returned `ok` within 30s.
+- `providers/_aisstream.py` key-gated path flips Tab 3 from
+  "demo sample" to the live "LIVE AIS — N vessels · last 5 min" badge
+  as soon as the websocket picks up a minute's worth of vessel
+  messages.
+
+### 02:35Z — Alpaca paper credentials stored on both webapps; paper account live-validated
+
+- `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET`, `ALPACA_BASE_URL`,
+  `ALPACA_PAPER=true` appended to `.env` and set as App Settings on
+  both webapps.
+- `alpaca-py` smoke test from host venv: `TradingClient(..., paper=True).get_account().buying_power` — creds valid, buying_power present.
+- Restarted canadaeast; `/_stcore/health` returned `ok`.
+- Unblocks P1.2 Alpaca integration track. "Execute in paper" buttons
+  wire up next after UI polish merges.
+
+---
+
 ## 2026-04-22 — P1.1 auth + user store landed (Superpowers flow)
 
 ### 23:30Z–23:55Z — P1.1-0: brainstorm + design + plan
