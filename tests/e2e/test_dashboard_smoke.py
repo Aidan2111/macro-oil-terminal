@@ -74,15 +74,18 @@ def test_stretch_label_replaced_z_score(streamlit_server, page):
 def test_hero_band_shows_plain_language_stance(streamlit_server, page):
     """The old AI tab's stance labels now live in the always-visible hero band.
 
-    UIP-T0 renamed stance pills: "BUY SPREAD" -> "BUY THE SPREAD",
-    "SELL SPREAD" -> "SELL THE SPREAD", "STAND ASIDE" -> "WAIT".
+    Phase-C Row 13 (docs/reviews/_synthesis.md) renamed stance pills
+    from prescriptive "Buy / Sell / Wait" imperatives to hypothetical
+    "Lean long / Lean short / Stand aside" dispositions — pairs with
+    the new invalidation-risk list + amber data-caveat strip so the
+    hedging copy and hedging UI read consistently.
     """
     _goto(page, streamlit_server)
     hero = page.locator('[data-testid="hero-band"]').first
     hero.wait_for(state="visible", timeout=30_000)
     body = page.inner_text("body")
     # Hero band renders one of the three plain-language stance pills.
-    assert any(s in body for s in ("BUY THE SPREAD", "SELL THE SPREAD", "WAIT"))
+    assert any(s in body for s in ("LEAN LONG", "LEAN SHORT", "STAND ASIDE"))
 
 
 def test_model_internals_expander_exposes_mode_toggle(streamlit_server, page):

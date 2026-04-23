@@ -157,12 +157,16 @@ def test_materiality_first_run(sample_ctx):
 
 
 def test_materiality_z_threshold(sample_ctx):
+    # Phase-C Row 13 renamed the user-facing prose from "dislocation" →
+    # "stretch" (UI and reasons both). The tooltip keeps the technical
+    # alias; the diff reasons surface via the hedging layer, which reads
+    # "stretch" to match the Spread Stretch card above it.
     from trade_thesis import _materiality_fingerprint, context_changed_materially
     prev = _materiality_fingerprint(sample_ctx)
     ctx2 = sample_ctx.__class__(**{**sample_ctx.__dict__, "current_z": sample_ctx.current_z + 0.5})
     cur = _materiality_fingerprint(ctx2)
     reasons = context_changed_materially(prev, cur)
-    assert any("dislocation" in r.lower() for r in reasons)
+    assert any("stretch" in r.lower() for r in reasons)
 
 
 def test_materiality_no_change(sample_ctx):

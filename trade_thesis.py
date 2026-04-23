@@ -223,11 +223,18 @@ SYSTEM_PROMPT = (
     "usually closes within 3 weeks, so it's a good moment to bet on the gap "
     "narrowing.\" Max 30 words. A smart friend with no finance background should "
     "read that sentence and understand the situation + what to do.\n\n"
+    # Phase-C Row 13 (docs/reviews/_synthesis.md): standardise prose on
+    # "stretch" — the UI card reads "Spread Stretch" and the tooltip
+    # keeps the technical alias ("also called dislocation / Z-score").
+    # Running two prose framings in parallel ("stretch" in the card,
+    # "dislocation" in the thesis body) was the jargon clash personas
+    # 02 and 09 both flagged. Tooltips are the only place "dislocation"
+    # still surfaces.
     "Your output JSON uses technical field names, but a translation layer renders "
     "them in plain language for traders without quant backgrounds. Prefer terms "
-    "like \"dislocation\" over \"Z-score\" and \"snap-back to normal\" over "
+    "like \"stretch\" over \"Z-score\" and \"snap-back to normal\" over "
     "\"mean reversion\" in your thesis_summary and key_drivers prose. Still be "
-    "precise — say \"dislocation of 2.4\" not \"the spread is weird.\"\n\n"
+    "precise — say \"stretch of 2.4\" not \"the spread is weird.\"\n\n"
     "The JSON schema has a required ``reasoning_summary`` field. In Quick-read "
     "mode keep it short (1-2 sentences describing the path from data to "
     "conclusion). In Deep-analysis mode expand it to 3-6 sentences covering "
@@ -533,8 +540,8 @@ def _rule_based_fallback(ctx: ThesisContext) -> dict:
         ],
         "disclaimer_shown": True,
         "reasoning_summary": (
-            "Rule-based path: compare dislocation to the user threshold; "
-            "pick a stance; size by |dislocation|/threshold. No model reasoning."
+            "Rule-based path: compare the stretch to the user threshold; "
+            "pick a stance; size by |stretch|/threshold. No model reasoning."
         ),
         # UIP-T0: rule-based fallback seeds the plain-English headline too;
         # ``generate_thesis`` will still backstop it if it ends up empty.
@@ -785,7 +792,7 @@ def context_changed_materially(prev: dict | None, cur: dict, thresholds: dict | 
 
     reasons: list[str] = []
     if abs(cur["z"] - prev["z"]) > d_z_thresh:
-        reasons.append(f"Δ dislocation {prev['z']:+.2f} → {cur['z']:+.2f}")
+        reasons.append(f"Δ stretch {prev['z']:+.2f} → {cur['z']:+.2f}")
     prev_brent = prev.get("brent", cur["brent"]) or 1.0
     if abs(cur["brent"] - prev_brent) / prev_brent * 100.0 > d_px_thresh_pct:
         reasons.append(f"Δ Brent {prev_brent:.2f} → {cur['brent']:.2f}")

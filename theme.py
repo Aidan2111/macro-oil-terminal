@@ -323,6 +323,78 @@ _CSS_FOOTER = """
 }
 """
 
+# Phase-C Row 2 — plain-english headline sits above the stance pill as
+# the first line of the hero band. Slightly larger than body copy so it
+# registers as the lede, but still muted against the stance pill so the
+# pill retains top visual weight.
+_CSS_HEADLINE = """
+.plain-english-headline {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+@media (max-width: 768px) {
+  .plain-english-headline { font-size: 16px; line-height: 1.35; }
+}
+"""
+
+# Phase-C Row 5 — invalidation risks live below the conviction bar as
+# a compact bulleted list, each row prefixed with a Lucide
+# alert-triangle in the amber ``warn`` token. Rows read as captions so
+# they don't steal focus from the thesis summary, but the glyph ties
+# them visually to the caveat strip + stand-aside pill.
+_CSS_INVALIDATIONS = """
+.invalidations {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.invalidations li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.invalidations li svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  width: 14px;
+  height: 14px;
+}
+"""
+
+# Phase-C Row 5 — data-caveat strip: every time the guardrail fn appends
+# a caveat, the user must see it. Amber background at 10% opacity +
+# amber text so it reads as "pay attention" without screaming like the
+# error-state card.
+_CSS_CAVEAT = """
+.caveat-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warn);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 10px 0;
+}
+.caveat-strip svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  width: 14px;
+  height: 14px;
+}
+"""
+
 _CSS = "<style>" + "".join([
     _CSS_ROOT_VARS,
     _CSS_TYPOGRAPHY,
@@ -336,6 +408,9 @@ _CSS = "<style>" + "".join([
     _CSS_CHECKLIST,
     _CSS_COUNTDOWN,
     _CSS_STATES,
+    _CSS_HEADLINE,
+    _CSS_INVALIDATIONS,
+    _CSS_CAVEAT,
     _CSS_FOOTER,
     _CSS_MOBILE,
     _CSS_MOBILE_SURFACES,
@@ -384,16 +459,17 @@ def _stance_color(stance: str) -> str:
     """Map a stance enum to a PALETTE token used for glow / accent / fill.
 
     ``LONG_SPREAD`` and ``SHORT_SPREAD`` get the directional semantic
-    colors; everything else (``FLAT``, ``STAND_ASIDE``, or unknown) falls
-    back to the active-brand ``primary`` so neutral stances still
-    register visually without screaming at the reader.
+    colors; ``FLAT`` / ``STAND_ASIDE`` / unknown fall back to the amber
+    ``warn`` token (Row 13 of docs/reviews/_synthesis.md — grey signalled
+    boredom, amber signals active caution, which is the honest read on
+    a stand-aside stance).
     """
     s = (stance or "").upper()
     if s == "LONG_SPREAD":
         return PALETTE.positive
     if s == "SHORT_SPREAD":
         return PALETTE.negative
-    return PALETTE.primary
+    return PALETTE.warn
 
 
 def _has_streamlit_runtime() -> bool:
@@ -408,12 +484,18 @@ def _has_streamlit_runtime() -> bool:
 
 
 def render_stance_pill(stance: str) -> None:
-    """Render the hero stance pill (UIP-T2).
+    """Render the hero stance pill (UIP-T2 + Phase-C Row 13).
 
     Display label pulls from ``language.TERMS`` so the plain-English
     rename stays single-source. Color for the glow/text lives in
     ``PALETTE``: positive for LONG_SPREAD, negative for SHORT_SPREAD,
-    text_secondary for FLAT / STAND_ASIDE / unknown.
+    **amber ``warn``** for FLAT / STAND_ASIDE / unknown (Row 13: grey
+    read as "boring", amber signals active caution).
+
+    Glow alpha was reduced from ``55`` (33%) to ``33`` (20%) so the
+    directional pill doesn't out-dramatise the hedging content rendered
+    below it (invalidations, caveats, headline). Pair read on
+    docs/reviews/_synthesis.md → Row 13.
     """
     if not _has_streamlit_runtime():
         return
@@ -428,12 +510,13 @@ def render_stance_pill(stance: str) -> None:
         color = PALETTE.negative
         display = TERMS["short_spread"].upper()
     else:
-        color = PALETTE.text_secondary
+        # Row 13: amber caution, not grey boredom.
+        color = PALETTE.warn
         display = TERMS["flat"].upper()
 
     st.markdown(
         f'<div class="stance-pill" data-testid="stance-pill" '
-        f'style="color:{color}; box-shadow: 0 0 20px {color}55;">{display}</div>',
+        f'style="color:{color}; box-shadow: 0 0 20px {color}33;">{display}</div>',
         unsafe_allow_html=True,
     )
 
@@ -1120,6 +1203,107 @@ def render_error(message: str, retry_fn=None) -> None:
             st.rerun()
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Phase-C Rows 2 + 5 — hedging-layer render helpers.
+#
+# The LLM already emits ``plain_english_headline``, ``invalidation_risks``,
+# and ``data_caveats`` into the schema on every call; the guardrail fn
+# appends to ``data_caveats`` whenever it clamps conviction, sizing, or
+# forces a stance. Until Phase-C these three fields were dead code between
+# the schema and the user's screen — classic confirmation-bias-by-omission
+# (persona 09 finding). The three helpers below surface each field with
+# ``data-testid`` sentinels so Playwright can lock the render in.
+#
+# See docs/reviews/_synthesis.md → Rows 2, 5 for the full argument.
+# ---------------------------------------------------------------------------
+def render_plain_english_headline(headline) -> None:
+    """Render the one-sentence headline as the top line of the hero (Row 2).
+
+    Empty / whitespace-only / None short-circuit — we don't emit a blank
+    wrapper because this field is sometimes missing on grandfather
+    ``data/trade_theses.jsonl`` rows predating UIP-T0. The sentinel
+    ``data-testid="plain-english-headline"`` lets the e2e suite assert
+    presence without asserting a specific string.
+    """
+    if not _has_streamlit_runtime():
+        return
+    text = str(headline or "").strip()
+    if not text:
+        return
+    st.markdown(
+        f'<div class="plain-english-headline" '
+        f'data-testid="plain-english-headline">{text}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_invalidations(items) -> None:
+    """Render the "what would make this trade wrong" list (Row 5).
+
+    ``items`` is sliced to the first three so the hedging content stays
+    scannable — the full list remains available in the schema and the
+    expander below. Each row is prefixed with a Lucide alert-triangle in
+    the amber ``warn`` token so the visual anchors the caution without
+    competing with the directional stance pill. The parent ``<ul>``
+    carries ``data-testid="invalidation-risks"`` for the sentinel tests.
+
+    Empty / None short-circuit silently; the flat-stance path already
+    emits its own empty-state card via ``render_empty`` upstream.
+    """
+    if not _has_streamlit_runtime():
+        return
+    if not items:
+        return
+    rows: list[str] = []
+    triangle = _LUCIDE_ALERT_TRIANGLE.replace(
+        'stroke="currentColor"', f'stroke="{PALETTE.warn}"'
+    )
+    for item in list(items)[:3]:
+        label = str(item or "").strip()
+        if not label:
+            continue
+        rows.append(f'<li>{triangle}<span>{label}</span></li>')
+    if not rows:
+        return
+    st.markdown(
+        '<ul class="invalidations" data-testid="invalidation-risks">'
+        + "".join(rows)
+        + "</ul>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_caveat_strip(caveats) -> None:
+    """Render the ``data_caveats`` warning strip (Row 5).
+
+    Guardrail-appended caveats ("Inventory feed unavailable", "Sizing
+    capped at 2% of capital — vol regime", "Engle-Granger failed") must
+    surface above the fold every time they are attached. Caveats are
+    joined with ``" · "`` so the strip stays a single line on desktop
+    but wraps cleanly on mobile via the ``.caveat-strip`` flex rule.
+
+    Empty / None short-circuit — we don't want a persistent amber strip
+    on the 95% of render cycles where no guardrail fired.
+    """
+    if not _has_streamlit_runtime():
+        return
+    if not caveats:
+        return
+    cleaned = [str(c or "").strip() for c in caveats]
+    cleaned = [c for c in cleaned if c]
+    if not cleaned:
+        return
+    triangle = _LUCIDE_ALERT_TRIANGLE.replace(
+        'stroke="currentColor"', f'stroke="{PALETTE.warn}"'
+    )
+    joined = " &middot; ".join(cleaned)
+    st.markdown(
+        f'<div class="caveat-strip" data-testid="data-caveats">'
+        f'{triangle}<span>{joined}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ---------------------------------------------------------------------------

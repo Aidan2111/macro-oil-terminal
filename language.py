@@ -57,10 +57,17 @@ TERMS: dict[str, str] = {
     "invalidations": "What would break this trade idea",
 
     # Confidence + stance ---------------------------------------------------
+    #
+    # Row 13 (Phase C): stance copy is hypothetical, not imperative. "Buy /
+    # Sell / Wait" read as instructions; "Lean long / Lean short / Stand
+    # aside" read as calibrated dispositions, which is the only honest
+    # framing for a structured output that also ships an
+    # ``invalidation_risks`` list and a ``data_caveats`` strip. See
+    # docs/reviews/_synthesis.md → Row 13.
     "confidence": "Confidence",
-    "long_spread": "Buy the spread",
-    "short_spread": "Sell the spread",
-    "flat": "Wait",
+    "long_spread": "Lean long",
+    "short_spread": "Lean short",
+    "flat": "Stand aside",
 }
 
 
@@ -263,15 +270,17 @@ def describe_stance(stance: str) -> str:
     logs raw stance strings stays honest.
     """
     mapping = {
-        "LONG_SPREAD": "Buy the spread",
-        "SHORT_SPREAD": "Sell the spread",
-        "FLAT": "Wait",
-        "STAND_ASIDE": "Wait",
+        # Row 13 (Phase C): hypothetical, not imperative — see the TERMS
+        # table for full rationale.
+        "LONG_SPREAD": "Lean long",
+        "SHORT_SPREAD": "Lean short",
+        "FLAT": "Stand aside",
+        "STAND_ASIDE": "Stand aside",
         # Lower-case variants used inside the JSON schema:
-        "long_spread": "Buy the spread",
-        "short_spread": "Sell the spread",
-        "flat": "Wait",
-        "stand_aside": "Wait",
+        "long_spread": "Lean long",
+        "short_spread": "Lean short",
+        "flat": "Stand aside",
+        "stand_aside": "Stand aside",
     }
     return mapping.get(stance, stance)
 
