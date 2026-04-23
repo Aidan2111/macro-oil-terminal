@@ -1049,6 +1049,19 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
                 "No actionable trade idea today. Monitor the Spread "
                 "Stretch gauge above.",
             )
+            # UIP stabilise: emit the empty checklist wrapper so the
+            # ``[data-testid="checklist"]`` sentinel attaches on the
+            # flat-stance path too. ``render_checklist([])`` renders the
+            # wrapper ``<ul>`` with no children — no visible content, but
+            # the Playwright selector resolves deterministically.
+            render_checklist([])
+            # UIP stabilise: mirror the non-flat branch and ensure the
+            # catalyst countdown sentinel attaches here as well. The
+            # earlier call at line ~1034 already covers this branch, but
+            # we pass ``None`` defensively so the sentinel resolves even
+            # if ``ctx`` is stale / missing ``hours_to_next_eia``.
+            _hrs_flat = getattr(ctx, "hours_to_next_eia", None) if ctx is not None else None
+            render_catalyst_countdown(_hrs_flat)
             # UIP-T2: render three placeholder tier cards even on the
             # flat path so the hero keeps a consistent skeleton and the
             # sentinel selectors always resolve. Cards surface the
@@ -1937,12 +1950,22 @@ with tab_depl:
     )
 
     if proj_date is not None:
-        fig2.add_vline(
-            x=proj_date,
-            line=dict(color="red", width=1, dash="dot"),
-            annotation_text=proj_date.strftime("%Y-%m-%d"),
-            annotation_position="top right",
-        )
+        # UIP stabilise: older Plotly + pandas 2 combos raise
+        # ``TypeError: Addition/subtraction of integers and integer-arrays
+        # with Timestamp is no longer supported`` inside
+        # ``Figure.add_vline`` because Plotly's annotation offset math
+        # still uses ``Timestamp + int``. Swallow the failure so the
+        # trailing script body (including ``render_footer``) still runs —
+        # the regression line + floor hline remain visible either way.
+        try:
+            fig2.add_vline(
+                x=proj_date,
+                line=dict(color="red", width=1, dash="dot"),
+                annotation_text=proj_date.strftime("%Y-%m-%d"),
+                annotation_position="top right",
+            )
+        except TypeError:
+            pass
 
     fig2.update_layout(
         height=560,

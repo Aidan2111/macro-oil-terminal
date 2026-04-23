@@ -1371,8 +1371,10 @@ def render_onboarding() -> None:
     """Render the first-visit onboarding toast sequence (UIP-T8).
 
     Emits a tiny HTML+JS component at the current page position via
-    ``st.components.v1.html`` (height=0 so it contributes no vertical
-    space). The component guards on ``localStorage["mot_onboarding_done"]``
+    ``st.components.v1.html`` (height=1 so it contributes effectively no
+    vertical space while staying attached to the layout tree — height=0
+    would detach the iframe under some browsers). The component guards on
+    ``localStorage["mot_onboarding_done"]``
     and spawns three fixed toasts in sequence on first visit — ESC or a
     click anywhere dismisses the stack and sets the flag.
 
@@ -1384,7 +1386,11 @@ def render_onboarding() -> None:
         return
     body = _build_onboarding_html()
     try:
-        _components_html(body, height=0)
+        # UIP stabilise: height=1 (not 0) so the iframe stays attached to
+        # the layout tree. Some browsers treat height=0 iframes as
+        # detached, which confuses Playwright's frame traversal during
+        # the sentinel tests. 1px is visually indistinguishable.
+        _components_html(body, height=1)
     except Exception:
         # Never let a components mount failure crash the page render.
         # The onboarding is a nice-to-have; the app must still boot.
