@@ -63,11 +63,13 @@ from language import (
 
 # UIP-T1: theme palette + CSS injection (idempotent per session).
 from theme import (
+    SYMBOL_DISPLAY_NAMES,
     inject_css,
     render_catalyst_countdown,
     render_checklist,
     render_conviction_bar,
     render_stance_pill,
+    render_ticker_strip,
     render_tier_card,
 )
 
@@ -402,30 +404,6 @@ st.caption(
 )
 
 
-def _sparkline(series, color: str, height: int = 60) -> go.Figure:
-    fig = go.Figure(
-        data=[
-            go.Scattergl(
-                x=list(range(len(series))),
-                y=list(series),
-                mode="lines",
-                line=dict(color=color, width=1.6),
-                hoverinfo="skip",
-            )
-        ]
-    )
-    fig.update_layout(
-        height=height,
-        margin=dict(l=0, r=0, t=0, b=0),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-        showlegend=False,
-    )
-    return fig
-
-
 @st.cache_data(show_spinner=False, ttl=45)
 def _load_intraday_cached(refresh_token: int):
     """Cached intraday pull — token gives us a per-minute bucket."""
@@ -435,92 +413,93 @@ def _load_intraday_cached(refresh_token: int):
         return None
 
 
+def _spark_series_tail(series, n: int = 50) -> list[float]:
+    """Convert a pandas Series tail to a plain list of floats for the
+    inline-SVG sparkline. Drops NaNs so a partial feed doesn't torpedo
+    the min-max scaling inside ``theme._build_sparkline_polyline``.
+    """
+    try:
+        clean = series.dropna().tail(n)
+        return [float(v) for v in clean.tolist()]
+    except Exception:
+        return []
+
+
 @st.fragment(run_every=60 if live_mode else None)
 def _ticker_strip() -> None:
-    """Real-time ticker strip — autorefreshes every 60s in live mode."""
+    """Bloomberg-tape ticker strip — autorefreshes every 60s in live
+    mode. Body delegates to ``theme.render_ticker_strip`` so the HTML
+    + inline SVG rendering stays single-source (UIP-T4). No Plotly —
+    the strip is pure markdown + SVG so the per-render cost is
+    sub-millisecond and the fragment can tick without a chart re-mount.
+    """
     import time as _t
     bucket = int(_t.time() // 60)
     intraday = _load_intraday_cached(bucket) if live_mode else None
 
-    brent_tail: pd.Series
-    wti_tail: pd.Series
-    mode_badge: str
-    last_updated: str
-
     if intraday is not None and not intraday.frame.empty:
-        brent_tail = intraday.frame["Brent"].tail(120)
-        wti_tail = intraday.frame["WTI"].tail(120)
-        last_updated = intraday.frame.index[-1].strftime("%H:%M:%S UTC")
-        mode_badge = f"LIVE 1-min  ·  last bar {last_updated}  ·  ~15-min publisher delay"
+        brent_tail = intraday.frame["Brent"].dropna()
+        wti_tail = intraday.frame["WTI"].dropna()
     else:
-        brent_tail = prices["Brent"].tail(60)
-        wti_tail = prices["WTI"].tail(60)
-        mode_badge = "DAILY snapshot (market closed or live feed unavailable)"
-        last_updated = prices.index[-1].strftime("%Y-%m-%d")
+        brent_tail = prices["Brent"].dropna()
+        wti_tail = prices["WTI"].dropna()
 
-    spread_tail = brent_tail.reindex_like(wti_tail).dropna() - wti_tail.dropna().reindex_like(brent_tail.reindex_like(wti_tail).dropna())
-    latest_brent_v = float(brent_tail.iloc[-1])
-    latest_wti_v = float(wti_tail.iloc[-1])
-    latest_spread_v = latest_brent_v - latest_wti_v
+    def _delta(tail) -> tuple[float, float, float]:
+        """Return (latest_price, delta_abs, delta_pct) vs the window's
+        first observation. Falls back to zeros on empty tails."""
+        if tail is None or tail.empty:
+            return 0.0, 0.0, 0.0
+        latest = float(tail.iloc[-1])
+        first = float(tail.iloc[0])
+        d_abs = latest - first
+        d_pct = (d_abs / first * 100.0) if first else 0.0
+        return latest, d_abs, d_pct
 
-    st.caption(f"Source: **Yahoo Finance (Brent / WTI)** · {mode_badge}")
-    cols = st.columns(4)
-    cols[0].metric(
-        "Brent",
-        f"${latest_brent_v:,.2f}",
-        delta=f"{(latest_brent_v - float(brent_tail.iloc[0])):+.2f}",
-    )
-    cols[0].plotly_chart(_sparkline(brent_tail, "#1f77b4"),
-                        use_container_width=True,
-                        config={"displayModeBar": False},
-                        key="sp_brent")
+    brent_latest, brent_d_abs, brent_d_pct = _delta(brent_tail.tail(120))
+    wti_latest, wti_d_abs, wti_d_pct = _delta(wti_tail.tail(120))
 
-    cols[1].metric(
-        "WTI",
-        f"${latest_wti_v:,.2f}",
-        delta=f"{(latest_wti_v - float(wti_tail.iloc[0])):+.2f}",
-    )
-    cols[1].plotly_chart(_sparkline(wti_tail, "#d62728"),
-                        use_container_width=True,
-                        config={"displayModeBar": False},
-                        key="sp_wti")
+    spread_tail = (brent_tail - wti_tail).dropna().tail(120)
+    spread_latest, spread_d_abs, spread_d_pct = _delta(spread_tail)
 
-    z_tail = spread_df["Z_Score"].dropna().tail(120)
-    z_val = z_tail.iloc[-1] if not z_tail.empty else 0.0
-    stretch_band = _describe_stretch(z_val)
-    stretch_label = (
-        f"{stretch_band}: {z_val:+.2f}\u03c3" if show_advanced
-        else f"{stretch_band}: {z_val:+.2f}"
-    )
-    cols[2].metric(
-        f"Spread ${latest_spread_v:+.2f}",
-        stretch_label,
-        delta=("ALERT" if abs(z_val) >= z_threshold else "calm"),
-        delta_color=("inverse" if abs(z_val) >= z_threshold else "normal"),
-        help=(
-            f"**{_T['stretch']}** — how far today's Brent-WTI spread is from "
-            "its normal range. +2 = spread is about 2x its usual daily wobble "
-            "above average; statistically extreme. Technically a Z-score."
-        ),
-    )
-    cols[2].plotly_chart(_sparkline(z_tail, "#2ca02c"),
-                        use_container_width=True,
-                        config={"displayModeBar": False},
-                        key="sp_z")
+    inv_series = (inventory["Total_Inventory_bbls"] / 1e6).dropna()
+    inv_latest, inv_d_abs, inv_d_pct = _delta(inv_series.tail(52))
 
-    inv_tail = inventory["Total_Inventory_bbls"].tail(52) / 1e6
-    cols[3].metric(
-        "Inventory",
-        f"{inv_tail.iloc[-1]:,.0f} Mbbl",
-        delta=f"{(inv_tail.iloc[-1]-inv_tail.iloc[0]):+.1f}",
-    )
-    cols[3].plotly_chart(_sparkline(inv_tail, "#ff9f1c"),
-                        use_container_width=True,
-                        config={"displayModeBar": False},
-                        key="sp_inv")
+    quotes = [
+        {
+            "symbol": "BZ=F",
+            "display_name": SYMBOL_DISPLAY_NAMES.get("BZ=F", "Brent"),
+            "price": brent_latest,
+            "delta_abs": brent_d_abs,
+            "delta_pct": brent_d_pct,
+            "sparkline_values": _spark_series_tail(brent_tail),
+        },
+        {
+            "symbol": "CL=F",
+            "display_name": SYMBOL_DISPLAY_NAMES.get("CL=F", "WTI"),
+            "price": wti_latest,
+            "delta_abs": wti_d_abs,
+            "delta_pct": wti_d_pct,
+            "sparkline_values": _spark_series_tail(wti_tail),
+        },
+        {
+            "symbol": "SPREAD",
+            "display_name": "Spread",
+            "price": spread_latest,
+            "delta_abs": spread_d_abs,
+            "delta_pct": spread_d_pct,
+            "sparkline_values": _spark_series_tail(spread_tail),
+        },
+        {
+            "symbol": "INV",
+            "display_name": "Inventory Mbbl",
+            "price": inv_latest,
+            "delta_abs": inv_d_abs,
+            "delta_pct": inv_d_pct,
+            "sparkline_values": _spark_series_tail(inv_series),
+        },
+    ]
 
-
-_ticker_strip()
+    render_ticker_strip(quotes)
 
 # --- Desk-style risk summary pinned above the tabs -----------------------
 try:
@@ -1036,6 +1015,13 @@ def _render_hero_band(thesis, ctx, decorated) -> None:
             )
 
         st.caption(_HERO_DISCLAIMER)
+
+
+# UIP-T4: Bloomberg-tape ticker strip renders at the very top of the page,
+# above the hero band. The fragment body assembles a list of quote dicts
+# from the same intraday / daily sources the old Plotly-tile strip used,
+# then delegates to ``theme.render_ticker_strip`` for the inline-SVG render.
+_ticker_strip()
 
 
 # Build a pre-tabs thesis + decoration so the hero band can render above

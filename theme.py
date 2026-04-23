@@ -161,6 +161,27 @@ _CSS_TICKER_STRIP = """
   align-items: center;
   gap: 8px;
 }
+.ticker-symbol {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.ticker-price {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ticker-delta {
+  font-size: 12px;
+  font-weight: 500;
+}
+.ticker-sparkline {
+  height: 24px;
+  width: 80px;
+  display: inline-block;
+}
 """
 
 _CSS_CHECKLIST = """
@@ -525,5 +546,133 @@ def render_catalyst_countdown(hours_to_eia) -> None:
         f'<div class="catalyst-countdown" data-testid="catalyst-countdown" '
         f'style="color: {PALETTE.primary};">'
         f'\u23f1 EIA release in {d}d {h}h</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# T4 — Bloomberg-tape ticker strip.
+#
+# The strip renders at the very top of ``app.py`` (above the hero band) and
+# carries one ``.ticker-item`` per quote. Each item shows symbol, price,
+# delta (abs + pct, always signed), and a tiny 80x24 inline-SVG sparkline
+# — no Plotly, no network, no external CSS. Keeping the SVG hand-rolled
+# means per-render cost is sub-millisecond and the strip can live inside
+# an ``st.fragment(run_every=...)`` without a Plotly re-mount on every
+# tick.
+# ---------------------------------------------------------------------------
+SYMBOL_DISPLAY_NAMES = {
+    "BZ=F": "Brent",
+    "CL=F": "WTI",
+    "HO=F": "Heating Oil",
+    "RB=F": "RBOB",
+    "USO": "USO ETF",
+    "BNO": "BNO ETF",
+}
+
+
+def _build_sparkline_polyline(
+    values, width: int = 80, height: int = 24, margin: int = 2
+) -> str:
+    """Return the ``points`` attribute for an 80x24 sparkline polyline.
+
+    ``values`` is min-max scaled into ``y ∈ [height - margin, margin]``
+    (SVG y grows downward, so larger values sit higher). When every
+    value is identical, the line is flat at the vertical midpoint. The
+    caller is responsible for skipping the surrounding ``<svg>`` when
+    ``values`` is empty / None — this helper assumes at least one value.
+    """
+    try:
+        xs = [float(v) for v in values]
+    except (TypeError, ValueError):
+        return ""
+    n = len(xs)
+    if n == 0:
+        return ""
+    if n == 1:
+        # One point — render a flat tick at the midpoint.
+        mid = height / 2
+        return f"0,{mid:.2f} {width:.2f},{mid:.2f}"
+
+    lo, hi = min(xs), max(xs)
+    span = hi - lo
+    y_top = float(margin)
+    y_bot = float(height - margin)
+    step = width / (n - 1)
+    pts: list[str] = []
+    for i, v in enumerate(xs):
+        x = i * step
+        if span == 0:
+            y = height / 2
+        else:
+            # Invert: highest value → smallest y (top).
+            y = y_bot - (v - lo) / span * (y_bot - y_top)
+        pts.append(f"{x:.2f},{y:.2f}")
+    return " ".join(pts)
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    """Coerce to float; fall back to ``default`` on None / garbage."""
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _ticker_item_html(q: dict) -> str:
+    """Return the HTML string for a single ``.ticker-item`` block."""
+    symbol = str(q.get("symbol", "") or "")
+    label = str(q.get("display_name") or symbol)
+    price = _safe_float(q.get("price"))
+    d_abs = _safe_float(q.get("delta_abs"))
+    d_pct = _safe_float(q.get("delta_pct"))
+
+    if d_pct > 0:
+        color = PALETTE.positive
+    elif d_pct < 0:
+        color = PALETTE.negative
+    else:
+        color = PALETTE.text_secondary
+
+    spark_values = q.get("sparkline_values") or []
+    if spark_values:
+        points = _build_sparkline_polyline(spark_values)
+        svg = (
+            '<svg viewBox="0 0 80 24" class="ticker-sparkline" '
+            'xmlns="http://www.w3.org/2000/svg">'
+            f'<polyline points="{points}" fill="none" '
+            f'stroke="{color}" stroke-width="1.5" '
+            f'stroke-linejoin="round" /></svg>'
+        )
+    else:
+        svg = ""
+
+    return (
+        f'<div class="ticker-item" data-symbol="{symbol}">'
+        f'<span class="ticker-symbol">{label}</span>'
+        f'<span class="ticker-price mono">${price:,.2f}</span>'
+        f'<span class="ticker-delta" style="color: {color};">'
+        f'{d_abs:+.2f} ({d_pct:+.2f}%)</span>'
+        f'{svg}</div>'
+    )
+
+
+def render_ticker_strip(quotes) -> None:
+    """Render the Bloomberg-tape ticker strip (UIP-T4).
+
+    ``quotes`` is a list of dicts; each dict must carry ``symbol``,
+    ``price``, ``delta_abs``, ``delta_pct``, and ``sparkline_values``.
+    An optional ``display_name`` overrides ``symbol`` in the label. The
+    helper emits a single ``st.markdown(..., unsafe_allow_html=True)``
+    with one ``<div class="ticker-item">`` per quote. Outside a
+    Streamlit runtime it returns silently (matches the T2/T3 helpers).
+    """
+    if not _has_streamlit_runtime():
+        return
+    inner = "".join(_ticker_item_html(q) for q in (quotes or []))
+    st.markdown(
+        '<div class="ticker-strip" data-testid="ticker-strip">'
+        + inner
+        + '</div>',
         unsafe_allow_html=True,
     )

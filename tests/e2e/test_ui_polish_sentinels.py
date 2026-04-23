@@ -52,3 +52,27 @@ def test_checklist_and_countdown_attached(streamlit_server, page):
     page.locator('[data-testid="catalyst-countdown"]').first.wait_for(
         state="attached", timeout=60_000
     )
+
+
+def test_ticker_strip_renders_above_hero(streamlit_server, page):
+    """UIP-T4: the Bloomberg-tape ticker strip must attach AND sit above
+    the hero band vertically — its bounding_box().y must be less than the
+    hero-band's. Also asserts at least 2 ``.ticker-item`` children."""
+    _goto(page, streamlit_server)
+
+    ticker = page.locator('[data-testid="ticker-strip"]').first
+    hero = page.locator('[data-testid="hero-band"]').first
+    ticker.wait_for(state="attached", timeout=60_000)
+    hero.wait_for(state="attached", timeout=60_000)
+    # bounding_box() requires the element to be visible/in-layout.
+    ticker.scroll_into_view_if_needed(timeout=10_000)
+    ticker_box = ticker.bounding_box()
+    hero_box = hero.bounding_box()
+    assert ticker_box is not None, "ticker-strip has no bounding box"
+    assert hero_box is not None, "hero-band has no bounding box"
+    assert ticker_box["y"] < hero_box["y"], (
+        f"expected ticker.y ({ticker_box['y']}) < hero.y ({hero_box['y']})"
+    )
+
+    items = page.locator('[data-testid="ticker-strip"] .ticker-item').count()
+    assert items >= 2, f"expected >= 2 ticker-item children, got {items}"
