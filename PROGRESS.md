@@ -2,6 +2,34 @@
 
 Timestamps are UTC (sandbox time).
 
+## 2026-04-23 — UX revision v2 (persona-11 follow-up)
+
+### ~15:20Z — `feat/ux-revision-v2` shipped
+
+- Five priority findings from `docs/reviews/11-ux-researcher.md`
+  addressed plus a sixth bonus fix (global mobile tap-target floor):
+  1. HERO layout-tag prefix removed from stance chip (`app.py`).
+  2. Mobile sidebar-open chevron CSS forced to >= 44x44 (`theme.py`
+     `_CSS_MOBILE_SURFACES`).
+  3. Sign-in CTA text darkened on cyan background (contrast ~11:1
+     vs. the 1.81:1 persona flagged) via new `_CSS_BUTTONS` rule.
+  4. Streamlit dev chrome (Stop / Deploy / script-runner) hidden
+     via new `_CSS_CHROME_HIDE` block.
+  5. Tab bar made `position: sticky` at the top so tab switches
+     don't require scrolling past the hero.
+  6. Global mobile button min-height: 44px under `@media`.
+- TDD: 6 unit tests + 4 e2e DOM tests in
+  `tests/unit/test_ux_revision_v2.py` + `tests/e2e/test_ux_revision_v2_live.py`.
+  Unit suite 304 passed (was 298). E2E DOM verification green on all 4.
+- After-state screenshots at `docs/reviews/ux-evidence/after/` (8
+  PNGs — 5 desktop, 3 iPhone 13); pairs 1-to-1 with before captures
+  in the parent directory.
+- Deferred: persona findings #2 (stale empty-state chip), #7
+  (execute — wiring placeholder), #8 (H1 clamp), #9 (persistent
+  loading banner), #11 (Pixel 7 metric row clip). Each is a
+  content/state fix rather than a CSS tweak, best tackled in a
+  dedicated copy pass.
+
 ## 2026-04-23 — Overnight autonomous block (Aidan sleeping ~12h)
 
 ### 02:40Z — Databento key stored; provider-decision ADR landed
