@@ -1,0 +1,235 @@
+name: CD (Next.js + FastAPI)
+
+# Parallel to .github/workflows/cd.yml. That pipeline keeps shipping
+# the Streamlit app to oil-tracker-app-canadaeast-4474 on every main
+# push; this one only fires when the new-stack paths change.
+#
+# NOTE: the backend App Service and the Static Web App are NOT
+# provisioned yet. The `AZURE_BACKEND_APP_NAME` env var below is a
+# placeholder — uncomment the deploy step once Aidan has run:
+#   az webapp create --name oil-tracker-api-canadaeast-NNNN \
+#                    --resource-group oil-price-tracker \
+#                    --plan <plan-name> --runtime "PYTHON|3.11"
+#   az staticwebapp create --name oil-tracker-web-NNNN \
+#                          --resource-group oil-price-tracker \
+#                          --location eastus2 --sku Free
+# and once AZURE_STATIC_WEB_APPS_API_TOKEN is stored as a repo
+# secret.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/cd-nextjs.yml"
+      - "static-web-apps/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod-nextjs
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_BACKEND_APP_NAME: oil-tracker-api-canadaeast-NNNN
+  AZURE_RG_NAME: oil-price-tracker
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  backend-deploy:
+    name: Backend — Deploy FastAPI to Azure App Service
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production-backend
+      url: https://${{ env.AZURE_BACKEND_APP_NAME }}.azurewebsites.net
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Test gate — pytest backend/tests -q
+        run: pytest backend/tests -q
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Stamp build-info
+        id: stamp
+        run: |
+          mkdir -p backend/static
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > backend/static/build-info.json <<EOF
+          {"sha": "${{ github.sha }}", "sha_short": "${SHA_SHORT}", "time": "${BUILD_TIME}", "region": "canadaeast", "workflow_run": "${{ github.run_id }}"}
+          EOF
+          cat backend/static/build-info.json
+          echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+          echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
+
+      - name: Package backend (zip)
+        run: |
+          mkdir -p dist
+          cd backend
+          zip -rq ../dist/backend.zip . \
+            -x "tests/*" \
+            -x "__pycache__/*" \
+            -x "*.pyc"
+          cd ..
+          ls -la dist/
+
+      # ---------------------------------------------------------------
+      # Deploy step — COMMENTED OUT until the App Service exists.
+      # Uncomment after `az webapp create` + federated-credential setup.
+      # ---------------------------------------------------------------
+      # - name: Deploy to Azure Web App
+      #   id: deploy
+      #   uses: azure/webapps-deploy@v3
+      #   with:
+      #     app-name: ${{ env.AZURE_BACKEND_APP_NAME }}
+      #     package: dist/backend.zip
+
+      # - name: Set startup command + BUILD_* app settings
+      #   run: |
+      #     az webapp config set \
+      #       -g ${{ env.AZURE_RG_NAME }} \
+      #       -n ${{ env.AZURE_BACKEND_APP_NAME }} \
+      #       --startup-file "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+      #     az webapp config appsettings set \
+      #       -g ${{ env.AZURE_RG_NAME }} \
+      #       -n ${{ env.AZURE_BACKEND_APP_NAME }} \
+      #       --settings \
+      #         BUILD_SHA=${{ github.sha }} \
+      #         BUILD_VERSION=${{ steps.stamp.outputs.sha_short }} \
+      #         BUILD_TIME=${{ steps.stamp.outputs.build_time }} \
+      #         BACKEND_BUILD_INFO_PATH=/home/site/wwwroot/static/build-info.json \
+      #         BACKEND_REGION=canadaeast \
+      #       --output none
+
+      # - name: Verify commit deployed to live (/api/build-info)
+      #   run: |
+      #     set -eu
+      #     URL="https://${{ env.AZURE_BACKEND_APP_NAME }}.azurewebsites.net"
+      #     EXPECTED="${{ github.sha }}"
+      #     for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      #       ACTUAL=$(curl -sS --max-time 15 "$URL/api/build-info" 2>/dev/null \
+      #         | python3 -c "import sys,json; print(json.load(sys.stdin).get('sha',''))" 2>/dev/null || echo "")
+      #       if [ "$ACTUAL" = "$EXPECTED" ]; then
+      #         echo "Live backend SHA matches expected ($EXPECTED) — deploy verified"
+      #         exit 0
+      #       fi
+      #       echo "attempt $attempt: live SHA is '$ACTUAL' — waiting 10s..."
+      #       sleep 10
+      #     done
+      #     echo "FAIL: /api/build-info never reported SHA $EXPECTED after 2 min" >&2
+      #     exit 1
+
+      - name: Placeholder — backend deploy pending provisioning
+        run: |
+          echo "Backend App Service '${{ env.AZURE_BACKEND_APP_NAME }}' not provisioned yet."
+          echo "Tests passed; package built ($(ls -la dist/backend.zip))."
+          echo "Uncomment deploy steps after: az webapp create ..."
+
+      - name: Azure logout
+        if: always()
+        run: az logout || true
+
+  frontend-deploy:
+    name: Frontend — Deploy Next.js to Azure Static Web Apps
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production-frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Test gate — next build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Stamp build-info.txt for live-verify
+        run: |
+          mkdir -p frontend/public
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > frontend/public/build-info.txt <<EOF
+          sha=${{ github.sha }}
+          sha_short=${SHA_SHORT}
+          time=${BUILD_TIME}
+          region=eastus2
+          workflow_run=${{ github.run_id }}
+          EOF
+          cat frontend/public/build-info.txt
+
+      # ---------------------------------------------------------------
+      # Deploy step — COMMENTED OUT until the Static Web App exists +
+      # AZURE_STATIC_WEB_APPS_API_TOKEN is stored as a repo secret.
+      # ---------------------------------------------------------------
+      # - name: Deploy to Azure Static Web Apps
+      #   id: swa
+      #   uses: Azure/static-web-apps-deploy@v1
+      #   with:
+      #     azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      #     repo_token: ${{ secrets.GITHUB_TOKEN }}
+      #     action: "upload"
+      #     app_location: "frontend"
+      #     api_location: ""
+      #     output_location: ".next"
+      #     config_file_location: "static-web-apps"
+
+      # - name: Verify commit deployed to live (/build-info.txt)
+      #   run: |
+      #     set -eu
+      #     URL="${{ steps.swa.outputs.static_web_app_url }}"
+      #     EXPECTED="${{ github.sha }}"
+      #     for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      #       ACTUAL=$(curl -sS --max-time 15 "$URL/build-info.txt" 2>/dev/null \
+      #         | awk -F= '/^sha=/ {print $2}' || echo "")
+      #       if [ "$ACTUAL" = "$EXPECTED" ]; then
+      #         echo "Live frontend SHA matches expected ($EXPECTED) — deploy verified"
+      #         exit 0
+      #       fi
+      #       echo "attempt $attempt: live SHA is '$ACTUAL' — waiting 10s..."
+      #       sleep 10
+      #     done
+      #     echo "FAIL: /build-info.txt never reported SHA $EXPECTED after 2 min" >&2
+      #     exit 1
+
+      - name: Placeholder — frontend deploy pending provisioning
+        run: |
+          echo "Static Web App 'oil-tracker-web-NNNN' not provisioned yet."
+          echo "Build passed; .next/ ready; build-info.txt stamped."
+          echo "Uncomment deploy steps after: az staticwebapp create ..."
