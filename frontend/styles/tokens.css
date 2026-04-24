@@ -1,0 +1,53 @@
+/* Palette tokens — single source of truth.
+ * Every component references these via Tailwind class names
+ * (bg-bg-1, text-primary, text-text-primary, ...) wired up in
+ * tailwind.config.ts. The explicit palette names (--navy-950 etc.)
+ * come from the design brief and are what shadcn primitives consume.
+ * The semantic aliases (--bg-1, --text-primary, ...) stay for the
+ * existing scaffold components.
+ */
+:root {
+  /* Palette — named swatches from the brief */
+  --navy-950: #0a0e1a;
+  --navy-900: #0f1a2e;
+  --navy-800: #1b2b45;
+  --cyan-400: #22d3ee;
+  --emerald-500: #10b981;
+  --amber-400: #fbbf24;
+  --rose-500: #f43f5e;
+  --slate-400: #94a3b8;
+  --slate-100: #f1f5f9;
+
+  /* Semantic aliases wired to the palette above. */
+  --bg-1: var(--navy-950);
+  --bg-2: var(--navy-900);
+  --bg-3: var(--navy-800);
+  --border: #2a3245;
+  --text-primary: var(--slate-100);
+  --text-secondary: var(--slate-400);
+  --text-muted: #5b6578;
+  --primary: var(--cyan-400);
+  --primary-glow: rgba(34, 211, 238, 0.35);
+  --warn: var(--amber-400);
+  --alert: #ef4444;
+  --positive: var(--emerald-500);
+  --negative: var(--rose-500);
+  --gridline: rgba(255, 255, 255, 0.06);
+
+  /* shadcn/ui tokens (HSL triples) — map dark theme onto the palette. */
+  --background: 222 47% 7%;
+  --foreground: 210 40% 96%;
+  --card: 220 38% 12%;
+  --card-foreground: 210 40% 96%;
+  --popover: 220 38% 12%;
+  --popover-foreground: 210 40% 96%;
+  --muted: 217 33% 20%;
+  --muted-foreground: 215 16% 65%;
+  --accent: 217 33% 20%;
+  --accent-foreground: 210 40% 96%;
+  --destructive: 350 89% 60%;
+  --destructive-foreground: 210 40% 96%;
+  --input: 217 33% 25%;
+  --ring: 189 94% 53%;
+  --radius: 0.75rem;
+}

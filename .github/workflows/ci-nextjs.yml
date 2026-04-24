@@ -1,0 +1,79 @@
+name: CI (Next.js + FastAPI)
+
+# Runs on every push/PR to ANY branch that touches backend/ or frontend/.
+# Purely validation — no deploy. Keeps feature branches honest so we
+# don't discover a broken state only when it lands on main.
+
+on:
+  push:
+    branches-ignore: [main]  # main's CD already runs the same gates
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/ci-nextjs.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/ci-nextjs.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-nextjs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-test:
+    name: Backend pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install deps (root + backend)
+        run: |
+          python -m pip install --upgrade pip
+          # Root requirements first — backend services import quantitative_models,
+          # trade_thesis, providers/*, etc., which need sklearn, pandas, statsmodels, etc.
+          pip install -r requirements.txt
+          pip install -r backend/requirements.txt
+      - name: pytest
+        run: pytest backend/tests -q
+        env:
+          # Dummy values so import paths that read env don't crash.
+          ALPACA_API_KEY_ID: test_key
+          ALPACA_API_SECRET: test_secret
+          ALPACA_PAPER: "true"
+
+  frontend-build:
+    name: Frontend build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci
+        run: npm ci --legacy-peer-deps
+      - name: typecheck
+        run: npm run typecheck --if-present
+      - name: lint
+        run: npm run lint --if-present
+      - name: test
+        run: npm test -- --run
+      - name: build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
