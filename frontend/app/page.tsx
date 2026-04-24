@@ -1,9 +1,10 @@
 import { Section } from "@/components/common/Section";
 import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
+import { TradeIdeaHero } from "@/components/hero/TradeIdeaHero";
 
 /**
- * Home page shell — Wave 2 wires the real hero + ticker tape. For
- * now the page proves the layout tokens + providers all boot.
+ * Home page shell. Wave 2 Sub-F ships the real `TradeIdeaHero`; the
+ * ticker placeholder below is filled by Sub-G.
  */
 export default function HomePage() {
   return (
@@ -11,9 +12,16 @@ export default function HomePage() {
       <Section
         id="home"
         title="Today's dislocation"
-        subtitle="Trade idea, spread chart, and supporting inventory data will land here in Wave 2."
+        subtitle="Live trade idea, stance, and executable tiers."
       >
-        <LoadingSkeleton lines={4} height="h-6" />
+        <TradeIdeaHero />
+      </Section>
+      <Section
+        id="ticker"
+        title="Market ticker"
+        subtitle="Rolling quotes and session headlines land here in Wave 2."
+      >
+        <LoadingSkeleton lines={3} height="h-6" />
       </Section>
     </div>
   );

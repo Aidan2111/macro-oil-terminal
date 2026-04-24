@@ -61,6 +61,115 @@ export type ThesisResponse = {
   citations: string[];
 };
 
+// ---- Sub-F: hero / thesis — full execution-decorated shape ------------
+
+/**
+ * Stance enum as emitted by the LLM (lower-case in the JSON schema) and
+ * also the canonical UPPER-CASE form our TypeScript code uses. Keeping
+ * both forms in the type so frontend components can accept whatever the
+ * backend hands us without a lossy normalisation step.
+ */
+export type Stance =
+  | "LONG_SPREAD"
+  | "SHORT_SPREAD"
+  | "FLAT"
+  | "STAND_ASIDE"
+  | "long_spread"
+  | "short_spread"
+  | "flat"
+  | "stand_aside";
+
+export type Instrument = {
+  tier: 1 | 2 | 3;
+  name: string;
+  symbol: string | null;
+  rationale: string;
+  suggested_size_pct: number;
+  worst_case_per_unit: string;
+};
+
+export type ChecklistItem = {
+  key: string;
+  prompt: string;
+  /** null/None = user must tick; true/false = pre-populated. */
+  auto_check: boolean | null;
+};
+
+export type ThesisRaw = {
+  stance?: Stance | string;
+  conviction_0_to_10?: number;
+  time_horizon_days?: number;
+  thesis_summary?: string;
+  plain_english_headline?: string;
+  key_drivers?: string[];
+  invalidation_risks?: string[];
+  catalyst_watchlist?: Array<{ event: string; date: string; expected_impact: string }>;
+  data_caveats?: string[];
+  position_sizing?: {
+    method?: string;
+    suggested_pct_of_capital?: number;
+    rationale?: string;
+  };
+  entry?: Record<string, unknown>;
+  exit?: Record<string, unknown>;
+  reasoning_summary?: string;
+  disclaimer_shown?: boolean;
+};
+
+/**
+ * Serialised `trade_thesis.Thesis` dataclass — matches the `done` event
+ * of the SSE stream and the decorated rows the UI renders.
+ */
+export type Thesis = {
+  raw: ThesisRaw;
+  generated_at: string;
+  source: string;
+  model: string | null;
+  plain_english_headline: string;
+  context_fingerprint: string;
+  guardrails_applied: string[];
+  mode: string;
+  latency_s: number;
+  streamed: boolean;
+  retried: boolean;
+  instruments: Instrument[];
+  checklist: ChecklistItem[];
+};
+
+/** A row inside `data/trade_theses.jsonl` — the shape `/api/thesis/latest` exposes. */
+export type ThesisAuditRecord = {
+  timestamp: string;
+  source: string;
+  model: string | null;
+  context_fingerprint: string;
+  context: Record<string, unknown> & { hours_to_next_eia?: number | null; current_z?: number };
+  thesis: ThesisRaw;
+  guardrails?: string[];
+  /** Decorated rows carry these; legacy rows may not. */
+  instruments?: Instrument[];
+  checklist?: ChecklistItem[];
+};
+
+export type ThesisLatestResponse = {
+  thesis: ThesisAuditRecord | null;
+  empty: boolean;
+};
+
+export type ThesisSseDoneEvent = {
+  thesis: Thesis;
+  applied_guardrails: string[];
+  materiality_flat: boolean;
+};
+
+export type ThesisSseProgressEvent = {
+  stage: string;
+  pct: number;
+};
+
+export type ThesisSseDeltaEvent = {
+  text: string;
+};
+
 export type BacktestPoint = {
   t: IsoDateTime;
   pnl_usd: number;
