@@ -62,10 +62,18 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
+          # Root requirements first — backend services import
+          # quantitative_models, trade_thesis, providers/* which depend
+          # on sklearn, pandas, statsmodels, arch, yfinance, etc.
+          pip install -r requirements.txt
           pip install -r backend/requirements.txt
 
       - name: Test gate — pytest backend/tests -q
         run: pytest backend/tests -q
+        env:
+          ALPACA_API_KEY_ID: test_key
+          ALPACA_API_SECRET: test_secret
+          ALPACA_PAPER: "true"
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
