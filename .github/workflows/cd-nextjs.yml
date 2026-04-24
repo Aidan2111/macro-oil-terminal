@@ -46,7 +46,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
-      name: production-backend
+      # Reuse the existing 'production' federated OIDC credential set up
+      # for the Streamlit CD. Adding env-specific creds (production-backend
+      # / production-frontend) can come later if we need tighter separation.
+      name: production
       url: https://${{ env.AZURE_BACKEND_APP_NAME }}.azurewebsites.net
 
     steps:
@@ -167,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
-      name: production-frontend
+      name: production
 
     steps:
       - name: Checkout
@@ -182,7 +185,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Test gate — next build
         working-directory: frontend
