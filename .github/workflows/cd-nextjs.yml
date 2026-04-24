@@ -101,13 +101,36 @@ jobs:
       - name: Package backend (zip)
         run: |
           mkdir -p dist
-          cd backend
-          zip -rq ../dist/backend.zip . \
-            -x "tests/*" \
-            -x "__pycache__/*" \
-            -x "*.pyc"
-          cd ..
+          # Package backend/ + all root-level Python modules (backend
+          # services do sys.path shim into the repo root for
+          # quantitative_models, trade_thesis, providers/*). Include
+          # requirements.txt + backend/requirements.txt so App Service's
+          # Oryx builder installs both. Zip from repo root so the
+          # ``backend`` package directory exists at wwwroot — else
+          # ``uvicorn backend.main:app`` can't import.
+          zip -rq dist/backend.zip \
+            backend/ \
+            quantitative_models.py \
+            trade_thesis.py \
+            thesis_context.py \
+            data_ingestion.py \
+            cointegration.py \
+            crack_spread.py \
+            vol_models.py \
+            alerts.py \
+            language.py \
+            observability.py \
+            providers/ \
+            auth/ \
+            requirements.txt \
+            -x "*/tests/*" \
+            -x "*/__pycache__/*" \
+            -x "*.pyc" \
+            -x "providers/__pycache__/*" \
+            -x "auth/__pycache__/*"
           ls -la dist/
+          echo "---zip contents sample---"
+          unzip -l dist/backend.zip | head -25
 
       - name: Deploy to Azure Web App
         id: deploy
