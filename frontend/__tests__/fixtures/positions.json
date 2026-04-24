@@ -1,0 +1,28 @@
+{
+  "positions": [
+    {
+      "symbol": "USO",
+      "qty": 100,
+      "avg_entry": 70.5,
+      "current_px": 72.25,
+      "unrealized_pnl": 175.0,
+      "unrealized_pnl_pct": 0.0248
+    },
+    {
+      "symbol": "BNO",
+      "qty": 50,
+      "avg_entry": 28.0,
+      "current_px": 27.4,
+      "unrealized_pnl": -30.0,
+      "unrealized_pnl_pct": -0.0214
+    },
+    {
+      "symbol": "XOP",
+      "qty": 25,
+      "avg_entry": 142.0,
+      "current_px": 144.1,
+      "unrealized_pnl": 52.5,
+      "unrealized_pnl_pct": 0.0148
+    }
+  ]
+}

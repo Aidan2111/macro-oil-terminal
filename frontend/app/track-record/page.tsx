@@ -1,5 +1,10 @@
 import { Section } from "@/components/common/Section";
-import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
+import { TrackRecord } from "@/components/track-record/TrackRecord";
+
+// Track Record is publicly visible — no auth. The component
+// fetches on the client so the bundle stays small and we don't
+// need to proxy the history endpoint during SSR.
+export const dynamic = "force-dynamic";
 
 export default function TrackRecordPage() {
   return (
@@ -9,7 +14,7 @@ export default function TrackRecordPage() {
         title="Track Record"
         subtitle="Backtest outcomes, hit rate, Sharpe, drawdown."
       >
-        <LoadingSkeleton lines={6} height="h-5" />
+        <TrackRecord />
       </Section>
     </div>
   );

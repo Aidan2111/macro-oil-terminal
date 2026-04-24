@@ -1,0 +1,101 @@
+{
+  "count": 6,
+  "theses": [
+    {
+      "timestamp": "2026-04-20T12:00:00+00:00",
+      "source": "test",
+      "model": "gpt-4o-mini",
+      "context_fingerprint": "a1",
+      "context": { "current_z": 2.3 },
+      "thesis": {
+        "stance": "long_spread",
+        "conviction_0_to_10": 8.0,
+        "time_horizon_days": 10,
+        "entry": { "suggested_z_level": -2.0, "suggested_spread_usd": 2.5, "trigger_condition": "z < -2" },
+        "exit": { "target_z_level": 0.0, "target_condition": "z reverts", "stop_loss_condition": "z < -3", "stop_z_level": -3.0 },
+        "outcome": { "hit_target": true, "realized_return_pct": 0.045, "hold_days": 8 }
+      },
+      "guardrails": []
+    },
+    {
+      "timestamp": "2026-04-18T12:00:00+00:00",
+      "source": "test",
+      "model": "gpt-4o-mini",
+      "context_fingerprint": "a2",
+      "context": { "current_z": -1.9 },
+      "thesis": {
+        "stance": "short_spread",
+        "conviction_0_to_10": 7.5,
+        "time_horizon_days": 14,
+        "entry": { "suggested_z_level": 2.0, "suggested_spread_usd": 3.0, "trigger_condition": "z > 2" },
+        "exit": { "target_z_level": 0.0, "target_condition": "z reverts", "stop_loss_condition": "z > 3", "stop_z_level": 3.0 },
+        "outcome": { "hit_target": false, "realized_return_pct": -0.015, "hold_days": 12 }
+      },
+      "guardrails": []
+    },
+    {
+      "timestamp": "2026-04-15T12:00:00+00:00",
+      "source": "test",
+      "model": "gpt-4o-mini",
+      "context_fingerprint": "a3",
+      "context": { "current_z": 0.2 },
+      "thesis": {
+        "stance": "flat",
+        "conviction_0_to_10": 3.0,
+        "time_horizon_days": 5,
+        "entry": { "suggested_z_level": 0.0, "suggested_spread_usd": 0.0, "trigger_condition": "none" },
+        "exit": { "target_z_level": 0.0, "target_condition": "n/a", "stop_loss_condition": "n/a", "stop_z_level": 0.0 },
+        "outcome": { "hit_target": false, "realized_return_pct": 0.0, "hold_days": 0 }
+      },
+      "guardrails": []
+    },
+    {
+      "timestamp": "2026-04-10T12:00:00+00:00",
+      "source": "test",
+      "model": "gpt-4o-mini",
+      "context_fingerprint": "a4",
+      "context": { "current_z": 2.4 },
+      "thesis": {
+        "stance": "long_spread",
+        "conviction_0_to_10": 8.5,
+        "time_horizon_days": 20,
+        "entry": { "suggested_z_level": -2.0, "suggested_spread_usd": 2.2, "trigger_condition": "z < -2" },
+        "exit": { "target_z_level": 0.0, "target_condition": "z reverts", "stop_loss_condition": "z < -3", "stop_z_level": -3.0 },
+        "outcome": { "hit_target": true, "realized_return_pct": 0.06, "hold_days": 15 }
+      },
+      "guardrails": []
+    },
+    {
+      "timestamp": "2026-04-05T12:00:00+00:00",
+      "source": "test",
+      "model": "gpt-4o-mini",
+      "context_fingerprint": "a5",
+      "context": { "current_z": -2.1 },
+      "thesis": {
+        "stance": "short_spread",
+        "conviction_0_to_10": 8.2,
+        "time_horizon_days": 12,
+        "entry": { "suggested_z_level": 2.0, "suggested_spread_usd": 2.8, "trigger_condition": "z > 2" },
+        "exit": { "target_z_level": 0.0, "target_condition": "z reverts", "stop_loss_condition": "z > 3", "stop_z_level": 3.0 },
+        "outcome": { "hit_target": true, "realized_return_pct": 0.035, "hold_days": 9 }
+      },
+      "guardrails": []
+    },
+    {
+      "timestamp": "2026-04-01T12:00:00+00:00",
+      "source": "test",
+      "model": "gpt-4o-mini",
+      "context_fingerprint": "a6",
+      "context": { "current_z": 1.5 },
+      "thesis": {
+        "stance": "long_spread",
+        "conviction_0_to_10": 6.0,
+        "time_horizon_days": 10,
+        "entry": { "suggested_z_level": -1.5, "suggested_spread_usd": 1.8, "trigger_condition": "z < -1.5" },
+        "exit": { "target_z_level": 0.0, "target_condition": "z reverts", "stop_loss_condition": "z < -3", "stop_z_level": -3.0 },
+        "outcome": { "hit_target": false, "realized_return_pct": -0.02, "hold_days": 7 }
+      },
+      "guardrails": []
+    }
+  ]
+}
