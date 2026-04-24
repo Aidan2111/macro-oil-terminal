@@ -31,3 +31,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# offline CI escape hatch for next/font/google; not committed
+.next-font-mock.js
