@@ -18,7 +18,7 @@ name: CD (Next.js + FastAPI)
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/nextjs-fastapi-stack]
     paths:
       - "backend/**"
       - "frontend/**"
