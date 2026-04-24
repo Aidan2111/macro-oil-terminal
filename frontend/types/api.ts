@@ -40,6 +40,90 @@ export type InventoryResponse = {
   history: InventoryRow[];
 };
 
+// ---- Sub-G: live wire shapes (backend Pydantic v2) --------------------
+// These mirror backend/models/spread.py + backend/models/inventory.py +
+// backend/models/backtest.py exactly. The older `SpreadResponse` /
+// `InventoryResponse` / `BacktestResponse` above are scaffold shapes
+// kept around for earlier Sub-X code; the charts + ticker consume
+// these live shapes.
+
+export type SpreadHistoryPoint = {
+  date: string;
+  brent: number | null;
+  wti: number | null;
+  spread: number | null;
+  z_score: number | null;
+};
+
+export type SpreadLiveResponse = {
+  brent: number;
+  wti: number;
+  spread: number;
+  stretch: number | null;
+  stretch_band: string;
+  as_of: string;
+  source: string;
+  history: SpreadHistoryPoint[];
+};
+
+export type InventoryPoint = {
+  date: string;
+  commercial_bbls: number | null;
+  spr_bbls: number | null;
+  cushing_bbls: number | null;
+  total_bbls: number | null;
+};
+
+export type DepletionForecast = {
+  daily_depletion_bbls: number;
+  weekly_depletion_bbls: number;
+  projected_floor_date: string | null;
+  r_squared: number;
+  floor_bbls: number;
+};
+
+export type InventoryLiveResponse = {
+  commercial_bbls: number;
+  spr_bbls: number;
+  cushing_bbls: number;
+  total_bbls: number;
+  as_of: string;
+  source: string;
+  history: InventoryPoint[];
+  forecast: DepletionForecast;
+};
+
+export type BacktestEquityPoint = {
+  Date?: string | null;
+  cum_pnl_usd?: number | null;
+};
+
+export type BacktestLiveResponse = {
+  sharpe: number | null;
+  sortino: number | null;
+  calmar: number | null;
+  var_95?: number | null;
+  es_95?: number | null;
+  max_drawdown: number | null;
+  hit_rate: number | null;
+  total_pnl_usd: number | null;
+  n_trades: number;
+  avg_days_held?: number | null;
+  avg_pnl_per_bbl?: number | null;
+  rolling_12m_sharpe?: number | null;
+  equity_curve: BacktestEquityPoint[];
+  trades: Array<Record<string, unknown>>;
+  params: Record<string, unknown>;
+};
+
+export type BacktestRequestBody = {
+  entry_z?: number;
+  exit_z?: number;
+  lookback_days?: number;
+  slippage_per_bbl?: number;
+  commission_per_trade?: number;
+};
+
 // ---- Sub-B: thesis / backtest -----------------------------------------
 
 export type ThesisLeg = {
