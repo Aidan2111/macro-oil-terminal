@@ -4,6 +4,9 @@ pydantic>=2.9.0
 sse-starlette>=2.1.0
 httpx>=0.27.0
 python-dotenv>=1.0.0
+# Wave-1 Sub-C: fleet SSE + Alpaca positions
+websockets>=12.0
+alpaca-py>=0.30.0
 
 # dev / test (CI installs these too)
 pytest>=8.2.0
