@@ -31,8 +31,11 @@ def build_info() -> BuildInfo:
     path = _build_info_path()
     if not path.exists():
         # Local dev convenience — no file yet, synthesise a payload.
+        # Spec: fallback is {"sha": "dev", ...} so the frontend can show
+        # a clear "local/unstamped" indicator.
         return BuildInfo(
-            sha="unknown",
+            sha="dev",
+            sha_short="dev",
             time="1970-01-01T00:00:00Z",
             region=os.environ.get("BACKEND_REGION", "local"),
         )

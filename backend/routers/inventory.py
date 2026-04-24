@@ -1,20 +1,38 @@
-"""Inventory endpoint — STUB.
+"""Inventory endpoint.
 
-Phase 6 wires this to the EIA inventory provider.
+``GET /api/inventory`` returns current commercial / SPR / Cushing
+stocks, 2y of weekly history, and a depletion forecast.
+
+Cached for 15 minutes — EIA data only moves once a week so the TTL is
+mostly about rate-limit hygiene.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from ..models.inventory import InventoryResponse
+from ..services._cache import TTLCache
+from ..services.inventory_service import get_inventory_response
 
 router = APIRouter(tags=["inventory"])
 
+_CACHE: TTLCache[InventoryResponse] = TTLCache(ttl_seconds=15 * 60.0)
 
-@router.get("/inventory")
-def inventory() -> dict[str, object]:
-    """Placeholder response."""
-    return {
-        "status": "stub",
-        "message": "Phase 6 wires /api/inventory to providers.eia",
-        "series": [],
-    }
+
+def _invalidate_cache() -> None:
+    _CACHE.invalidate()
+
+
+@router.get("/inventory", response_model=InventoryResponse)
+def inventory() -> InventoryResponse:
+    """Return the cached/freshly-computed inventory snapshot."""
+    try:
+        return _CACHE.get_or_compute(get_inventory_response)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"inventory upstream error: {exc}",
+        ) from exc
