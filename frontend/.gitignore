@@ -34,3 +34,6 @@ yarn-error.log*
 
 # local build log (sandbox-only)
 .build.log
+
+# offline CI escape hatch for next/font/google; not committed
+.next-font-mock.js
