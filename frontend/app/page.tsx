@@ -1,31 +1,20 @@
-import { EmptyState } from "@/components/common/EmptyState";
+import { Section } from "@/components/common/Section";
+import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
 
 /**
- * Home page. Phase 4 replaces these placeholders with the hero card
- * and ticker tape. Today this is an EmptyState that proves the
- * theme tokens + Nav + Footer all wire up.
+ * Home page shell — Wave 2 wires the real hero + ticker tape. For
+ * now the page proves the layout tokens + providers all boot.
  */
 export default function HomePage() {
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 lg:py-10 space-y-6">
-      {/* Ticker placeholder — Phase 5 lands the real strip */}
-      <section
-        aria-label="Live quotes"
-        className="h-10 rounded-md border border-border bg-bg-2 flex items-center px-4 text-xs text-text-secondary"
+    <div className="mx-auto w-full max-w-5xl px-4 py-2">
+      <Section
+        id="home"
+        title="Today's dislocation"
+        subtitle="Trade idea, spread chart, and supporting inventory data will land here in Wave 2."
       >
-        Ticker tape · Phase 5
-      </section>
-
-      {/* Hero placeholder — Phase 4 lands the real hero card */}
-      <section
-        aria-label="Trade idea"
-        className="rounded-lg border border-border bg-bg-2 p-6"
-      >
-        <EmptyState
-          title="Trade idea will appear here"
-          message="Phase 4 wires this to /api/thesis/latest."
-        />
-      </section>
+        <LoadingSkeleton lines={4} height="h-6" />
+      </Section>
     </div>
   );
 }

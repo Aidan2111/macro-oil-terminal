@@ -1,3 +1,6 @@
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+
 type Props = {
   lines?: number;
   height?: string;
@@ -5,20 +8,20 @@ type Props = {
 };
 
 /**
- * Generic loading skeleton — a stack of `lines` shimmering bars at
- * the configured `height`. Useful while React Query is fetching.
+ * Stack of shimmering Skeleton bars. Wraps the shadcn primitive so
+ * call-sites stay terse.
  */
 export function LoadingSkeleton({
   lines = 3,
   height = "h-4",
-  className = "",
+  className,
 }: Props) {
   return (
-    <div className={`animate-pulse space-y-2 ${className}`} aria-hidden>
+    <div className={cn("space-y-2", className)} aria-hidden>
       {Array.from({ length: lines }).map((_, i) => (
-        <div
+        <Skeleton
           key={i}
-          className={`rounded bg-bg-3 ${height}`}
+          className={height}
           style={{ width: `${80 + ((i * 13) % 20)}%` }}
         />
       ))}

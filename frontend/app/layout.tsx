@@ -29,10 +29,10 @@ export default function RootLayout({
     <html lang="en" className={inter.variable}>
       <body className="min-h-screen bg-bg-1 text-text-primary font-sans">
         <Providers>
-          <div className="flex flex-col lg:flex-row min-h-screen">
+          <div className="flex flex-col md:flex-row min-h-screen">
             <Nav />
-            <div className="flex-1 flex flex-col lg:ml-56">
-              <main className="flex-1 pb-20 lg:pb-0">{children}</main>
+            <div className="flex-1 flex flex-col md:ml-60">
+              <main className="flex-1 pb-20 md:pb-0">{children}</main>
               <Footer />
             </div>
           </div>
