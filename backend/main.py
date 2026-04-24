@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import (
+    backtest,
     build_info,
     cftc,
     fleet,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(health.api_router, prefix="/api")
     app.include_router(spread.router, prefix="/api")
     app.include_router(thesis.router, prefix="/api")
+    app.include_router(backtest.router, prefix="/api")
     app.include_router(positions.router, prefix="/api")
     app.include_router(cftc.router, prefix="/api")
     app.include_router(inventory.router, prefix="/api")
