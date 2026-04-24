@@ -109,57 +109,43 @@ jobs:
           cd ..
           ls -la dist/
 
-      # ---------------------------------------------------------------
-      # Deploy step — COMMENTED OUT until the App Service exists.
-      # Uncomment after `az webapp create` + federated-credential setup.
-      # ---------------------------------------------------------------
-      # - name: Deploy to Azure Web App
-      #   id: deploy
-      #   uses: azure/webapps-deploy@v3
-      #   with:
-      #     app-name: ${{ env.AZURE_BACKEND_APP_NAME }}
-      #     package: dist/backend.zip
+      - name: Deploy to Azure Web App
+        id: deploy
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_BACKEND_APP_NAME }}
+          package: dist/backend.zip
 
-      # - name: Set startup command + BUILD_* app settings
-      #   run: |
-      #     az webapp config set \
-      #       -g ${{ env.AZURE_RG_NAME }} \
-      #       -n ${{ env.AZURE_BACKEND_APP_NAME }} \
-      #       --startup-file "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
-      #     az webapp config appsettings set \
-      #       -g ${{ env.AZURE_RG_NAME }} \
-      #       -n ${{ env.AZURE_BACKEND_APP_NAME }} \
-      #       --settings \
-      #         BUILD_SHA=${{ github.sha }} \
-      #         BUILD_VERSION=${{ steps.stamp.outputs.sha_short }} \
-      #         BUILD_TIME=${{ steps.stamp.outputs.build_time }} \
-      #         BACKEND_BUILD_INFO_PATH=/home/site/wwwroot/static/build-info.json \
-      #         BACKEND_REGION=canadaeast \
-      #       --output none
-
-      # - name: Verify commit deployed to live (/api/build-info)
-      #   run: |
-      #     set -eu
-      #     URL="https://${{ env.AZURE_BACKEND_APP_NAME }}.azurewebsites.net"
-      #     EXPECTED="${{ github.sha }}"
-      #     for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-      #       ACTUAL=$(curl -sS --max-time 15 "$URL/api/build-info" 2>/dev/null \
-      #         | python3 -c "import sys,json; print(json.load(sys.stdin).get('sha',''))" 2>/dev/null || echo "")
-      #       if [ "$ACTUAL" = "$EXPECTED" ]; then
-      #         echo "Live backend SHA matches expected ($EXPECTED) — deploy verified"
-      #         exit 0
-      #       fi
-      #       echo "attempt $attempt: live SHA is '$ACTUAL' — waiting 10s..."
-      #       sleep 10
-      #     done
-      #     echo "FAIL: /api/build-info never reported SHA $EXPECTED after 2 min" >&2
-      #     exit 1
-
-      - name: Placeholder — backend deploy pending provisioning
+      - name: Set BUILD_* app settings
         run: |
-          echo "Backend App Service '${{ env.AZURE_BACKEND_APP_NAME }}' not provisioned yet."
-          echo "Tests passed; package built ($(ls -la dist/backend.zip))."
-          echo "Uncomment deploy steps after: az webapp create ..."
+          az webapp config appsettings set \
+            -g ${{ env.AZURE_RG_NAME }} \
+            -n ${{ env.AZURE_BACKEND_APP_NAME }} \
+            --settings \
+              BUILD_SHA=${{ github.sha }} \
+              BUILD_VERSION=${{ steps.stamp.outputs.sha_short }} \
+              BUILD_TIME=${{ steps.stamp.outputs.build_time }} \
+              BACKEND_BUILD_INFO_PATH=/home/site/wwwroot/static/build-info.json \
+              BACKEND_REGION=canadaeast \
+            --output none
+
+      - name: Verify commit deployed to live (/api/build-info)
+        run: |
+          set -eu
+          URL="https://${{ env.AZURE_BACKEND_APP_NAME }}.azurewebsites.net"
+          EXPECTED="${{ github.sha }}"
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            ACTUAL=$(curl -sS --max-time 15 "$URL/api/build-info" 2>/dev/null \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('sha',''))" 2>/dev/null || echo "")
+            if [ "$ACTUAL" = "$EXPECTED" ]; then
+              echo "Live backend SHA matches expected ($EXPECTED) — deploy verified"
+              exit 0
+            fi
+            echo "attempt $attempt: live SHA is '$ACTUAL' — waiting 15s..."
+            sleep 15
+          done
+          echo "FAIL: /api/build-info never reported SHA $EXPECTED after ~4 min" >&2
+          exit 1
 
       - name: Azure logout
         if: always()
@@ -205,21 +191,17 @@ jobs:
           EOF
           cat frontend/public/build-info.txt
 
-      # ---------------------------------------------------------------
-      # Deploy step — COMMENTED OUT until the Static Web App exists +
-      # AZURE_STATIC_WEB_APPS_API_TOKEN is stored as a repo secret.
-      # ---------------------------------------------------------------
-      # - name: Deploy to Azure Static Web Apps
-      #   id: swa
-      #   uses: Azure/static-web-apps-deploy@v1
-      #   with:
-      #     azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-      #     repo_token: ${{ secrets.GITHUB_TOKEN }}
-      #     action: "upload"
-      #     app_location: "frontend"
-      #     api_location: ""
-      #     output_location: ".next"
-      #     config_file_location: "static-web-apps"
+      - name: Deploy to Azure Static Web Apps
+        id: swa
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "frontend"
+          api_location: ""
+          output_location: ".next"
+          config_file_location: "static-web-apps"
 
       # - name: Verify commit deployed to live (/build-info.txt)
       #   run: |
