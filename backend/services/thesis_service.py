@@ -98,11 +98,19 @@ def _build_thesis_context() -> Any:
 
     # 6. AIS — best effort. If AISStream key is set we lean on the
     #    fleet_service producer; otherwise the historical snapshot
-    #    keeps the context render-able.
+    #    keeps the context render-able. fetch_ais_data returns an
+    #    AISResult dataclass; build_context expects raw frames.
     try:
         from data_ingestion import fetch_ais_data  # type: ignore
 
-        ais_with_cat = fetch_ais_data(n_vessels=300)
+        result = fetch_ais_data(n_vessels=300)
+        # AISResult exposes its DataFrame via `.frame` (legacy
+        # convention shared with PricingResult / InventoryResult).
+        ais_with_cat = (
+            getattr(result, "frame", None) if hasattr(result, "frame") else result
+        )
+        if ais_with_cat is None:
+            ais_with_cat = pd.DataFrame()
         ais_agg = ais_with_cat
     except Exception:
         ais_with_cat = pd.DataFrame()
