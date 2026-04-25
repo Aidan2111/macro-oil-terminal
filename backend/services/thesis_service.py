@@ -69,21 +69,40 @@ def _build_thesis_context() -> Any:
     spread_df = quantitative_models.compute_spread_zscore(pricing_res.frame)
 
     # 4. Backtest — keep light, run a fresh tiny pass to seed metrics.
+    #    Every numeric key MUST be a float (build_context calls
+    #    float(backtest.get(...)) with a 0.0 default — but Python's
+    #    `dict.get(key, default)` only returns the default when the key
+    #    is absent, NOT when its value is None. Pin all numeric fields
+    #    to 0.0 instead of None to dodge `float(None)` TypeErrors.
     try:
         backtest = quantitative_models.run_backtest(
             spread_df, entry_z=2.0, exit_z=0.5, lookback=90
         )
     except Exception:
-        backtest = {
-            "sharpe": None,
-            "sortino": None,
-            "max_drawdown_usd": None,
-            "hit_rate": None,
-            "n_trades": 0,
-            "total_pnl_usd": 0.0,
-            "equity_curve": [],
-            "trades": [],
-        }
+        backtest = {}
+    # Normalise the keys build_context references with float() — coerce
+    # None / missing to 0.0 so the legacy zero-defaulting stays sound.
+    for k in (
+        "win_rate",
+        "hit_rate",
+        "avg_days_held",
+        "avg_pnl_per_bbl",
+        "max_drawdown_usd",
+        "sharpe",
+        "sortino",
+        "total_pnl_usd",
+    ):
+        v = backtest.get(k)
+        if v is None:
+            backtest[k] = 0.0
+        else:
+            try:
+                backtest[k] = float(v)
+            except (TypeError, ValueError):
+                backtest[k] = 0.0
+    backtest.setdefault("equity_curve", [])
+    backtest.setdefault("trades", [])
+    backtest.setdefault("n_trades", 0)
 
     # 5. Depletion forecast on inventory.
     if inventory_res is not None and getattr(inventory_res, "frame", None) is not None:
