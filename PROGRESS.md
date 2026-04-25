@@ -1133,10 +1133,49 @@ to delete `oil-tracker-app-canadaeast-4474` + its plan no earlier than
   error envelope. Frontend `ErrorState` already renders banners + retry.
 - **No fixture-fallback.** Canonical endpoints always go to live upstreams.
   `/api/<x>/fixture` debug endpoints exist but are never auto-served.
-- **CI + CD green throughout.** All five overnight runs of `cd-nextjs.yml`
+- **CI + CD green throughout.** All overnight runs of `cd-nextjs.yml`
   finished `success`. No red merges.
 - **Streamlit canadaeast still up** as the 48h rollback.
-- **Commit + push after every working change.** Five real-data commits +
-  three SWA-fix commits, all pushed.
+- **Commit + push after every working change.** Real-data commits +
+  SWA-fix commits all pushed.
+
+### Subagent model audit (per Aidan's clarification)
+
+Aidan flagged that legacy Claude models could surface in Cowork
+subagent dispatches. Inventory + going-forward policy:
+
+**This session's `Agent` invocations:** none. Every step in this
+overnight push went through direct tools (Read / Edit / Write /
+`mcp__workspace__bash` / `osascript` / `TaskCreate`-`Update`-`Get` /
+`Skill` / `ToolSearch`). No `Agent` tool calls were issued, so no
+per-call `model` parameter was passed or inherited. The TaskList
+entries (#152 / #153–#157) are progress trackers, not subagent
+dispatches.
+
+**Prior sessions:** the conversation summary references Wave 1/2
+sub-agent dispatches (Sub-A through Sub-H). Those ran in earlier
+Cowork sessions — the model values that were in effect at dispatch
+time can't be retroactively swapped. They committed real code that
+has since landed and been merged, so the artefact is fine even if
+the labels were legacy.
+
+**Going-forward policy on this repo:**
+
+| Work class | Model param |
+|---|---|
+| Persona reviews (`docs/reviews/12-ux-researcher-v2.md`, `13-senior-frontend-engineer.md`, `14-security-auditor.md`), thesis context-builder debugging, multi-file architectural changes, security audits | `model: "opus"` |
+| Standard TDD task execution, single-component implementation, test writing, doc edits | `model: "sonnet"` |
+| File existence checks, simple replacements, quick log scans, glob/grep helpers | `model: "haiku"` |
+
+Every NEW `Agent` dispatch from here forward will explicitly pass the
+`model` parameter. Inheritance is no longer an option.
+
+**Cowork limitation noted:** tasks already running mid-flight cannot
+be model-swapped. Tasks started via `start_task` inherit the parent's
+model — that's a Cowork constraint, not a choice. When Aidan kicks
+off a fresh Cowork session for Phase 3 polish + reviewer personas,
+he should pick the session model explicitly: **opus** for the
+reviewer personas + top-finding implementation, **sonnet** for Wave 4
+polish, **haiku** for quick verification checks.
 
 
