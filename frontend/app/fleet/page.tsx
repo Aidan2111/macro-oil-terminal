@@ -1,11 +1,21 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
-import { FleetGlobe } from "@/components/globe/FleetGlobe";
 import { GlobeControls } from "@/components/globe/GlobeControls";
 import { VesselPanel } from "@/components/globe/VesselPanel";
 import type { FlagCategory, Vessel } from "@/components/globe/types";
 import mockVessels from "@/__tests__/fixtures/vessels.json";
+
+// FleetGlobe touches `navigator.gpu` and Three.js during mount.
+// With `output: "export"` the page is pre-rendered to HTML at build
+// time, but the globe's WebGPU detection diverges between server and
+// client paint and triggers a React #418 hydration mismatch in
+// production. Defer the globe to client-only mount.
+const FleetGlobe = dynamic(
+  () => import("@/components/globe/FleetGlobe").then((m) => m.FleetGlobe),
+  { ssr: false, loading: () => <div className="h-full w-full" /> },
+);
 
 /**
  * Fleet page — WebGPU-backed 3D globe, floating filter chips, right-hand

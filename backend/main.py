@@ -285,56 +285,90 @@ _FIXTURE_THESIS = {
         {
             "tier": 1,
             "name": "Paper position",
-            "legs": "BZ=F long / CL=F short, 1:1 ratio",
             "symbol": "BZ=F/CL=F",
-            "suggested_pct_of_capital": 0.0,
-            "sizing_method": "paper",
-            "size_usd": 0,
+            "suggested_size_pct": 0.0,
+            "worst_case_per_unit": "$0 — paper only, no capital at risk",
             "rationale": "Track the idea without capital at risk.",
         },
         {
             "tier": 2,
             "name": "USO / BNO ETF spread",
-            "legs": "BNO long / USO short, beta-adjusted",
             "symbol": "BNO/USO",
-            "suggested_pct_of_capital": 5.0,
-            "sizing_method": "volatility_scaled",
-            "size_usd": 5000,
+            "suggested_size_pct": 5.0,
+            "worst_case_per_unit": "~$120 per $5k notional at 2σ adverse move",
             "rationale": "Retail-friendly access via ETFs; no futures account needed.",
         },
         {
             "tier": 3,
             "name": "Futures spread",
-            "legs": "BZ=F long 1 contract / CL=F short 1 contract",
             "symbol": "BZ=F/CL=F",
-            "suggested_pct_of_capital": 10.0,
-            "sizing_method": "kelly",
-            "size_usd": 10000,
+            "suggested_size_pct": 10.0,
+            "worst_case_per_unit": "~$2,000 per 1-contract spread at 2σ adverse move",
             "rationale": "Pure spread exposure; margin efficient via inter-commodity spread credit.",
         },
     ],
     "checklist": [
-        {"key": "stop_in_place", "label": "Stop in place", "auto_check": None},
-        {"key": "vol_clamp_ok", "label": "Size within vol-regime cap", "auto_check": True},
-        {"key": "half_life_ack", "label": "I understand the implied half-life is ~7 days.", "auto_check": None},
-        {"key": "catalyst_clear", "label": "No EIA/OPEC catalyst within 24h", "auto_check": False},
-        {"key": "no_conflicting_recent_thesis", "label": "No conflicting thesis in last 5 sessions", "auto_check": None},
+        {"key": "stop_in_place", "prompt": "I have a stop at ±2σ spread move from entry.", "auto_check": None},
+        {"key": "vol_clamp_ok", "prompt": "Spread realised vol is below the 1y 85th percentile.", "auto_check": True},
+        {"key": "half_life_ack", "prompt": "I understand the implied half-life is ~7 days.", "auto_check": None},
+        {"key": "catalyst_clear", "prompt": "No EIA release within the next 24 hours.", "auto_check": False},
+        {"key": "no_conflicting_recent_thesis", "prompt": "No stance flip in the last 5 thesis entries.", "auto_check": None},
     ],
     "materiality_flat": False,
     "applied_guardrails": ["vol_regime_ok"],
 }
 
 
+def _wrap_thesis_audit_record(t: dict[str, Any]) -> dict[str, Any]:
+    """Shape `_FIXTURE_THESIS` into the `ThesisAuditRecord` the
+    frontend types expect: a row with `timestamp`/`source`/`model`/
+    `context_fingerprint`/`context`/`thesis: ThesisRaw` plus
+    decorated `instruments` and `checklist`. The frontend's
+    `ThesisLatestResponse` type also requires an `empty` boolean.
+    """
+    raw_thesis = {
+        "stance": t["stance"],
+        "conviction_0_to_10": t["conviction_0_to_10"],
+        "time_horizon_days": t["time_horizon_days"],
+        "thesis_summary": t["reasoning_summary"],
+        "plain_english_headline": t["plain_english_headline"],
+        "key_drivers": t.get("key_drivers", []),
+        "invalidation_risks": t.get("invalidation_risks", []),
+        "data_caveats": t.get("data_caveats", []),
+        "reasoning_summary": t["reasoning_summary"],
+    }
+    return {
+        "timestamp": t["generated_at"],
+        "source": "fixture",
+        "model": t.get("model", "fixture"),
+        "context_fingerprint": t["context_fingerprint"],
+        "context": {
+            "current_z": 2.1,
+            "hours_to_next_eia": 34,
+            "stretch_band": "Stretched",
+        },
+        "thesis": raw_thesis,
+        "guardrails": t.get("applied_guardrails", []),
+        "instruments": t.get("instruments", []),
+        "checklist": t.get("checklist", []),
+    }
+
+
 @app.get("/api/thesis/latest")
 def thesis_latest() -> dict[str, Any]:
-    return {"thesis": _FIXTURE_THESIS, "source": "fixture"}
+    return {
+        "thesis": _wrap_thesis_audit_record(_FIXTURE_THESIS),
+        "empty": False,
+        "source": "fixture",
+    }
 
 
 @app.get("/api/thesis/history")
 def thesis_history(limit: int = 30) -> dict[str, Any]:
     if limit < 1 or limit > 200:
         return JSONResponse(status_code=422, content={"detail": "limit out of range"})
-    history = [_FIXTURE_THESIS for _ in range(min(limit, 30))]
+    record = _wrap_thesis_audit_record(_FIXTURE_THESIS)
+    history = [record for _ in range(min(limit, 30))]
     return {"theses": history, "count": len(history), "source": "fixture"}
 
 
@@ -474,5 +508,38 @@ async def positions_execute(req: Request):
         content={
             "detail": "Paper execution is pending reconnect to live Alpaca backend. UI shows expected behaviour; real orders will fire post-cutover.",
             "mode": "fixture",
+        },
+    )
+
+
+async def _sse_positions_heartbeat():
+    """Long-lived SSE stream for positions trade updates.
+
+    Fixture mode has no real Alpaca trade-update websocket to relay,
+    so we emit a steady heartbeat (`event: ping` every 15 s). The
+    important thing is that we respond with `text/event-stream` and
+    never close the channel — that prevents the EventSource MIME-type
+    error and the auto-reconnect loop the browser otherwise enters
+    when the response is mistakenly served as HTML.
+    """
+    import asyncio
+
+    # Send a comment-only frame immediately so the browser sees a
+    # valid SSE stream during the very first paint.
+    yield ": connected\n\n"
+    while True:
+        await asyncio.sleep(15)
+        yield f"event: ping\ndata: {json.dumps({'ts': _utcnow_iso()})}\n\n"
+
+
+@app.get("/api/positions/stream")
+async def positions_stream():
+    return StreamingResponse(
+        _sse_positions_heartbeat(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )

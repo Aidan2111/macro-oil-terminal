@@ -37,9 +37,33 @@ export function InstrumentTile({
   className,
 }: Props) {
   const accent = accentClass(stance);
+  // Tolerate older / variant backend shapes — `suggested_size_pct`
+  // may arrive as `suggested_pct_of_capital`, and either may be
+  // missing entirely. Never let a `.toFixed` call on undefined take
+  // down the entire route.
+  const legacy = instrument as unknown as {
+    suggested_size_pct?: number;
+    suggested_pct_of_capital?: number;
+    worst_case_per_unit?: string;
+    rationale?: string;
+    name?: string;
+    symbol?: string | null;
+  };
+  const sizePctRaw =
+    typeof legacy.suggested_size_pct === "number"
+      ? legacy.suggested_size_pct
+      : typeof legacy.suggested_pct_of_capital === "number"
+        ? legacy.suggested_pct_of_capital
+        : 0;
+  const sizePct = Number.isFinite(sizePctRaw) ? sizePctRaw : 0;
+  const worstCase =
+    typeof legacy.worst_case_per_unit === "string" &&
+    legacy.worst_case_per_unit.length > 0
+      ? legacy.worst_case_per_unit
+      : "—";
   const sigma1Preview =
-    instrument.suggested_size_pct > 0
-      ? `±$${Math.round(instrument.suggested_size_pct * 100)} per 1σ`
+    sizePct > 0
+      ? `±$${Math.round(sizePct * 100)} per 1σ`
       : "No capital at risk";
 
   return (
@@ -60,22 +84,22 @@ export function InstrumentTile({
               {tierLabel(tier)}
             </div>
             <div className="text-base font-semibold text-text-primary">
-              {instrument.name}
+              {legacy.name ?? "Instrument"}
             </div>
           </div>
-          {instrument.symbol ? (
+          {legacy.symbol ? (
             <div className="font-mono text-xs text-text-muted">
-              {instrument.symbol}
+              {legacy.symbol}
             </div>
           ) : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <p className="text-text-secondary">{instrument.rationale}</p>
+        <p className="text-text-secondary">{legacy.rationale ?? ""}</p>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
           <dt className="text-text-muted">Suggested size</dt>
           <dd className="text-right font-mono text-text-primary">
-            {instrument.suggested_size_pct.toFixed(2)}%
+            {sizePct.toFixed(2)}%
           </dd>
           <dt className="text-text-muted">1σ P&amp;L preview</dt>
           <dd className="text-right font-mono text-text-primary">
@@ -83,7 +107,7 @@ export function InstrumentTile({
           </dd>
           <dt className="text-text-muted">Worst case</dt>
           <dd className="text-right font-mono text-text-primary">
-            {instrument.worst_case_per_unit}
+            {worstCase}
           </dd>
         </dl>
         <Button
