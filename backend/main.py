@@ -15,6 +15,7 @@ provisioning; the canonical endpoints always go to real upstream.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -491,8 +492,84 @@ _FIXTURE_VESSELS = [
 ]
 
 
+def _real_fleet_snapshot() -> dict[str, Any]:
+    """Pull the current memory-cache from fleet_service. The producer
+    task is started once via _ensure_producer_running() — first
+    request triggers the websocket subscribe."""
+    from backend.services import fleet_service
+
+    fleet_service._ensure_producer_running()
+    vessels = fleet_service.get_snapshot()
+    return {
+        "vessels": vessels,
+        "n_vessels": len(vessels),
+        "last_message_seconds_ago": 0,
+        "source": "aisstream" if os.environ.get("AISSTREAM_API_KEY") else "historical",
+        "fetched_at": _utcnow_iso(),
+    }
+
+
+def _real_fleet_categories() -> dict[str, Any]:
+    from backend.services import fleet_service
+
+    fleet_service._ensure_producer_running()
+    return fleet_service.get_categories()
+
+
 @app.get("/api/fleet/snapshot")
-def fleet_snapshot() -> dict[str, Any]:
+def fleet_snapshot() -> Any:
+    """Live AISStream-derived crude-tanker positions. Falls through to
+    the historical snapshot when the producer hasn't received any
+    real frames yet (e.g. cold start)."""
+    try:
+        return _CACHE.get_or_compute("fleet_snapshot", 5.0, _real_fleet_snapshot)
+    except Exception as exc:
+        return _provider_error("aisstream", exc, hint="Check AISSTREAM_API_KEY app setting.")
+
+
+@app.get("/api/fleet/categories")
+def fleet_categories() -> Any:
+    try:
+        return _CACHE.get_or_compute("fleet_categories", 30.0, _real_fleet_categories)
+    except Exception as exc:
+        return _provider_error("aisstream", exc)
+
+
+@app.get("/api/fleet/vessels")
+async def fleet_vessels_stream():
+    """SSE stream of live vessel position deltas filtered to crude
+    tankers. Frontend's FleetGlobe consumes via EventSource and
+    incrementally re-renders without refetching the full snapshot."""
+    from backend.services import fleet_service
+
+    fleet_service._ensure_producer_running()
+
+    async def _gen():
+        q = await fleet_service.subscribe()
+        try:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    payload = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"event: vessel\ndata: {json.dumps(payload)}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"event: ping\ndata: {json.dumps({'ts': _utcnow_iso()})}\n\n"
+        finally:
+            await fleet_service.unsubscribe(q)
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/api/fleet/snapshot/fixture")
+def fleet_snapshot_fixture() -> dict[str, Any]:
     return {
         "vessels": _FIXTURE_VESSELS,
         "n_vessels": len(_FIXTURE_VESSELS),
@@ -500,15 +577,6 @@ def fleet_snapshot() -> dict[str, Any]:
         "source": "fixture",
         "fetched_at": _utcnow_iso(),
     }
-
-
-@app.get("/api/fleet/categories")
-def fleet_categories() -> dict[str, Any]:
-    counts: dict[str, int] = {}
-    for v in _FIXTURE_VESSELS:
-        counts[v["flag_category"]] = counts.get(v["flag_category"], 0) + 1
-    cargo_mbbl = {k: round(v * 1.4, 2) for k, v in counts.items()}
-    return {"vessel_counts": counts, "cargo_mbbl": cargo_mbbl, "source": "fixture"}
 
 
 # ---------------------------------------------------------------------------
@@ -618,8 +686,35 @@ def _wrap_thesis_audit_record(t: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _real_thesis_latest() -> dict[str, Any]:
+    """Read the most recent audit record written by trade_thesis."""
+    from backend.services.thesis_service import get_latest_thesis
+
+    rec = get_latest_thesis()
+    if rec is None:
+        return {"thesis": None, "empty": True, "source": "audit_log"}
+    return {"thesis": rec, "empty": False, "source": "audit_log"}
+
+
 @app.get("/api/thesis/latest")
-def thesis_latest() -> dict[str, Any]:
+def thesis_latest() -> Any:
+    """Most recent generated thesis audit record. If none has been
+    generated yet the response is ``{thesis: null, empty: true}`` —
+    the React hero card shows its empty state. Trigger generation
+    via POST /api/thesis/generate.
+    """
+    try:
+        return _CACHE.get_or_compute("thesis_latest", 30.0, _real_thesis_latest)
+    except Exception as exc:
+        return _provider_error(
+            "trade_thesis_audit_log",
+            exc,
+            hint="Audit log lives at data/trade_theses.jsonl on the App Service.",
+        )
+
+
+@app.get("/api/thesis/latest/fixture")
+def thesis_latest_fixture() -> dict[str, Any]:
     return {
         "thesis": _wrap_thesis_audit_record(_FIXTURE_THESIS),
         "empty": False,
@@ -628,16 +723,32 @@ def thesis_latest() -> dict[str, Any]:
 
 
 @app.get("/api/thesis/history")
-def thesis_history(limit: int = 30) -> dict[str, Any]:
+def thesis_history(limit: int = 30) -> Any:
     if limit < 1 or limit > 200:
         return JSONResponse(status_code=422, content={"detail": "limit out of range"})
-    record = _wrap_thesis_audit_record(_FIXTURE_THESIS)
-    history = [record for _ in range(min(limit, 30))]
-    return {"theses": history, "count": len(history), "source": "fixture"}
+    try:
+        from backend.services.thesis_service import get_thesis_history
+
+        rows = get_thesis_history(limit)
+        return {"theses": rows, "count": len(rows), "source": "audit_log"}
+    except Exception as exc:
+        return _provider_error("trade_thesis_audit_log", exc)
 
 
-async def _sse_stream_thesis():
-    """Stream the fixture thesis progressively as SSE frames."""
+async def _sse_stream_thesis_real(mode: str, portfolio_usd: int):
+    """Bridge backend.services.thesis_service.stream_thesis to SSE frames."""
+    from backend.services.thesis_service import stream_thesis
+
+    async for evt in stream_thesis(mode=mode, portfolio_usd=portfolio_usd):
+        # stream_thesis yields {"event": "...", "data": {...}}
+        ev = evt.get("event") or "delta"
+        data = evt.get("data", {})
+        yield f"event: {ev}\ndata: {json.dumps(data)}\n\n"
+
+
+async def _sse_stream_thesis_fixture():
+    """Fallback SSE that streams the fixture thesis progressively. Used by
+    /api/thesis/generate/fixture."""
     import asyncio
 
     yield f"event: progress\ndata: {json.dumps({'stage': 'fetching_context', 'pct': 10})}\n\n"
@@ -654,16 +765,38 @@ async def _sse_stream_thesis():
     yield f"event: done\ndata: {json.dumps(done)}\n\n"
 
 
-@app.post("/api/thesis/generate")
-async def thesis_generate(req: Request):
-    body = await req.json() if req.headers.get("content-length") else {}
+def _validate_thesis_body(body: dict[str, Any]) -> tuple[str, int] | JSONResponse:
     mode = body.get("mode", "fast")
     if mode not in ("fast", "deep"):
         return JSONResponse(status_code=422, content={"detail": "mode must be 'fast' or 'deep'"})
-    portfolio = body.get("portfolio_usd")
+    portfolio = body.get("portfolio_usd", 100_000)
     if portfolio is not None and (not isinstance(portfolio, (int, float)) or portfolio <= 0):
         return JSONResponse(status_code=422, content={"detail": "portfolio_usd must be positive"})
-    return StreamingResponse(_sse_stream_thesis(), media_type="text/event-stream")
+    return mode, int(portfolio or 100_000)
+
+
+@app.post("/api/thesis/generate")
+async def thesis_generate(req: Request):
+    """Stream a freshly-generated trade thesis via SSE.
+
+    Hits Azure OpenAI through trade_thesis.generate_thesis (under the
+    hood — wrapped by backend.services.thesis_service.stream_thesis).
+    progress / delta / done event protocol is preserved.
+    """
+    body = await req.json() if req.headers.get("content-length") else {}
+    parsed = _validate_thesis_body(body)
+    if isinstance(parsed, JSONResponse):
+        return parsed
+    mode, portfolio = parsed
+    return StreamingResponse(
+        _sse_stream_thesis_real(mode, portfolio),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/thesis/regenerate")
@@ -671,14 +804,28 @@ async def thesis_regenerate(req: Request):
     return await thesis_generate(req)
 
 
+@app.post("/api/thesis/generate/fixture")
+async def thesis_generate_fixture():
+    """Debug-only — stream the deterministic fixture thesis."""
+    return StreamingResponse(_sse_stream_thesis_fixture(), media_type="text/event-stream")
+
+
 # ---------------------------------------------------------------------------
 # Backtest
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/backtest")
-async def backtest(req: Request) -> dict[str, Any]:
-    body = await req.json() if req.headers.get("content-length") else {}
+def _real_backtest(params: dict[str, Any]) -> dict[str, Any]:
+    """Run the legacy backtest engine and shape into BacktestLiveResponse."""
+    from backend.services.backtest_service import run_backtest
+
+    resp = run_backtest(params or {})
+    if hasattr(resp, "model_dump"):
+        return resp.model_dump(mode="json")  # type: ignore[no-any-return]
+    return resp  # type: ignore[no-any-return]
+
+
+def _fixture_backtest(body: dict[str, Any]) -> dict[str, Any]:
     equity = _series(10000, 365, noise=80.0)
     rng = random.Random(123)
     trades = []
@@ -712,6 +859,32 @@ async def backtest(req: Request) -> dict[str, Any]:
     }
 
 
+@app.post("/api/backtest")
+async def backtest(req: Request) -> Any:
+    """Run the real Brent–WTI mean-reversion backtest with user params.
+
+    Cached 5 minutes per parameter set.
+    """
+    body = await req.json() if req.headers.get("content-length") else {}
+    cache_key = f"backtest::{json.dumps(body, sort_keys=True)}"
+    try:
+        return _CACHE.get_or_compute(
+            cache_key, 300.0, lambda: _real_backtest(body)
+        )
+    except Exception as exc:
+        return _provider_error(
+            "backtest_engine",
+            exc,
+            hint="Engine pulls daily Brent/WTI via yfinance; retry in ~30s.",
+        )
+
+
+@app.post("/api/backtest/fixture")
+async def backtest_fixture(req: Request) -> dict[str, Any]:
+    body = await req.json() if req.headers.get("content-length") else {}
+    return _fixture_backtest(body)
+
+
 # ---------------------------------------------------------------------------
 # Positions (Alpaca paper — fixtures until real wire-up)
 # ---------------------------------------------------------------------------
@@ -721,7 +894,7 @@ async def backtest(req: Request) -> dict[str, Any]:
 # unrealized_pnl / unrealized_pnl_pct (+ optional thesis_id). Older
 # scaffold rows used `avg_entry_price` / `current_price` / `unrealized_pl`
 # — they never reached the wire so we adopt the frontend names directly.
-_FIXTURE_POSITIONS = [
+_FIXTURE_POSITIONS_DATA = [
     {
         "symbol": "BNO",
         "qty": 100,
@@ -743,39 +916,137 @@ _FIXTURE_POSITIONS = [
 ]
 
 
-@app.get("/api/positions")
-def positions() -> dict[str, Any]:
-    return {"positions": _FIXTURE_POSITIONS, "count": len(_FIXTURE_POSITIONS), "source": "fixture"}
+def _alpaca_positions() -> dict[str, Any]:
+    from backend.services import alpaca_service
+
+    client = alpaca_service.get_client()
+    raw = client.get_all_positions()
+    rows = [alpaca_service.map_position(p) for p in raw]
+    return {"positions": rows, "count": len(rows), "source": "alpaca_paper"}
 
 
-@app.get("/api/positions/account")
-def positions_account() -> dict[str, Any]:
+def _alpaca_account() -> dict[str, Any]:
+    from backend.services import alpaca_service
+
+    client = alpaca_service.get_client()
+    acct = client.get_account()
+    base = alpaca_service.map_account(acct)
+    base.update({"currency": "USD", "status": "ACTIVE", "paper": True, "source": "alpaca_paper"})
+    return base
+
+
+def _alpaca_orders(status: str) -> dict[str, Any]:
+    from backend.services import alpaca_service
+
+    client = alpaca_service.get_client()
+    # alpaca-py: get_orders accepts optional GetOrdersRequest with status filter
+    try:
+        from alpaca.trading.requests import GetOrdersRequest  # type: ignore
+        from alpaca.trading.enums import QueryOrderStatus  # type: ignore
+
+        status_enum = {
+            "open": QueryOrderStatus.OPEN,
+            "closed": QueryOrderStatus.CLOSED,
+            "all": QueryOrderStatus.ALL,
+        }.get(status, QueryOrderStatus.OPEN)
+        raw = client.get_orders(filter=GetOrdersRequest(status=status_enum))
+    except Exception:
+        raw = client.get_orders()
     return {
-        "buying_power": 91940.00,
-        "cash": 85000.00,
-        "equity": 100206.00,
-        "portfolio_value": 100206.00,
-        "currency": "USD",
-        "status": "ACTIVE",
-        "paper": True,
-        "source": "fixture",
+        "orders": [alpaca_service.map_order(o) for o in raw],
+        "status": status,
+        "source": "alpaca_paper",
     }
 
 
+@app.get("/api/positions")
+def positions() -> Any:
+    """Live Alpaca paper positions. Cached 5s — Alpaca itself rate-limits."""
+    try:
+        return _CACHE.get_or_compute("positions", 5.0, _alpaca_positions)
+    except Exception as exc:
+        return _provider_error("alpaca", exc, hint="Check ALPACA_API_KEY_ID / ALPACA_API_SECRET app settings.")
+
+
+@app.get("/api/positions/account")
+def positions_account() -> Any:
+    """Live Alpaca paper account balances."""
+    try:
+        return _CACHE.get_or_compute("positions_account", 5.0, _alpaca_account)
+    except Exception as exc:
+        return _provider_error("alpaca", exc, hint="Check ALPACA_API_KEY_ID / ALPACA_API_SECRET app settings.")
+
+
 @app.get("/api/positions/orders")
-def positions_orders(status: str = "open") -> dict[str, Any]:
-    return {"orders": [], "status": status, "source": "fixture"}
+def positions_orders(status: str = "open") -> Any:
+    """Live Alpaca order list filtered by status (open/closed/all)."""
+    try:
+        return _alpaca_orders(status)
+    except Exception as exc:
+        return _provider_error("alpaca", exc)
 
 
 @app.post("/api/positions/execute")
 async def positions_execute(req: Request):
-    return JSONResponse(
-        status_code=503,
-        content={
-            "detail": "Paper execution is pending reconnect to live Alpaca backend. UI shows expected behaviour; real orders will fire post-cutover.",
-            "mode": "fixture",
-        },
-    )
+    """Place a real paper order via alpaca-py.
+
+    Hard-gate: requires ALPACA_PAPER == 'true' (set in App Service
+    settings). Validates the body server-side. Logs every successful
+    fill to data/executions.jsonl. The ALPACA_API_SECRET is never in
+    a response body — alpaca_service maps every Alpaca object through
+    a whitelist.
+    """
+    if os.environ.get("ALPACA_PAPER", "").strip().lower() != "true":
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Execution disabled (ALPACA_PAPER must be 'true')."},
+        )
+    body = await req.json() if req.headers.get("content-length") else {}
+    symbol = str(body.get("symbol", "")).strip()
+    qty = body.get("qty")
+    side = body.get("side")
+    order_type = body.get("type", "market")
+    tif = body.get("time_in_force", "day")
+    limit_price = body.get("limit_price")
+    if not symbol or not isinstance(qty, (int, float)) or qty <= 0 or side not in ("buy", "sell"):
+        return JSONResponse(status_code=422, content={"detail": "symbol/qty/side invalid"})
+    if order_type not in ("market", "limit") or tif not in ("day", "gtc", "ioc", "fok"):
+        return JSONResponse(status_code=422, content={"detail": "type/time_in_force invalid"})
+    try:
+        from backend.services import alpaca_service
+        from alpaca.trading.client import TradingClient  # noqa: F401  (sanity)
+        from alpaca.trading.enums import OrderSide, TimeInForce  # type: ignore
+        from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest  # type: ignore
+
+        side_enum = OrderSide.BUY if side == "buy" else OrderSide.SELL
+        tif_enum = {
+            "day": TimeInForce.DAY,
+            "gtc": TimeInForce.GTC,
+            "ioc": TimeInForce.IOC,
+            "fok": TimeInForce.FOK,
+        }[tif]
+        if order_type == "market":
+            req_obj = MarketOrderRequest(symbol=symbol, qty=qty, side=side_enum, time_in_force=tif_enum)
+        else:
+            if limit_price is None:
+                return JSONResponse(status_code=422, content={"detail": "limit_price required for limit orders"})
+            req_obj = LimitOrderRequest(
+                symbol=symbol, qty=qty, side=side_enum, time_in_force=tif_enum, limit_price=float(limit_price)
+            )
+        client = alpaca_service.get_client()
+        placed = client.submit_order(req_obj)
+        mapped = alpaca_service.map_order(placed)
+        # Audit log — append-only JSONL.
+        try:
+            audit_path = os.path.join(os.environ.get("HOME", "/home/site"), "data", "executions.jsonl")
+            os.makedirs(os.path.dirname(audit_path), exist_ok=True)
+            with open(audit_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": _utcnow_iso(), **mapped}) + "\n")
+        except Exception:
+            pass  # don't fail the order if disk write fails
+        return mapped
+    except Exception as exc:
+        return _provider_error("alpaca_execute", exc)
 
 
 async def _sse_positions_heartbeat():
