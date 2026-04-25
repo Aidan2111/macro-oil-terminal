@@ -211,7 +211,7 @@ jobs:
           action: "upload"
           app_location: "frontend"
           api_location: ""
-          output_location: ".next"
+          output_location: "out"
 
       # - name: Verify commit deployed to live (/build-info.txt)
       #   run: |

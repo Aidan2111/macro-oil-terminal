@@ -2,6 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Static export so every route lands as its own HTML file. SWA hosts
+  // out/ as plain static; client-side fetch hits the FastAPI backend
+  // cross-origin via NEXT_PUBLIC_API_URL.
+  output: "export",
+  trailingSlash: true,
+  images: { unoptimized: true },
   experimental: {
     // Next.js 15 ships these out of experimental, kept here as a
     // parking lot for future tweaks (optimizePackageImports etc).
