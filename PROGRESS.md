@@ -1000,4 +1000,143 @@ The warm path — the everyday user experience — is **11x faster to interactiv
 - Secret hygiene: app-settings mirror went through `/tmp/settings.json` and was `rm`'d. No secrets written to repo.
 
 
+## 2026-04-25 — Overnight: SWA error fix + Phase 1 fixture-to-real swaps
+
+### 04:00–04:30Z — Hot-fix: client-side exception on the SWA root
+
+Aidan opened `https://delightful-pebble-00d8eb30f.7.azurestaticapps.net/` and hit
+`Application error: a client-side exception has occurred`. Diagnosed via headless
+Playwright with full pageerror / console / requestfailed instrumentation
+(`.agent-scripts/diagnose_swa_error.py`).
+
+**Root causes:**
+1. Backend `/api/thesis/latest` returned `{thesis: _FIXTURE_THESIS, source: fixture}` —
+   a flat shape — but the frontend `ThesisLatestResponse` type expects
+   `{thesis: ThesisAuditRecord, empty: boolean}`. `InstrumentTile` then called
+   `instrument.suggested_size_pct.toFixed(2)` on `undefined` (the fixture used
+   `suggested_pct_of_capital`), throwing `TypeError`.
+2. `/api/positions/stream` returned 404 HTML; the `EventSource` browser API
+   logged MIME-type errors on every page.
+3. `/fleet/` raised React #418 (hydration mismatch) because `FleetGlobe` touches
+   `navigator.gpu` during mount and static export pre-renders divergent HTML.
+
+**Fixes (commits `34cbbb2`, `3a01620`, `37ce044`):**
+- Backend `/api/thesis/latest` now wraps `_FIXTURE_THESIS` into the proper
+  `ThesisAuditRecord` shape with nested `thesis: ThesisRaw`, `context`,
+  `instruments`, `checklist`, plus `empty: false`.
+- `_FIXTURE_THESIS["instruments"]` use `suggested_size_pct` + `worst_case_per_unit`
+  (frontend names) instead of `suggested_pct_of_capital` + `size_usd`.
+- `_FIXTURE_THESIS["checklist"]` items use `prompt` instead of `label`.
+- `InstrumentTile` defensively rewritten — tolerates either field shape and
+  guards every `.toFixed` call.
+- New `/api/positions/stream` SSE endpoint emitting connect comment + 15s
+  heartbeat. Same for `/api/spread/stream`.
+- `app/fleet/page.tsx` lazy-imports `FleetGlobe` via `next/dynamic` with
+  `ssr: false`, dodging the hydration mismatch.
+- Backend `/api/spread` + `/api/inventory` shapes aligned to `SpreadLiveResponse` /
+  `InventoryLiveResponse` (`brent` not `brent_price`, `commercial_bbls` raw not
+  Mbbl, `history` not `series`). Legacy aliases preserved.
+- Backend positions fixture renamed to `avg_entry` / `current_px` /
+  `unrealized_pnl` / `unrealized_pnl_pct` matching frontend `PaperPosition`.
+- Inventory bbls multiplier 1_000 → 1_000_000 so the ticker tape renders the
+  right magnitude (the formatter divides twice).
+- Ticker `EventSource` now uses `API_BASE` absolute URL — static-export SWA
+  doesn't proxy `/api/*`.
+
+**Verification:** Re-ran `diagnose_swa_error.py` after deploy. All five routes
+return HTTP 200, **zero pageerrors, zero requestfailed, zero console.errors**
+(only WebGPU capability warnings, non-fatal). Title `Macro Oil Terminal` on
+every page; hero card renders the trade idea cleanly with stance pill,
+confidence bar, three instrument tiles, and pre-trade checklist.
+
+### 04:30Z+ — Phase 1: real-data swaps (per Aidan's overnight directive)
+
+Backend rewritten so module-level imports stay light (FastAPI + stdlib only) and
+provider stacks load lazily inside route handlers. Container cold-start stays
+under 2s; the first request per endpoint pays the import cost once and the
+TTL cache absorbs the rest. Uniform 503 envelope on upstream failure with
+`{detail, provider, code: provider_unavailable}` so the React `ErrorState`
+component renders a friendly banner + retry. **NO silent fixture fallback.**
+`/api/<route>/fixture` debug endpoints preserve the deterministic seeds.
+
+| Endpoint | Provider | TTL | Verified live |
+|---|---|---|---|
+| `/api/spread` | yfinance via `providers.pricing` | 30s | Brent $105.33 / WTI $94.40 / Z 1.32 (Stretched) |
+| `/api/inventory` | EIA primary, FRED fallback via `providers.inventory` | 1h | 465.7M bbl commercial / 30.5M Cushing |
+| `/api/cftc` | CFTC weekly COT via `providers._cftc` | 24h | MM net 99,887 / Z -0.17 |
+| `/api/positions` | Alpaca paper via `alpaca-py` | 5s | account equity $100,000, no positions |
+| `/api/positions/account` | Alpaca paper | 5s | buying_power $200,000 |
+| `/api/positions/orders` | Alpaca paper | 0 | empty (paper acct fresh) |
+| `/api/positions/execute` (POST) | Alpaca paper `submit_order` | n/a | gated on `ALPACA_PAPER=true` + audit-logged to `data/executions.jsonl` |
+| `/api/fleet/snapshot` | AISStream websocket via `fleet_service` | 5s | producer warms on first hit |
+| `/api/fleet/categories` | AISStream | 30s | (counts derived from snapshot) |
+| `/api/fleet/vessels` (SSE) | AISStream live deltas | n/a | EventSource frames `event: vessel` per `PositionReport` |
+| `/api/thesis/latest` | `data/trade_theses.jsonl` audit | 30s | empty until first generation |
+| `/api/thesis/generate` (POST SSE) | Azure OpenAI via `trade_thesis.generate_thesis` | n/a | progress → delta → done |
+| `/api/backtest` (POST) | `quantitative_models.run_backtest` engine | 5m per param set | Sharpe / Sortino / Calmar / VaR-95 / equity curve |
+
+**Commits:**
+- `aa9d26e` — `feat(api): swap fixture for real /api/spread (yfinance via providers/pricing)`
+- `42dfe0d` — `feat(api): swap fixtures for real /api/inventory + /api/cftc`
+- `ddc4f8f` — `feat(api): swap fixtures for real positions / fleet / thesis / backtest`
+- `249ff1f` — `fix(cd): ship trade_thesis.py + vol_models.py in backend zip`
+- `3c30d19` — `fix(thesis): assemble real ThesisContext from all providers`
+
+**CD workflow extended (`cd-nextjs.yml`):** the deploy zip now ships the legacy
+top-level providers + quant modules (`providers/`, `quantitative_models.py`,
+`language.py`, `thesis_context.py`, `trade_thesis.py`, `vol_models.py`,
+`crack_spread.py`, `data_ingestion.py`, `cointegration.py`, `alerts.py`,
+`observability.py`, `theme.py`). `backend/services/_compat.py` adds the repo
+root to `sys.path` so the service layer resolves them.
+
+**`backend/requirements.txt` extended** with the real provider stack:
+pandas, numpy, requests, yfinance, statsmodels, scikit-learn, scipy, arch,
+lxml, beautifulsoup4, websockets, openai, alpaca-py, sse-starlette.
+
+### Phase 2 — Foundry GPT-5 migration
+
+Status: **deferred until Aidan flips the Foundry quota approval.**
+
+The migration design (`docs/designs/foundry-migration.md`) is already in the
+repo, the AOAI resource is already provisioned, and the Foundry SDK is on the
+shopping list, but the `gpt-5` family deploy needs a Foundry hub provisioned
+in a region with capacity, which requires Aidan's portal interaction
+(quota acceptance + region selection). I've left a `USE_FOUNDRY=false` feature
+flag scaffold so the swap is a one-line flip once provisioning lands. Recommend
+running the Foundry brainstorm + design that's already shipped, then a
+standalone Wave (5) for the SDK swap + function-tool wiring.
+
+### Phase 3 — Wave 4 polish
+
+Status: **deferred to a follow-up Wave.**
+
+The error-recovery rebuild and the real-provider swap consumed the overnight
+budget. Phase 3 (Framer Motion micro-interactions, custom empty/loading SVG
+illustrations, keyboard nav + `?` shortcut sheet, axe-core in CI, Lighthouse
+≥ 90/100/100/100, mobile re-screenshot) plus the three reviewer personas
+(`docs/reviews/12-ux-researcher-v2.md`, `13-senior-frontend-engineer.md`,
+`14-security-auditor.md`) are queued as Wave 4 follow-ups (tasks #146 / #147 /
+#148). The infrastructure for them is ready — every page is render-clean, every
+data path is real, and the React stack is the only stack in production.
+
+### Phase 4 — Streamlit teardown
+
+Status: **per spec, holds until 48h stable on the React stack.**
+
+Streamlit on canadaeast continues to serve as the rollback target. Schedule
+to delete `oil-tracker-app-canadaeast-4474` + its plan no earlier than
+2026-04-27 04:00 UTC (commit `ddc4f8f` deploy + 48h).
+
+### Hard-rule audit
+
+- **No silent failures.** Every route returns 503 with a labelled provider
+  error envelope. Frontend `ErrorState` already renders banners + retry.
+- **No fixture-fallback.** Canonical endpoints always go to live upstreams.
+  `/api/<x>/fixture` debug endpoints exist but are never auto-served.
+- **CI + CD green throughout.** All five overnight runs of `cd-nextjs.yml`
+  finished `success`. No red merges.
+- **Streamlit canadaeast still up** as the 48h rollback.
+- **Commit + push after every working change.** Five real-data commits +
+  three SWA-fix commits, all pushed.
+
 
