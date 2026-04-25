@@ -1,5 +1,16 @@
 name: keep-warm
 
+# Pings every public service every 10 min in waking hours so the
+# FastAPI App Service container stays hot. The Static Web App is
+# CDN-fronted and doesn't need warming — pinged here as a 200-check.
+# Streamlit canadaeast is the 48h rollback target and is allowed to
+# be cold (non-fatal warning if it doesn't respond).
+#
+# History: this workflow used to ping the decommissioned westus2
+# Streamlit URL (oil-tracker-app-4281) which started failing once
+# the React cutover landed. Updated 2026-04-25 to hit the canonical
+# canadaeast backend + SWA root.
+
 on:
   schedule:
     # Every 10 minutes during waking hours (07:00-22:00 UTC)
@@ -18,19 +29,39 @@ permissions:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     steps:
-      - name: Ping /_stcore/health
+      - name: Warm FastAPI backend (canadaeast)
         run: |
           set -eu
-          URL="https://oil-tracker-app-4281.azurewebsites.net/_stcore/health"
-          for attempt in 1 2 3; do
-            if curl -fsS --max-time 20 "$URL"; then
-              echo "  warm on attempt $attempt"
+          URL="https://oil-tracker-api-canadaeast-0f18.azurewebsites.net/health"
+          for attempt in 1 2 3 4 5; do
+            if curl -fsS --max-time 30 "$URL"; then
+              echo "  backend warm on attempt $attempt"
               exit 0
             fi
             echo "  attempt $attempt failed, retrying..."
-            sleep 10
+            sleep 15
           done
-          echo "Health endpoint cold after 3 attempts" >&2
+          echo "Backend cold after 5 attempts (canadaeast)" >&2
           exit 1
+
+      - name: Ping React Static Web App (non-fatal)
+        run: |
+          set -eu
+          URL="https://delightful-pebble-00d8eb30f.7.azurestaticapps.net/build-info.txt"
+          if curl -fsS --max-time 20 "$URL"; then
+            echo "  SWA build-info reachable"
+          else
+            echo "SWA build-info unreachable (non-fatal)" >&2
+          fi
+
+      - name: Ping Streamlit canadaeast rollback (non-fatal)
+        run: |
+          set -eu
+          URL="https://oil-tracker-app-canadaeast-4474.azurewebsites.net/_stcore/health"
+          if curl -fsS --max-time 20 "$URL"; then
+            echo "  Streamlit canadaeast warm (48h rollback healthy)"
+          else
+            echo "Streamlit canadaeast cold (non-fatal — rollback only)" >&2
+          fi
