@@ -1,12 +1,16 @@
-"""FastAPI application — fixture-backed, zero heavy imports.
+"""FastAPI application — real-data-first, lazy-imported providers.
 
-This intentionally skips the sys.path shim into the root Streamlit
-modules. Every endpoint returns plausible JSON fixtures so the Next.js
-frontend renders with real-looking data on the first request. Real
-provider wiring moves back in once the cutover lands and we can
-iterate on it without blocking Aidan's demo.
+Module-level imports are stdlib + FastAPI only so container warmup is
+<2 s. Heavy provider imports (pandas, yfinance, statsmodels, openai,
+alpaca-py) live inside route handlers so the worker only pays the
+import cost on first hit, never on cold-start health probes.
 
-Light imports only: FastAPI + stdlib. Container warmup is <2 s.
+Per Aidan's overnight directive: NO silent fixture fallback. When a
+provider is unreachable or a key is missing, the route returns a 503
+with a friendly `detail` string. The React UI's ErrorState components
+surface a banner + retry button. Fixture data is reserved for the
+explicit ``/api/<route>/fixture`` debug endpoints used during
+provisioning; the canonical endpoints always go to real upstream.
 """
 
 from __future__ import annotations
@@ -15,12 +19,72 @@ import json
 import math
 import os
 import random
+import threading
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+
+
+# ---------------------------------------------------------------------------
+# Tiny TTL cache — module-level, threadsafe, exception-skipping
+# ---------------------------------------------------------------------------
+
+_T = TypeVar("_T")
+
+
+class _TTLCache:
+    """Single-slot per-key TTL cache. Thread-safe. Exceptions never cache."""
+
+    def __init__(self) -> None:
+        self._slots: dict[str, tuple[float, Any]] = {}
+        self._lock = threading.Lock()
+
+    def get_or_compute(self, key: str, ttl: float, factory: Callable[[], _T]) -> _T:
+        now = time.monotonic()
+        with self._lock:
+            slot = self._slots.get(key)
+            if slot is not None and slot[0] > now:
+                return slot[1]
+        value = factory()
+        with self._lock:
+            self._slots[key] = (time.monotonic() + ttl, value)
+        return value
+
+    def invalidate(self, key: str | None = None) -> None:
+        with self._lock:
+            if key is None:
+                self._slots.clear()
+            else:
+                self._slots.pop(key, None)
+
+
+_CACHE = _TTLCache()
+
+
+def _provider_error(provider: str, exc: Exception, hint: str | None = None) -> JSONResponse:
+    """Uniform 503 envelope for upstream provider failures.
+
+    The React UI surfaces ``detail`` via its ErrorState component, which
+    renders a friendly banner + retry button. ``provider`` lets the
+    panel disambiguate (e.g. "yfinance is rate-limited", not the
+    generic "something went wrong").
+    """
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                f"{provider} is temporarily unavailable: "
+                f"{type(exc).__name__}: {exc}"
+                + (f". {hint}" if hint else "")
+            ),
+            "provider": provider,
+            "code": "provider_unavailable",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -32,11 +96,14 @@ def create_app() -> FastAPI:
     that do ``from backend.main import create_app`` still import."""
     a = FastAPI(
         title="Macro Oil Terminal API",
-        version="0.2.0",
+        version="0.3.0",
         description=(
-            "Fixture-backed backend during React cutover. All endpoints return "
-            "deterministic, plausible JSON so the frontend renders immediately. "
-            "Real provider wiring returns post-cutover."
+            "Real-data backend. Lazy-imports providers so cold-start stays <2s; "
+            "every canonical endpoint hits live upstreams (yfinance, EIA, FRED, "
+            "CFTC, AISStream, Alpaca paper, Azure OpenAI). On upstream failure "
+            "the route returns 503 with a friendly detail; the React UI shows a "
+            "banner + retry. Fixture endpoints under /api/<x>/fixture remain for "
+            "debug only."
         ),
     )
     a.add_middleware(
@@ -108,8 +175,8 @@ def build_info() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/spread")
-def get_spread() -> dict[str, Any]:
+def _fixture_spread() -> dict[str, Any]:
+    """Deterministic fixture used by /api/spread/fixture (debug only)."""
     brent = _series(82.4, 90, noise=0.6)
     wti = _series(78.1, 90, noise=0.5)
     spread_values: list[float] = []
@@ -123,7 +190,7 @@ def get_spread() -> dict[str, Any]:
                 "brent": brent[i]["value"],
                 "wti": wti[i]["value"],
                 "spread": sp,
-                "z_score": None,  # filled in second pass below
+                "z_score": None,
             }
         )
     mean = sum(spread_values) / len(spread_values)
@@ -133,9 +200,6 @@ def get_spread() -> dict[str, Any]:
             h["z_score"] = round((float(h["spread"]) - mean) / sd, 3)
     latest = history[-1]
     stretch = float(latest["z_score"] or 0.0)
-    # Frontend SpreadLiveResponse keys: brent / wti / spread / stretch /
-    # stretch_band / as_of / source / history. Legacy *_price aliases
-    # are kept for any older consumers in the repo.
     return {
         "brent": latest["brent"],
         "wti": latest["wti"],
@@ -145,13 +209,61 @@ def get_spread() -> dict[str, Any]:
         "as_of": _utcnow_iso(),
         "source": "fixture",
         "history": history,
-        # legacy aliases — kept so older callers don't break
         "brent_price": latest["brent"],
         "wti_price": latest["wti"],
         "spread_usd": latest["spread"],
         "series": history,
         "fetched_at": _utcnow_iso(),
     }
+
+
+def _real_spread(history_bars: int = 90) -> dict[str, Any]:
+    """Hit yfinance via the legacy provider stack and return a
+    SpreadLiveResponse-shaped payload."""
+    # Lazy imports — keep cold-start fast.
+    import pandas as pd  # noqa: F401  (pulled in via the chain anyway)
+
+    from backend.services.spread_service import get_spread_response
+
+    resp = get_spread_response(history_bars=history_bars)
+    # Pydantic model → plain dict; keep extra legacy aliases the
+    # frontend tickers and macro charts already consume.
+    base = resp.model_dump(mode="json")
+    history = base.get("history", []) or []
+    # latest mirror — model already exposes top-level brent/wti/spread.
+    latest = history[-1] if history else {}
+    return {
+        **base,
+        "brent_price": base.get("brent"),
+        "wti_price": base.get("wti"),
+        "spread_usd": base.get("spread"),
+        "series": history,
+        "fetched_at": _utcnow_iso(),
+    }
+
+
+@app.get("/api/spread")
+def get_spread() -> Any:
+    """Live Brent–WTI prices + spread + dislocation Z + history.
+
+    Cached 30s (per Aidan's directive). Returns 503 with a friendly
+    detail when yfinance / Twelve Data / Polygon all fail; the React
+    ticker tape and macro charts surface this as a banner.
+    """
+    try:
+        return _CACHE.get_or_compute("spread", 30.0, _real_spread)
+    except Exception as exc:  # pragma: no cover — sandbox-tested below
+        return _provider_error(
+            "yfinance",
+            exc,
+            hint="Brent/WTI futures pricing is the upstream; retry in ~30s.",
+        )
+
+
+@app.get("/api/spread/fixture")
+def get_spread_fixture() -> dict[str, Any]:
+    """Deterministic fixture for debug only — never auto-served."""
+    return _fixture_spread()
 
 
 async def _sse_spread_heartbeat():

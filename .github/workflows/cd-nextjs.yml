@@ -105,12 +105,24 @@ jobs:
           # (which belongs to the Streamlit pipeline).
           cp -r backend build/
           cp backend/requirements.txt build/requirements.txt
-          (cd build && zip -rq ../dist/backend.zip backend requirements.txt \
+          # Phase 1 — ship real provider stack alongside the FastAPI
+          # backend. backend/services/_compat.py pushes the repo root
+          # onto sys.path so these top-level modules resolve.
+          cp -r providers build/
+          for legacy_mod in quantitative_models.py language.py thesis_context.py \
+                            crack_spread.py data_ingestion.py cointegration.py \
+                            alerts.py observability.py theme.py; do
+            if [ -f "$legacy_mod" ]; then
+              cp "$legacy_mod" build/
+            fi
+          done
+          (cd build && zip -rq ../dist/backend.zip \
+            backend requirements.txt providers *.py \
             -x "*/tests/*" \
             -x "*/__pycache__/*" \
             -x "*.pyc")
           ls -la dist/
-          unzip -l dist/backend.zip | head -20
+          unzip -l dist/backend.zip | head -40
 
       - name: Deploy to Azure Web App
         id: deploy
