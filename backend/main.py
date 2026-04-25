@@ -207,14 +207,18 @@ def get_inventory() -> dict[str, Any]:
     commercial = _series(430.0, 104, noise=4.0)  # Mbbl, 2y weekly-ish
     cushing = _series(28.0, 104, noise=0.6)
     spr = _series(380.0, 104, noise=1.5)
+    # Source seeds are in MMbbl (millions of barrels). Frontend wants
+    # raw bbls — and its TickerTape formatter divides by 1_000_000 in
+    # two steps to display "430 Mbbl" (its label is the trader-style
+    # short for millions). Multiplier 1e6 keeps the magnitudes right.
     history = [
         {
             "date": commercial[i]["date"],
-            "commercial_bbls": int(commercial[i]["value"] * 1_000),
-            "cushing_bbls": int(cushing[i]["value"] * 1_000),
-            "spr_bbls": int(spr[i]["value"] * 1_000),
+            "commercial_bbls": int(commercial[i]["value"] * 1_000_000),
+            "cushing_bbls": int(cushing[i]["value"] * 1_000_000),
+            "spr_bbls": int(spr[i]["value"] * 1_000_000),
             "total_bbls": int(
-                (commercial[i]["value"] + cushing[i]["value"] + spr[i]["value"]) * 1_000
+                (commercial[i]["value"] + cushing[i]["value"] + spr[i]["value"]) * 1_000_000
             ),
         }
         for i in range(len(commercial))
@@ -228,11 +232,11 @@ def get_inventory() -> dict[str, Any]:
         if 0 < days_to_300 < 365:
             projected_floor_date = (today + timedelta(days=int(days_to_300))).isoformat()
     forecast = {
-        "daily_depletion_bbls": int(abs(slope_per_day) * 1_000),
-        "weekly_depletion_bbls": int(abs(slope_per_day) * 1_000 * 7),
+        "daily_depletion_bbls": int(abs(slope_per_day) * 1_000_000),
+        "weekly_depletion_bbls": int(abs(slope_per_day) * 1_000_000 * 7),
         "projected_floor_date": projected_floor_date,
         "r_squared": 0.71,
-        "floor_bbls": 300_000,
+        "floor_bbls": 300_000_000,
     }
     return {
         # Frontend-shape fields:
@@ -527,26 +531,28 @@ async def backtest(req: Request) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# Frontend PaperPosition shape: symbol / qty / avg_entry / current_px /
+# unrealized_pnl / unrealized_pnl_pct (+ optional thesis_id). Older
+# scaffold rows used `avg_entry_price` / `current_price` / `unrealized_pl`
+# — they never reached the wire so we adopt the frontend names directly.
 _FIXTURE_POSITIONS = [
     {
         "symbol": "BNO",
         "qty": 100,
-        "side": "long",
-        "avg_entry_price": 32.10,
-        "current_price": 32.84,
-        "market_value": 3284.00,
-        "unrealized_pl": 74.00,
-        "unrealized_plpc": 0.023,
+        "avg_entry": 32.10,
+        "current_px": 32.84,
+        "unrealized_pnl": 74.00,
+        "unrealized_pnl_pct": 2.30,
+        "thesis_id": "fixture-2026-04-24",
     },
     {
         "symbol": "USO",
         "qty": -120,
-        "side": "short",
-        "avg_entry_price": 74.20,
-        "current_price": 73.10,
-        "market_value": -8772.00,
-        "unrealized_pl": 132.00,
-        "unrealized_plpc": 0.015,
+        "avg_entry": 74.20,
+        "current_px": 73.10,
+        "unrealized_pnl": 132.00,
+        "unrealized_pnl_pct": 1.50,
+        "thesis_id": "fixture-2026-04-24",
     },
 ]
 

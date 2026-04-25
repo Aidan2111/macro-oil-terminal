@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchJson } from "@/lib/api";
+import { API_BASE, fetchJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
   InventoryLiveResponse,
@@ -55,7 +55,10 @@ export function TickerTape() {
     let closed = false;
     let source: EventSource | null = null;
     try {
-      source = new ES("/api/spread/stream");
+      // Use the absolute API_BASE — static export doesn't proxy
+      // /api/* on the SWA host, so a relative URL would 404 to HTML
+      // and the browser would log an EventSource MIME-type error.
+      source = new ES(`${API_BASE}/api/spread/stream`);
       source.onmessage = () => {
         if (!closed) spreadQ.refetch();
       };
