@@ -116,12 +116,20 @@ def _build_thesis_context() -> Any:
         ais_with_cat = pd.DataFrame()
         ais_agg = pd.DataFrame()
 
-    # 7. CFTC — optional, but improves the context.
+    # 7. CFTC — optional, but improves the context. build_context()
+    #    reads `cftc_res.mm_zscore_3y` directly, but COTResult is a
+    #    plain dataclass without that field; compute it via the
+    #    sibling helper and monkey-attach so the legacy path is happy.
     cftc_res = None
     try:
         from providers import _cftc as cftc_provider  # type: ignore
 
         cftc_res = cftc_provider.fetch_wti_positioning()
+        try:
+            z = cftc_provider.managed_money_zscore(cftc_res.frame)
+            setattr(cftc_res, "mm_zscore_3y", float(z) if z is not None else None)
+        except Exception:
+            setattr(cftc_res, "mm_zscore_3y", None)
     except Exception:
         cftc_res = None
 
