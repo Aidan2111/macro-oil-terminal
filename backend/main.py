@@ -3,35 +3,31 @@
 Creates the app with CORS configured for the Static Web Apps origin
 and mounts the router modules. Kept small — every concern lives in a
 submodule.
+
+Lazy-mount strategy: only `health` and `build_info` are imported at
+module load. Every other router is imported and mounted on first
+request via a small middleware. This keeps Azure App Service's
+container warmup probe (~230s) green even though the deeper routers
+pull in sklearn, statsmodels, arch, yfinance, etc. — those imports
+cost ~30-40s each on a cold B2 SKU.
 """
 
 from __future__ import annotations
 
 import os
+import threading
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from .routers import (
-    backtest,
-    build_info,
-    cftc,
-    fleet,
-    health,
-    inventory,
-    positions,
-    spread,
-    thesis,
-)
+# Cheap, always-imported routers — used by warmup probe.
+from .routers import build_info, health
 
 
 def _allowed_origins() -> list[str]:
-    """Return the list of allowed CORS origins.
-
-    Reads `BACKEND_ALLOWED_ORIGINS` (comma-separated). Defaults permit
-    local dev + a wildcard for *.azurestaticapps.net that the real
-    proxy will bypass anyway (/api/* is same-origin through SWA).
-    """
+    """Return the list of allowed CORS origins."""
     raw = os.environ.get("BACKEND_ALLOWED_ORIGINS", "")
     if raw.strip():
         return [o.strip() for o in raw.split(",") if o.strip()]
@@ -40,6 +36,74 @@ def _allowed_origins() -> list[str]:
         "http://127.0.0.1:3000",
         "https://*.azurestaticapps.net",
     ]
+
+
+# Module-level guard so heavy mounting happens exactly once.
+_HEAVY_MOUNTED = False
+_HEAVY_LOCK = threading.Lock()
+
+
+def _mount_heavy_routers(app: FastAPI) -> None:
+    """Lazily import + mount the routers that pull in sklearn / pandas /
+    yfinance. Called on first matching request, not at module load.
+
+    Idempotent: subsequent calls no-op via the module-level flag.
+    """
+    global _HEAVY_MOUNTED
+    with _HEAVY_LOCK:
+        if _HEAVY_MOUNTED:
+            return
+        # Import here so warmup doesn't pay the full import cost.
+        from .routers import (
+            backtest,
+            cftc,
+            fleet,
+            inventory,
+            positions,
+            spread,
+            thesis,
+        )
+
+        app.include_router(spread.router, prefix="/api")
+        app.include_router(thesis.router, prefix="/api")
+        app.include_router(backtest.router, prefix="/api")
+        app.include_router(positions.router, prefix="/api")
+        app.include_router(cftc.router, prefix="/api")
+        app.include_router(inventory.router, prefix="/api")
+        app.include_router(fleet.router, prefix="/api")
+        _HEAVY_MOUNTED = True
+
+
+class LazyMountMiddleware(BaseHTTPMiddleware):
+    """Trigger heavy-router mount on first request that needs it.
+
+    Health and build-info routes don't need the heavy imports; everything
+    else does. We check the path prefix and lazy-mount before the
+    request reaches the routing layer.
+    """
+
+    def __init__(self, app: FastAPI):
+        super().__init__(app)
+        self._app = app
+
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        # Health + build-info: cheap, no heavy mount needed.
+        if path in ("/health", "/api/health", "/api/build-info"):
+            return await call_next(request)
+        # Anything else: ensure heavy routers are mounted.
+        if not _HEAVY_MOUNTED:
+            try:
+                _mount_heavy_routers(self._app)
+            except Exception as exc:  # pragma: no cover
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "backend_warming_up",
+                        "detail": str(exc),
+                    },
+                )
+        return await call_next(request)
 
 
 def create_app() -> FastAPI:
@@ -61,20 +125,12 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
+    app.add_middleware(LazyMountMiddleware)
 
-    # Root health (no /api prefix) — used by App Service warmup probes.
+    # Always-mounted routers (cheap imports).
     app.include_router(health.router)
-
-    # All product routes live under /api.
     app.include_router(build_info.router, prefix="/api")
     app.include_router(health.api_router, prefix="/api")
-    app.include_router(spread.router, prefix="/api")
-    app.include_router(thesis.router, prefix="/api")
-    app.include_router(backtest.router, prefix="/api")
-    app.include_router(positions.router, prefix="/api")
-    app.include_router(cftc.router, prefix="/api")
-    app.include_router(inventory.router, prefix="/api")
-    app.include_router(fleet.router, prefix="/api")
 
     return app
 
