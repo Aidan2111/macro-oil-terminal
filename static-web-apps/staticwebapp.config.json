@@ -1,6 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/staticwebapp.config.json",
-  "_comment": "MIGRATION HOLD — root redirects to Streamlit while the React stack iterates quietly. Flip /* fallback back to /index.html once backend is verified green end-to-end.",
   "routes": [
     {
       "route": "/api/*",
@@ -10,20 +9,11 @@
     {
       "route": "/build-info.txt",
       "headers": { "Cache-Control": "no-store" }
-    },
-    {
-      "route": "/_dev/*",
-      "rewrite": "/index.html"
-    },
-    {
-      "route": "/*",
-      "redirect": "https://oil-tracker-app-canadaeast-4474.azurewebsites.net/",
-      "statusCode": 302
     }
   ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/api/*", "/_dev/*", "/_next/*", "/static/*", "/*.{png,jpg,gif,ico,css,js,svg,txt}"]
+    "exclude": ["/api/*", "/_next/*", "/static/*", "/*.{png,jpg,gif,ico,css,js,svg,txt}"]
   },
   "mimeTypes": {
     ".json": "application/json"
