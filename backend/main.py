@@ -112,30 +112,73 @@ def build_info() -> dict[str, Any]:
 def get_spread() -> dict[str, Any]:
     brent = _series(82.4, 90, noise=0.6)
     wti = _series(78.1, 90, noise=0.5)
-    series = [
-        {
-            "date": brent[i]["date"],
-            "brent": brent[i]["value"],
-            "wti": wti[i]["value"],
-            "spread": round(brent[i]["value"] - wti[i]["value"], 4),
-        }
-        for i in range(len(brent))
-    ]
-    latest = series[-1]
-    spread_values = [p["spread"] for p in series[-90:]]
+    spread_values: list[float] = []
+    history: list[dict[str, Any]] = []
+    for i in range(len(brent)):
+        sp = round(brent[i]["value"] - wti[i]["value"], 4)
+        spread_values.append(sp)
+        history.append(
+            {
+                "date": brent[i]["date"],
+                "brent": brent[i]["value"],
+                "wti": wti[i]["value"],
+                "spread": sp,
+                "z_score": None,  # filled in second pass below
+            }
+        )
     mean = sum(spread_values) / len(spread_values)
     sd = math.sqrt(sum((v - mean) ** 2 for v in spread_values) / len(spread_values))
-    stretch = round((latest["spread"] - mean) / sd, 3) if sd > 0 else 0.0
+    if sd > 0:
+        for h in history:
+            h["z_score"] = round((float(h["spread"]) - mean) / sd, 3)
+    latest = history[-1]
+    stretch = float(latest["z_score"] or 0.0)
+    # Frontend SpreadLiveResponse keys: brent / wti / spread / stretch /
+    # stretch_band / as_of / source / history. Legacy *_price aliases
+    # are kept for any older consumers in the repo.
     return {
+        "brent": latest["brent"],
+        "wti": latest["wti"],
+        "spread": latest["spread"],
+        "stretch": stretch,
+        "stretch_band": _band_for(abs(stretch)),
+        "as_of": _utcnow_iso(),
+        "source": "fixture",
+        "history": history,
+        # legacy aliases — kept so older callers don't break
         "brent_price": latest["brent"],
         "wti_price": latest["wti"],
         "spread_usd": latest["spread"],
-        "stretch": stretch,
-        "stretch_band": _band_for(abs(stretch)),
-        "series": series,
-        "source": "fixture",
+        "series": history,
         "fetched_at": _utcnow_iso(),
     }
+
+
+async def _sse_spread_heartbeat():
+    """Heartbeat-only SSE stream for the ticker tape. The TickerTape
+    component refetches its react-query cache on each onmessage. We
+    emit one immediate frame, then a 20-s ping so the channel stays
+    open without churning the network. Backend has no live tick yet,
+    so this is best-effort."""
+    import asyncio
+
+    yield ": connected\n\n"
+    while True:
+        await asyncio.sleep(20)
+        yield f"data: {json.dumps({'tick': _utcnow_iso()})}\n\n"
+
+
+@app.get("/api/spread/stream")
+async def spread_stream():
+    return StreamingResponse(
+        _sse_spread_heartbeat(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def _band_for(abs_z: float) -> str:
@@ -157,20 +200,52 @@ def _band_for(abs_z: float) -> str:
 
 @app.get("/api/inventory")
 def get_inventory() -> dict[str, Any]:
+    # Frontend InventoryLiveResponse expects raw bbl counts and a
+    # `history: InventoryPoint[]` series with date + commercial_bbls
+    # + spr_bbls + cushing_bbls + total_bbls per row. Easier to seed
+    # in Mbbl, then multiply at the end.
     commercial = _series(430.0, 104, noise=4.0)  # Mbbl, 2y weekly-ish
     cushing = _series(28.0, 104, noise=0.6)
     spr = _series(380.0, 104, noise=1.5)
-    latest = commercial[-1]
-    forecast_days = 365
+    history = [
+        {
+            "date": commercial[i]["date"],
+            "commercial_bbls": int(commercial[i]["value"] * 1_000),
+            "cushing_bbls": int(cushing[i]["value"] * 1_000),
+            "spr_bbls": int(spr[i]["value"] * 1_000),
+            "total_bbls": int(
+                (commercial[i]["value"] + cushing[i]["value"] + spr[i]["value"]) * 1_000
+            ),
+        }
+        for i in range(len(commercial))
+    ]
+    latest = history[-1]
     slope_per_day = (commercial[-1]["value"] - commercial[-30]["value"]) / 30.0
     today = datetime.now(timezone.utc).date()
     projected_floor_date = None
     if slope_per_day < 0:
-        days_to_300 = (300.0 - latest["value"]) / slope_per_day
-        if 0 < days_to_300 < forecast_days:
+        days_to_300 = (300.0 - commercial[-1]["value"]) / slope_per_day
+        if 0 < days_to_300 < 365:
             projected_floor_date = (today + timedelta(days=int(days_to_300))).isoformat()
+    forecast = {
+        "daily_depletion_bbls": int(abs(slope_per_day) * 1_000),
+        "weekly_depletion_bbls": int(abs(slope_per_day) * 1_000 * 7),
+        "projected_floor_date": projected_floor_date,
+        "r_squared": 0.71,
+        "floor_bbls": 300_000,
+    }
     return {
-        "commercial_mbbl": latest["value"],
+        # Frontend-shape fields:
+        "commercial_bbls": latest["commercial_bbls"],
+        "cushing_bbls": latest["cushing_bbls"],
+        "spr_bbls": latest["spr_bbls"],
+        "total_bbls": latest["total_bbls"],
+        "as_of": _utcnow_iso(),
+        "source": "fixture",
+        "history": history,
+        "forecast": forecast,
+        # Legacy aliases — kept so older callers don't break
+        "commercial_mbbl": commercial[-1]["value"],
         "cushing_mbbl": cushing[-1]["value"],
         "spr_mbbl": spr[-1]["value"],
         "commercial_series": commercial,
@@ -178,7 +253,6 @@ def get_inventory() -> dict[str, Any]:
         "spr_series": spr,
         "slope_per_day_mbbl": round(slope_per_day, 4),
         "projected_floor_date": projected_floor_date,
-        "source": "fixture",
         "fetched_at": _utcnow_iso(),
     }
 
