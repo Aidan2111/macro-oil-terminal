@@ -310,8 +310,30 @@ def _band_for(abs_z: float) -> str:
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/inventory")
-def get_inventory() -> dict[str, Any]:
+def _real_inventory() -> dict[str, Any]:
+    """Hit EIA primary / FRED fallback via providers.inventory and
+    return an InventoryLiveResponse-shaped payload (raw bbls + history
+    + depletion forecast)."""
+    from backend.services.inventory_service import get_inventory_response
+
+    resp = get_inventory_response()
+    base = resp.model_dump(mode="json")
+    history = base.get("history", []) or []
+    latest = base
+    return {
+        **base,
+        # Legacy aliases retained for older parts of the repo.
+        "commercial_mbbl": (latest.get("commercial_bbls") or 0) / 1_000_000,
+        "cushing_mbbl": (latest.get("cushing_bbls") or 0) / 1_000_000,
+        "spr_mbbl": (latest.get("spr_bbls") or 0) / 1_000_000,
+        "commercial_series": history,
+        "cushing_series": history,
+        "spr_series": history,
+        "fetched_at": _utcnow_iso(),
+    }
+
+
+def _fixture_inventory() -> dict[str, Any]:
     # Frontend InventoryLiveResponse expects raw bbl counts and a
     # `history: InventoryPoint[]` series with date + commercial_bbls
     # + spr_bbls + cushing_bbls + total_bbls per row. Easier to seed
@@ -373,14 +395,44 @@ def get_inventory() -> dict[str, Any]:
     }
 
 
+@app.get("/api/inventory")
+def get_inventory() -> Any:
+    """Live commercial / Cushing / SPR stocks + forecast.
+
+    Cached 1 hour (EIA only releases weekly). 503 with friendly detail
+    when both EIA primary and FRED fallback are unreachable.
+    """
+    try:
+        return _CACHE.get_or_compute("inventory", 3600.0, _real_inventory)
+    except Exception as exc:
+        return _provider_error(
+            "EIA/FRED",
+            exc,
+            hint="EIA is the primary; FRED is the fallback. Retry in ~1m.",
+        )
+
+
+@app.get("/api/inventory/fixture")
+def get_inventory_fixture() -> dict[str, Any]:
+    return _fixture_inventory()
+
+
 # ---------------------------------------------------------------------------
 # CFTC positioning
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/cftc")
-def get_cftc() -> dict[str, Any]:
-    history = _series(200000, 156, noise=4000.0)  # 3y weekly
+def _real_cftc() -> dict[str, Any]:
+    """Pull weekly Commitments-of-Traders for WTI managed-money +
+    producer + swap-dealer nets via the legacy CFTC provider."""
+    from backend.services.cftc_service import get_cftc_response
+
+    resp = get_cftc_response()
+    return resp.model_dump(mode="json")
+
+
+def _fixture_cftc() -> dict[str, Any]:
+    history = _series(200000, 156, noise=4000.0)
     mean = sum(p["value"] for p in history) / len(history)
     sd = math.sqrt(sum((p["value"] - mean) ** 2 for p in history) / len(history))
     latest_net = history[-1]["value"]
@@ -394,6 +446,28 @@ def get_cftc() -> dict[str, Any]:
         "source": "fixture",
         "fetched_at": _utcnow_iso(),
     }
+
+
+@app.get("/api/cftc")
+def get_cftc() -> Any:
+    """Live CFTC Commitments of Traders — WTI managed-money / producer /
+    swap-dealer nets + 3y history + Z-score of MM net.
+
+    Cached 24h (CFTC publishes Friday 3:30pm ET; weekly cadence).
+    """
+    try:
+        return _CACHE.get_or_compute("cftc", 24 * 3600.0, _real_cftc)
+    except Exception as exc:
+        return _provider_error(
+            "CFTC",
+            exc,
+            hint="Weekly COT flat-file from cftc.gov. Retry next Friday at 3:30pm ET.",
+        )
+
+
+@app.get("/api/cftc/fixture")
+def get_cftc_fixture() -> dict[str, Any]:
+    return _fixture_cftc()
 
 
 # ---------------------------------------------------------------------------
