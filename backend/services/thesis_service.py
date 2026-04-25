@@ -41,15 +41,93 @@ def _read_recent_theses(limit: int) -> list[dict]:
 
 
 def _build_thesis_context() -> Any:
-    """Lazy import of the context builder so unit tests can stub it."""
-    import thesis_context  # type: ignore
+    """Assemble a real ThesisContext by calling every provider in
+    parallel-but-sequential lazy-import order.
 
-    for attr in ("build_thesis_context", "build_context", "get_thesis_context"):
-        fn = getattr(thesis_context, attr, None)
-        if callable(fn):
-            return fn()
-    raise RuntimeError(
-        "thesis_context has no build_context()/build_thesis_context() entry"
+    The legacy `thesis_context.build_context()` requires a fairly hefty
+    bag of pre-computed artefacts (pricing, inventory, spread frame,
+    backtest, depletion, AIS, optional cointegration / crack / CFTC).
+    We pull each piece via its provider then hand the bundle off.
+    """
+    import pandas as pd  # noqa: F401  (chained imports rely on it)
+
+    import thesis_context  # type: ignore
+    import quantitative_models  # type: ignore
+    from providers import pricing as pricing_provider  # type: ignore
+    from providers import inventory as inventory_provider  # type: ignore
+
+    # 1. Pricing — yfinance (Brent + WTI daily).
+    pricing_res = pricing_provider.fetch_pricing_daily()
+
+    # 2. Inventory — EIA / FRED.
+    try:
+        inventory_res = inventory_provider.fetch_inventory()
+    except Exception:
+        inventory_res = None
+
+    # 3. Spread + Z-score frame.
+    spread_df = quantitative_models.compute_spread_zscore(pricing_res.frame)
+
+    # 4. Backtest — keep light, run a fresh tiny pass to seed metrics.
+    try:
+        backtest = quantitative_models.run_backtest(
+            spread_df, entry_z=2.0, exit_z=0.5, lookback=90
+        )
+    except Exception:
+        backtest = {
+            "sharpe": None,
+            "sortino": None,
+            "max_drawdown_usd": None,
+            "hit_rate": None,
+            "n_trades": 0,
+            "total_pnl_usd": 0.0,
+            "equity_curve": [],
+            "trades": [],
+        }
+
+    # 5. Depletion forecast on inventory.
+    if inventory_res is not None and getattr(inventory_res, "frame", None) is not None:
+        try:
+            depletion = quantitative_models.forecast_depletion(
+                inventory_res.frame, floor_bbls=300_000_000.0
+            )
+        except Exception:
+            depletion = {}
+    else:
+        depletion = {}
+
+    # 6. AIS — best effort. If AISStream key is set we lean on the
+    #    fleet_service producer; otherwise the historical snapshot
+    #    keeps the context render-able.
+    try:
+        from data_ingestion import fetch_ais_data  # type: ignore
+
+        ais_with_cat = fetch_ais_data(n_vessels=300)
+        ais_agg = ais_with_cat
+    except Exception:
+        ais_with_cat = pd.DataFrame()
+        ais_agg = pd.DataFrame()
+
+    # 7. CFTC — optional, but improves the context.
+    cftc_res = None
+    try:
+        from providers import _cftc as cftc_provider  # type: ignore
+
+        cftc_res = cftc_provider.fetch_wti_positioning()
+    except Exception:
+        cftc_res = None
+
+    return thesis_context.build_context(
+        pricing_res=pricing_res,
+        inventory_res=inventory_res,
+        spread_df=spread_df,
+        backtest=backtest,
+        depletion=depletion,
+        ais_agg=ais_agg,
+        ais_with_cat=ais_with_cat,
+        z_threshold=2.0,
+        floor_bbls=300_000_000.0,
+        cftc_res=cftc_res,
     )
 
 
