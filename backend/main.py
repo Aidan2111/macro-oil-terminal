@@ -818,11 +818,16 @@ async def thesis_generate_fixture():
 def _real_backtest(params: dict[str, Any]) -> dict[str, Any]:
     """Run the legacy backtest engine and shape into BacktestLiveResponse.
 
-    backend.services.backtest_service.run_backtest is keyword-only with
-    required parameters; pull them out of the body with sensible
-    defaults that mirror the Streamlit sidebar.
+    backend.services.backtest_service.run_backtest is keyword-only.
+    Its `_load_spread_df` helper expects `cointegration.build_spread_df`
+    which doesn't exist on the legacy module; bypass it by building the
+    spread frame ourselves from `providers.pricing.fetch_pricing_daily`
+    + `quantitative_models.compute_spread_zscore` and passing it via
+    the optional `spread_df` kwarg.
     """
     from backend.services.backtest_service import run_backtest
+    import quantitative_models  # type: ignore
+    from providers import pricing as pricing_provider  # type: ignore
 
     p = params or {}
     entry_z = float(p.get("entry_z", 2.0))
@@ -831,12 +836,16 @@ def _real_backtest(params: dict[str, Any]) -> dict[str, Any]:
     slippage_per_bbl = float(p.get("slippage_per_bbl", 0.05))
     commission_per_trade = float(p.get("commission_per_trade", 1.0))
 
+    pricing_res = pricing_provider.fetch_pricing_daily()
+    spread_df = quantitative_models.compute_spread_zscore(pricing_res.frame)
+
     return run_backtest(
         entry_z=entry_z,
         exit_z=exit_z,
         lookback_days=lookback_days,
         slippage_per_bbl=slippage_per_bbl,
         commission_per_trade=commission_per_trade,
+        spread_df=spread_df,
     )
 
 
