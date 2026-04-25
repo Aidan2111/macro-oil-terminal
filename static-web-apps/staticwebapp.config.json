@@ -3,7 +3,7 @@
   "routes": [
     {
       "route": "/api/*",
-      "rewrite": "https://REPLACE_ME_oil-tracker-api-canadaeast-NNNN.azurewebsites.net/api/*",
+      "rewrite": "https://oil-tracker-api-canadaeast-0f18.azurewebsites.net/api/*",
       "allowedRoles": ["anonymous"]
     },
     {
