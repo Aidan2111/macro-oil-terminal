@@ -816,13 +816,28 @@ async def thesis_generate_fixture():
 
 
 def _real_backtest(params: dict[str, Any]) -> dict[str, Any]:
-    """Run the legacy backtest engine and shape into BacktestLiveResponse."""
+    """Run the legacy backtest engine and shape into BacktestLiveResponse.
+
+    backend.services.backtest_service.run_backtest is keyword-only with
+    required parameters; pull them out of the body with sensible
+    defaults that mirror the Streamlit sidebar.
+    """
     from backend.services.backtest_service import run_backtest
 
-    resp = run_backtest(params or {})
-    if hasattr(resp, "model_dump"):
-        return resp.model_dump(mode="json")  # type: ignore[no-any-return]
-    return resp  # type: ignore[no-any-return]
+    p = params or {}
+    entry_z = float(p.get("entry_z", 2.0))
+    exit_z = float(p.get("exit_z", 0.5))
+    lookback_days = int(p.get("lookback_days", 365))
+    slippage_per_bbl = float(p.get("slippage_per_bbl", 0.05))
+    commission_per_trade = float(p.get("commission_per_trade", 1.0))
+
+    return run_backtest(
+        entry_z=entry_z,
+        exit_z=exit_z,
+        lookback_days=lookback_days,
+        slippage_per_bbl=slippage_per_bbl,
+        commission_per_trade=commission_per_trade,
+    )
 
 
 def _fixture_backtest(body: dict[str, Any]) -> dict[str, Any]:
