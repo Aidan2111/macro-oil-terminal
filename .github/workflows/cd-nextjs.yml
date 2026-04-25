@@ -111,7 +111,8 @@ jobs:
           cp -r providers build/
           for legacy_mod in quantitative_models.py language.py thesis_context.py \
                             crack_spread.py data_ingestion.py cointegration.py \
-                            alerts.py observability.py theme.py; do
+                            alerts.py observability.py theme.py \
+                            trade_thesis.py vol_models.py; do
             if [ -f "$legacy_mod" ]; then
               cp "$legacy_mod" build/
             fi
