@@ -27,23 +27,29 @@ from fastapi.responses import JSONResponse, StreamingResponse
 # App factory
 # ---------------------------------------------------------------------------
 
-app = FastAPI(
-    title="Macro Oil Terminal API",
-    version="0.2.0",
-    description=(
-        "Fixture-backed backend during React cutover. All endpoints return "
-        "deterministic, plausible JSON so the frontend renders immediately. "
-        "Real provider wiring returns post-cutover."
-    ),
-)
+def create_app() -> FastAPI:
+    """Return the FastAPI app. Kept as a factory so existing tests
+    that do ``from backend.main import create_app`` still import."""
+    a = FastAPI(
+        title="Macro Oil Terminal API",
+        version="0.2.0",
+        description=(
+            "Fixture-backed backend during React cutover. All endpoints return "
+            "deterministic, plausible JSON so the frontend renders immediately. "
+            "Real provider wiring returns post-cutover."
+        ),
+    )
+    a.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    return a
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+app = create_app()
 
 
 # ---------------------------------------------------------------------------
