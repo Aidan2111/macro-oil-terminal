@@ -1,10 +1,8 @@
 import { Section } from "@/components/common/Section";
 import { TrackRecord } from "@/components/track-record/TrackRecord";
 
-// Track Record is publicly visible — no auth. The component
-// fetches on the client so the bundle stays small and we don't
-// need to proxy the history endpoint during SSR.
-export const dynamic = "force-dynamic";
+// Track Record is publicly visible — no auth. Component is client-only
+// so static export bakes a single HTML shell that hydrates with data.
 
 export default function TrackRecordPage() {
   return (

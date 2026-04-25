@@ -1,10 +1,8 @@
 import { Section } from "@/components/common/Section";
 import { PositionsPanel } from "@/components/positions/PositionsPanel";
 
-// The panel has an always-live SSE subscription and a server-side
-// initial fetch — opt out of Next's full-route cache so each request
-// gets a fresh snapshot.
-export const dynamic = "force-dynamic";
+// Static-export friendly: PositionsPanel is a client component that
+// fetches at runtime via NEXT_PUBLIC_API_URL. No SSR needed.
 
 export default function PositionsPage() {
   return (
