@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { hasWebGPU } from "@/lib/has-webgpu";
 import type {
   BufferGeometry as TBufferGeometry,
   Material as TMaterial,
@@ -28,9 +29,7 @@ export function HeroShaderBackground({ stretchFactor, className }: Props) {
   }, [stretchFactor]);
 
   useEffect(() => {
-    if (typeof navigator === "undefined") return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (!(navigator as any).gpu) return;
+    if (!hasWebGPU()) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -80,12 +79,15 @@ export function HeroShaderBackground({ stretchFactor, className }: Props) {
 
         const t = timerLocal(0.2);
         const noise = mx_fractal_noise_float(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (positionWorld as any).xy.mul(t as any) as any,
         );
         mat.colorNode = mix(
           color("#22d3ee"),
           color("#f43f5e"),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           stretchU as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ).mul((noise.mul(float(0.5)).add(float(0.5))) as any);
 
         const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);

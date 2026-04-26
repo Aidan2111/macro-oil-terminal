@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { hasWebGPU as hasWebGPUSync } from "@/lib/has-webgpu";
 import type {
   Vector3 as TVector3,
   Line as TLine,
@@ -43,13 +44,9 @@ export function FleetGlobe({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState<"checking" | "ok" | "fallback">("checking");
 
-  // Only touch `navigator.gpu` on the client; SSR-safe.
-  const hasWebGPU = useMemo(() => {
-    if (typeof navigator === "undefined") return false;
-    // navigator.gpu is a WebGPU-only symbol
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return !!(navigator as any).gpu;
-  }, []);
+  // Only touch `navigator.gpu` on the client; SSR-safe via the
+  // shared helper.
+  const hasWebGPU = useMemo(() => hasWebGPUSync(), []);
 
   useEffect(() => {
     if (forceFallback) {
@@ -239,6 +236,7 @@ async function bootWebGPU({
   if (dayTex && nightTex) {
     const sampleDay = texNode(dayTex, uv());
     const sampleNight = texNode(nightTex, uv());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lambert = dot(normalLocal, (sunUnif as unknown) as any);
     const dayW = clamp(lambert, float(0), float(1));
     const nightW = clamp(lambert.negate(), float(0), float(1));
@@ -257,11 +255,14 @@ async function bootWebGPU({
   atmoMat.side = THREE.BackSide;
   atmoMat.transparent = true;
   atmoMat.blending = THREE.AdditiveBlending;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const viewDir = normalize((cameraPosition as any).sub(positionWorld as any));
   const rim = pow(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     float(1).sub(dot(normalLocal, viewDir as any) as any),
     float(3),
   ).mul(float(0.4));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   atmoMat.colorNode = color("#22d3ee").mul(rim as any);
   const atmo = new THREE.Mesh(atmoGeo, atmoMat);
   scene.add(atmo);

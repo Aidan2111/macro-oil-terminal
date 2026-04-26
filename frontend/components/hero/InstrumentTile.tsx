@@ -3,7 +3,8 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Instrument } from "@/types/api";
+import { normalizeStance } from "@/lib/api";
+import type { Instrument, Stance } from "@/types/api";
 
 type Props = {
   tier: 1 | 2 | 3;
@@ -12,10 +13,9 @@ type Props = {
   className?: string;
 };
 
-function accentClass(stance: string): string {
-  const s = stance.toUpperCase();
-  if (s === "LONG_SPREAD") return "bg-positive text-positive";
-  if (s === "SHORT_SPREAD") return "bg-negative text-negative";
+function accentClass(stance: Stance): string {
+  if (stance === "LONG_SPREAD") return "bg-positive text-positive";
+  if (stance === "SHORT_SPREAD") return "bg-negative text-negative";
   return "bg-warn text-warn";
 }
 
@@ -36,7 +36,7 @@ export function InstrumentTile({
   stance,
   className,
 }: Props) {
-  const accent = accentClass(stance);
+  const accent = accentClass(normalizeStance(stance));
   // Tolerate older / variant backend shapes — `suggested_size_pct`
   // may arrive as `suggested_pct_of_capital`, and either may be
   // missing entirely. Never let a `.toFixed` call on undefined take

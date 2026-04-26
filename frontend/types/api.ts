@@ -148,20 +148,15 @@ export type ThesisResponse = {
 // ---- Sub-F: hero / thesis — full execution-decorated shape ------------
 
 /**
- * Stance enum as emitted by the LLM (lower-case in the JSON schema) and
- * also the canonical UPPER-CASE form our TypeScript code uses. Keeping
- * both forms in the type so frontend components can accept whatever the
- * backend hands us without a lossy normalisation step.
+ * Canonical stance enum. The backend may emit lower-case in JSON; the
+ * frontend normalises at the parse boundary via `lib/api.ts ::
+ * normalizeStance()` so consumers can rely on the upper-case form.
  */
 export type Stance =
   | "LONG_SPREAD"
   | "SHORT_SPREAD"
   | "FLAT"
-  | "STAND_ASIDE"
-  | "long_spread"
-  | "short_spread"
-  | "flat"
-  | "stand_aside";
+  | "STAND_ASIDE";
 
 export type Instrument = {
   tier: 1 | 2 | 3;
