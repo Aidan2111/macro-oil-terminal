@@ -1,0 +1,988 @@
+[
+  {
+    "viewport": "desktop",
+    "route": "/",
+    "dw": 1440,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3277
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 440,
+        "right": 1655
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 122,
+        "right": 1550
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1642
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1642
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 350,
+        "right": 2030
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 15,
+        "right": 1707
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 30,
+        "right": 1750
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 50,
+        "right": 1812
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 101,
+        "right": 1925
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Today's dislocation",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "The Brent-WTI spread is slightly stretched but not enough to act; wait for stron",
+        "fontSize": "32px"
+      },
+      {
+        "tag": "H3",
+        "text": "PRE-TRADE CHECKLIST",
+        "fontSize": "14px"
+      },
+      {
+        "tag": "H2",
+        "text": "Market ticker",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nToday's dislocation\n\nLive trade idea, stance, and executable tiers.\n\nSTAND ASIDE\nNo scheduled catalyst\nThe Brent-WTI spread is slightly stretched but not enough to act; wait for stronger signals.\n\nThe Brent-WTI spread is moderately stretched at a Z-score of 1.32, suggesting limited immediate trading opportunities unless further deviation occurs.\n\nConfidence: Low (3/10)\nHorizon: 5 days\nPRE-TRADE CHECKLIST\nI have a stop at \u00b12\u03c3 spread move from entry.\nSpread realised vol is below the 1y 85th percentile.\nI understand the implied half-life is ~N days.\nNo EIA release within the next 24 hours.\nNo stance flip in the last 5 thesis entries.\nMarket ticker\n\nRolling quotes and session headlines land here in Wave 2.\n\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "desktop",
+    "route": "/macro/",
+    "dw": 1440,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3278
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 440,
+        "right": 1656
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 122,
+        "right": 1551
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1643
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1643
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 350,
+        "right": 2031
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 15,
+        "right": 1708
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 30,
+        "right": 1751
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 50,
+        "right": 1813
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 101,
+        "right": 1926
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Brent-WTI spread",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "Spread stretch",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "Thesis backtest",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBrent-WTI spread\n\n90-day rolling view of the arbitrage window.\n\n1/29\n2/3\n2/7\n2/11\n2/16\n2/21\n2/26\n3/3\n3/7\n3/12\n3/17\n3/22\n3/27\n4/1\n4/5\n4/9\n4/14\n4/19\n4/24\n$-6.00\n$0.00\n$6.00\n$12.00\n$18.00\nSpread stretch\n\nRolling 90-day Z-score \u2014 Stretched beyond plus or minus 2.3 sigma.\n\n01-27\n02-01\n02-07\n02-12\n02-17\n02-22\n02-28\n03-06\n03-11\n03-16\n03-21\n03-26\n04-01\n04-07\n04-13\n04-18\n04-24\n-4\n-1\n2\n6.960811104946671\nVery Stretched\nCalm\nThesis backtest\n\nMean-reversion trade on the live spread, 1y lookback.\n\nSharpe\n3.71\nSortino\n44.53\nCalmar\n19.46\nHit rate\n89.3%\nMax DD\n$-4,302\n02-19T00:00:00\n06-15T00:00:00\n05-31T00:00:00\n02-21T00:00:00\n09-04T00:00:00\n10-15T00:00:00\n04-16T00:00:00\n$-150,000\n$0\n$150,000\n$300,000\n$450,000\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast\n-4"
+  },
+  {
+    "viewport": "desktop",
+    "route": "/fleet/",
+    "dw": 1440,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3283
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 440,
+        "right": 1661
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 122,
+        "right": 1556
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1648
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1648
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 350,
+        "right": 2036
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 15,
+        "right": 1713
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 30,
+        "right": 1755
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 50,
+        "right": 1818
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 101,
+        "right": 1931
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Vessel",
+        "fontSize": "14px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nJones Act / Domestic\n5\nShadow\n5\nSanctioned\n5\nOther\n5\nVessel\nMMSI \u2014\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "desktop",
+    "route": "/positions/",
+    "dw": 1440,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3278
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 440,
+        "right": 1656
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 122,
+        "right": 1551
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1643
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1643
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 350,
+        "right": 2031
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 15,
+        "right": 1708
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 30,
+        "right": 1751
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 50,
+        "right": 1813
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 101,
+        "right": 1926
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Positions",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nPositions\n\nOpen trades, realised/unrealised PnL, account equity.\n\nLive paper-trading account. Closes fire a market order in the opposite direction.\nPaper account\nBUYING POWER\n$0.00\nEQUITY\n$0.00\nDAY P&L\n$0.00\nNo open paper positions.\nPlace a trade from any Trade Idea.\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "desktop",
+    "route": "/track-record/",
+    "dw": 1440,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3278
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 440,
+        "right": 1656
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 122,
+        "right": 1551
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1643
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1643
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 350,
+        "right": 2031
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 15,
+        "right": 1708
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 30,
+        "right": 1751
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 50,
+        "right": 1813
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 101,
+        "right": 1926
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Track Record",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nTrack Record\n\nBacktest outcomes, hit rate, Sharpe, drawdown.\n\nHIT RATE\n0.0%\n0 high-conf. calls\nAVG HOLD\n0.0d\nAVG RETURN\n0.00%\nSHARPE (SIGNAL)\n0.00\nEQUITY CURVE (CUMULATIVE)\nNo closed trades to plot yet.\nPER-TRADE RETURN DISTRIBUTION\nNo returns to bucket yet.\nSTANCE OUTCOME \u2014 % THAT HIT TARGET\nlong\nshort\nflat\n0%\n25%\n50%\n75%\n100%\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast\n0%"
+  },
+  {
+    "viewport": "tablet",
+    "route": "/",
+    "dw": 768,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3281
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 336,
+        "right": 788
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 775
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 775
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 383,
+        "right": 1195
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 38,
+        "right": 863
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 41,
+        "right": 915
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 43,
+        "right": 970
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 108,
+        "right": 1090
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1182
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Today's dislocation",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "The Brent-WTI spread is slightly stretched but not enough to act; wait for stron",
+        "fontSize": "32px"
+      },
+      {
+        "tag": "H3",
+        "text": "PRE-TRADE CHECKLIST",
+        "fontSize": "14px"
+      },
+      {
+        "tag": "H2",
+        "text": "Market ticker",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nToday's dislocation\n\nLive trade idea, stance, and executable tiers.\n\nSTAND ASIDE\nNo scheduled catalyst\nThe Brent-WTI spread is slightly stretched but not enough to act; wait for stronger signals.\n\nThe Brent-WTI spread is moderately stretched at a Z-score of 1.32, suggesting limited immediate trading opportunities unless further deviation occurs.\n\nConfidence: Low (3/10)\nHorizon: 5 days\nPRE-TRADE CHECKLIST\nI have a stop at \u00b12\u03c3 spread move from entry.\nSpread realised vol is below the 1y 85th percentile.\nI understand the implied half-life is ~N days.\nNo EIA release within the next 24 hours.\nNo stance flip in the last 5 thesis entries.\nMarket ticker\n\nRolling quotes and session headlines land here in Wave 2.\n\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "tablet",
+    "route": "/macro/",
+    "dw": 768,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3278
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 336,
+        "right": 786
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 773
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 773
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 383,
+        "right": 1193
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 38,
+        "right": 860
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 41,
+        "right": 913
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 43,
+        "right": 968
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 108,
+        "right": 1088
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1180
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Brent-WTI spread",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "Spread stretch",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "Thesis backtest",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBrent-WTI spread\n\n90-day rolling view of the arbitrage window.\n\n1/25\n2/5\n2/16\n2/27\n3/10\n3/21\n4/1\n4/12\n4/24\n$-6.00\n$0.00\n$6.00\n$12.00\n$18.00\nSpread stretch\n\nRolling 90-day Z-score \u2014 Stretched beyond plus or minus 2.3 sigma.\n\n02-05\n02-18\n03-03\n03-16\n03-29\n04-11\n04-24\n-4\n-1\n2\n6.960811104946671\nVery Stretched\nCalm\nThesis backtest\n\nMean-reversion trade on the live spread, 1y lookback.\n\nSharpe\n3.71\nSortino\n44.53\nCalmar\n19.46\nHit rate\n89.3%\nMax DD\n$-4,302\n10-09T00:00:00\n09-08T00:00:00\n05-08T00:00:00\n04-16T00:00:00\n$-150,000\n$0\n$150,000\n$300,000\n$450,000\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast\n-4"
+  },
+  {
+    "viewport": "tablet",
+    "route": "/fleet/",
+    "dw": 768,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3278
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 336,
+        "right": 785
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 772
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 772
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 383,
+        "right": 1193
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 38,
+        "right": 860
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 41,
+        "right": 912
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 43,
+        "right": 968
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 108,
+        "right": 1088
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1180
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Vessel",
+        "fontSize": "14px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nJones Act / Domestic\n5\nShadow\n5\nSanctioned\n5\nOther\n5\nVessel\nMMSI \u2014\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "tablet",
+    "route": "/positions/",
+    "dw": 768,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3278
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 336,
+        "right": 785
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 772
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 772
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 383,
+        "right": 1193
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 38,
+        "right": 860
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 41,
+        "right": 912
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 43,
+        "right": 968
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 108,
+        "right": 1088
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1180
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Positions",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nPositions\n\nOpen trades, realised/unrealised PnL, account equity.\n\nLive paper-trading account. Closes fire a market order in the opposite direction.\nPaper account\nBUYING POWER\n$0.00\nEQUITY\n$0.00\nDAY P&L\n$0.00\nNo open paper positions.\nPlace a trade from any Trade Idea.\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "tablet",
+    "route": "/track-record/",
+    "dw": 768,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "UL",
+        "cls": "flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paus",
+        "w": 3219,
+        "right": 3278
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 336,
+        "right": 786
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 773
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 773
+      },
+      {
+        "tag": "LI",
+        "cls": "flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg",
+        "w": 383,
+        "right": 1193
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono uppercase tracking-wide text-text-secondary",
+        "w": 38,
+        "right": 860
+      },
+      {
+        "tag": "SPAN",
+        "cls": "text-text-primary",
+        "w": 41,
+        "right": 913
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono text-text-primary",
+        "w": 43,
+        "right": 968
+      },
+      {
+        "tag": "SPAN",
+        "cls": "font-mono whitespace-nowrap text-emerald-500",
+        "w": 108,
+        "right": 1088
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 80,
+        "right": 1180
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Track Record",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Macro Oil Terminal\nHome\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nTrack Record\n\nBacktest outcomes, hit rate, Sharpe, drawdown.\n\nHIT RATE\n0.0%\n0 high-conf. calls\nAVG HOLD\n0.0d\nAVG RETURN\n0.00%\nSHARPE (SIGNAL)\n0.00\nEQUITY CURVE (CUMULATIVE)\nNo closed trades to plot yet.\nPER-TRADE RETURN DISTRIBUTION\nNo returns to bucket yet.\nSTANCE OUTCOME \u2014 % THAT HIT TARGET\nlong\nshort\nflat\n0%\n25%\n50%\n75%\n100%\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast\n0%"
+  },
+  {
+    "viewport": "iphone13",
+    "route": "/",
+    "dw": 390,
+    "horizScroll": false,
+    "overflowing": [],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Today's dislocation",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "The Brent-WTI spread is slightly stretched but not enough to act; wait for stron",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H3",
+        "text": "PRE-TRADE CHECKLIST",
+        "fontSize": "14px"
+      },
+      {
+        "tag": "H2",
+        "text": "Market ticker",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Home\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nToday's dislocation\n\nLive trade idea, stance, and executable tiers.\n\nSTAND ASIDE\nNo scheduled catalyst\nThe Brent-WTI spread is slightly stretched but not enough to act; wait for stronger signals.\n\nThe Brent-WTI spread is moderately stretched at a Z-score of 1.32, suggesting limited immediate trading opportunities unless further deviation occurs.\n\nConfidence: Low (3/10)\nHorizon: 5 days\nPRE-TRADE CHECKLIST\nI have a stop at \u00b12\u03c3 spread move from entry.\nSpread realised vol is below the 1y 85th percentile.\nI understand the implied half-life is ~N days.\nNo EIA release within the next 24 hours.\nNo stance flip in the last 5 thesis entries.\nMarket ticker\n\nRolling quotes and session headlines land here in Wave 2.\n\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "iphone13",
+    "route": "/macro/",
+    "dw": 390,
+    "horizScroll": false,
+    "overflowing": [],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Brent-WTI spread",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "Spread stretch",
+        "fontSize": "24px"
+      },
+      {
+        "tag": "H2",
+        "text": "Thesis backtest",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Home\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nBrent-WTI spread\n\n90-day rolling view of the arbitrage window.\n\n2/2\n2/18\n3/6\n3/22\n4/7\n4/24\n$-6.00\n$0.00\n$6.00\n$12.00\n$18.00\nSpread stretch\n\nRolling 90-day Z-score \u2014 Stretched beyond plus or minus 2.3 sigma.\n\n02-07\n02-26\n03-17\n04-05\n04-24\n-4\n-1\n2\n6.960811104946671\nVery Stretched\nCalm\nThesis backtest\n\nMean-reversion trade on the live spread, 1y lookback.\n\nSharpe\n3.71\nSortino\n44.53\nCalmar\n19.46\nHit rate\n89.3%\nMax DD\n$-4,302\n07-19T00:00:00\n08-23T00:00:00\n04-16T00:00:00\n$-150,000\n$0\n$150,000\n$300,000\n$450,000\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast\n-4"
+  },
+  {
+    "viewport": "iphone13",
+    "route": "/fleet/",
+    "dw": 390,
+    "horizScroll": false,
+    "overflowing": [
+      {
+        "tag": "ASIDE",
+        "cls": "fixed right-0 top-0 z-40 h-full w-full max-w-sm transform overflow-y-auto border",
+        "w": 384,
+        "right": 774
+      },
+      {
+        "tag": "HEADER",
+        "cls": "flex items-start justify-between border-b border-border p-4",
+        "w": 383,
+        "right": 774
+      },
+      {
+        "tag": "DIV",
+        "cls": "min-w-0",
+        "w": 45,
+        "right": 452
+      },
+      {
+        "tag": "DIV",
+        "cls": "flex items-center gap-2",
+        "w": 45,
+        "right": 452
+      },
+      {
+        "tag": "H2",
+        "cls": "truncate text-sm font-semibold text-text-primary",
+        "w": 45,
+        "right": 452
+      },
+      {
+        "tag": "DIV",
+        "cls": "mt-0.5 font-mono text-xs text-text-secondary",
+        "w": 45,
+        "right": 452
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "grid place-items-center min-w-[44px] min-h-[44px] rounded-md text-text-secondary",
+        "w": 44,
+        "right": 758
+      },
+      {
+        "tag": "svg",
+        "cls": "[object SVGAnimatedString]",
+        "w": 20,
+        "right": 746
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 10,
+        "right": 741
+      },
+      {
+        "tag": "path",
+        "cls": "[object SVGAnimatedString]",
+        "w": 10,
+        "right": 741
+      }
+    ],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Vessel",
+        "fontSize": "14px"
+      }
+    ],
+    "bodyText": "Home\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nJones Act / Domestic\n5\nShadow\n5\nSanctioned\n5\nOther\n5\nVessel\nMMSI \u2014\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "iphone13",
+    "route": "/positions/",
+    "dw": 390,
+    "horizScroll": false,
+    "overflowing": [],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Positions",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Home\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nPositions\n\nOpen trades, realised/unrealised PnL, account equity.\n\nLive paper-trading account. Closes fire a market order in the opposite direction.\nPaper account\nBUYING POWER\n$0.00\nEQUITY\n$0.00\nDAY P&L\n$0.00\nNo open paper positions.\nPlace a trade from any Trade Idea.\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast"
+  },
+  {
+    "viewport": "iphone13",
+    "route": "/track-record/",
+    "dw": 390,
+    "horizScroll": false,
+    "overflowing": [],
+    "tinyTaps": [],
+    "headings": [
+      {
+        "tag": "H2",
+        "text": "Track Record",
+        "fontSize": "24px"
+      }
+    ],
+    "bodyText": "Home\nMacro\nFleet\nPositions\nTrack Record\nBZ\nBrent\n$105.33\n+0.26 (+0.25%)\nCL\nWTI\n$94.40\n-1.45 (-1.51%)\nBZ-CL\nSpread\n$10.93\n+1.71 (+18.55%)\nUSCRUDE\nInventory\n466 Mbbl\n+1925.00 (+0.42%)\nTrack Record\n\nBacktest outcomes, hit rate, Sharpe, drawdown.\n\nHIT RATE\n0.0%\n0 high-conf. calls\nAVG HOLD\n0.0d\nAVG RETURN\n0.00%\nSHARPE (SIGNAL)\n0.00\nEQUITY CURVE (CUMULATIVE)\nNo closed trades to plot yet.\nPER-TRADE RETURN DISTRIBUTION\nNo returns to bucket yet.\nSTANCE OUTCOME \u2014 % THAT HIT TARGET\nlong\nshort\nflat\n0%\n25%\n50%\n75%\n100%\nResearch only. Not investment advice. Markets carry risk.\nvcfe6aa1 \u00b7 2026-04-26T02:09:48Z \u00b7 canadaeast\n0%"
+  }
+]
