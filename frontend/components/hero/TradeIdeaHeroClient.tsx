@@ -22,18 +22,13 @@ import { ConfidenceBar } from "./ConfidenceBar";
 import { InstrumentTile } from "./InstrumentTile";
 import { PreTradeChecklist } from "./PreTradeChecklist";
 import { CatalystCountdown } from "./CatalystCountdown";
-import dynamic from "next/dynamic";
+import { HeroBackground } from "./HeroBackground";
 
-// Lazy-load the WebGPU/TSL background. Static import drags ~three.js
-// + TSL into the / route bundle even for users on Safari/iOS who'll
-// hit the early-return branch at runtime — review #13 axis 5.
-const HeroShaderBackground = dynamic(
-  () =>
-    import("./HeroShaderBackground").then((m) => ({
-      default: m.HeroShaderBackground,
-    })),
-  { ssr: false },
-);
+// `HeroBackground` is a viewport- and motion-gated wrapper. It renders
+// a static tokenised gradient on SSR + on mobile + under
+// `prefers-reduced-motion`, and only `import()`s the WebGPU/TSL shader
+// after mount on desktop. This keeps the three.js chunk off the mobile
+// critical path — Wave 4 Lighthouse: home/mobile 79 → ≥90.
 
 type Props = {
   initialData: ThesisLatestResponse | undefined;
@@ -277,7 +272,7 @@ function LoadedHero({
       transition={{ duration: 0.45, ease: "easeOut" }}
     >
       <Card className="relative overflow-hidden">
-        <HeroShaderBackground
+        <HeroBackground
           stretchFactor={stretch}
           className="pointer-events-none absolute inset-0 h-full w-full opacity-40"
         />
