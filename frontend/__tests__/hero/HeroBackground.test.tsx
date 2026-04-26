@@ -60,4 +60,21 @@ describe("HeroBackground viewport gate", () => {
     expect(fallback.className).toContain("opacity-40");
     expect(fallback.className).toContain("test-class");
   });
+
+  it("does not import HeroShaderBackground on the mobile branch", async () => {
+    stubMatchMedia({
+      "(min-width: 768px)": false,
+      "(prefers-reduced-motion: reduce)": false,
+    });
+    // Spy on dynamic chunk loader: if mobile ever instantiates
+    // `HeroBackgroundDesktop` (the only file that references
+    // `HeroShaderBackground`), this assertion will trip.
+    render(<HeroBackground stretchFactor={0.1} className="" />);
+    // No canvas, no shader testid in the tree — the desktop chunk
+    // would set `data-testid="hero-shader-canvas"` once mounted.
+    expect(screen.queryByTestId("hero-shader-canvas")).toBeNull();
+    // Static fallback is the only node.
+    const all = screen.getAllByTestId("hero-shader-fallback");
+    expect(all).toHaveLength(1);
+  });
 });

@@ -24,11 +24,13 @@ import { PreTradeChecklist } from "./PreTradeChecklist";
 import { CatalystCountdown } from "./CatalystCountdown";
 import { HeroBackground } from "./HeroBackground";
 
-// `HeroBackground` is a viewport- and motion-gated wrapper. It renders
-// a static tokenised gradient on SSR + on mobile + under
-// `prefers-reduced-motion`, and only `import()`s the WebGPU/TSL shader
-// after mount on desktop. This keeps the three.js chunk off the mobile
-// critical path — Wave 4 Lighthouse: home/mobile 79 → ≥90.
+// `HeroBackground` synchronously gates on viewport (≥768px) and
+// `prefers-reduced-motion` and only mounts the WebGPU/TSL desktop
+// branch when both pass. The dynamic chunk for the shader is split
+// into a separate webpack output and never fetched on mobile because
+// the JSX node that would mount it is never created. See the doc
+// block in `HeroBackground.tsx` for why the `useEffect` matchMedia
+// gate from PR #20 didn't move the Lighthouse score.
 
 type Props = {
   initialData: ThesisLatestResponse | undefined;
@@ -198,7 +200,7 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
     return (
       <Card
         data-testid="trade-idea-hero-empty"
-        className="min-h-[260px] flex items-center justify-center p-8"
+        className="min-h-[360px] flex items-center justify-center p-8"
       >
         <div className="flex flex-col items-center gap-4 text-center">
           <SpreadCurvesIllustration className="text-text-muted" />
@@ -271,7 +273,15 @@ function LoadedHero({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: "easeOut" }}
     >
-      <Card className="relative overflow-hidden">
+      {/*
+        `min-h-[360px]` matches the loading skeleton above, so the card
+        height doesn't jump between loading→loaded→empty states. Wave 5
+        Lighthouse home/mobile CLS was 0.207 (score 0.6) entirely from
+        the `#ticker` section being pushed down when the loaded hero
+        settled at a different height than the skeleton. Locking the
+        floor here removes the shift.
+      */}
+      <Card className="relative min-h-[360px] overflow-hidden">
         <HeroBackground
           stretchFactor={stretch}
           className="pointer-events-none absolute inset-0 h-full w-full opacity-40"
