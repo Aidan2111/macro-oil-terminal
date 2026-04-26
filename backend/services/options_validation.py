@@ -23,9 +23,23 @@ from . import _compat  # noqa: F401
 
 # Match patterns like:
 #   "38% IV"  "implied vol of 0.42"  "~22 vol"  "skew of 4 vols"
-_IV_PATTERN = re.compile(
+#   "IV around 38%"  "IV is 25%"  "IV ~ 30%"
+# Two flavours: number-then-keyword ("38% IV") and keyword-then-number
+# ("IV is 25%"). We try the number-first form preferentially because
+# when both shapes occur in the same sentence the cited number is
+# usually the leading numeric token (e.g. "~38% IV — five vol points
+# rich to realised").
+_IV_PATTERN_NUM_FIRST = re.compile(
+    r"(?<![\w.])"
+    r"(\d{1,3}(?:\.\d+)?)\s*%?\s*"
+    r"(?:vol(?:atility)?\s*points?|vols?|IV|implied\s*vol(?:atility)?)"
+    r"(?!\w)",
+    re.IGNORECASE,
+)
+_IV_PATTERN_KW_FIRST = re.compile(
     r"(?:implied\s*vol(?:atility)?|IV|vol(?!ume))\s*"
-    r"(?:of|=|:|~|approximately)?\s*"
+    r"(?:of|=|:|~|approximately|around|about|near|is|at|sits\s*at)?\s*"
+    r"~?\s*"
     r"(\d{1,3}(?:\.\d+)?)\s*%?",
     re.IGNORECASE,
 )
@@ -72,15 +86,23 @@ class OptionsValidation:
 
 def _extract_cited_iv(text: str) -> Optional[float]:
     """Pull the first numeric IV citation out of free-form thesis
-    text. Returns a decimal (0.38) or ``None``."""
+    text. Returns a decimal (0.38) or ``None``.
+
+    Tries number-first ("38% IV", "22 vols") before keyword-first
+    ("IV around 38%") so that a sentence which contains both a
+    citation and a comparison phrase ("five vol points rich to
+    realised") locks onto the citation rather than the comparison.
+    """
     if not text:
         return None
-    m = _IV_PATTERN.search(text)
-    if not m:
-        return None
-    raw = float(m.group(1))
-    # If the value is a percentage (>1.5), convert to decimal.
-    return raw / 100.0 if raw > 1.5 else raw
+    for pat in (_IV_PATTERN_NUM_FIRST, _IV_PATTERN_KW_FIRST):
+        m = pat.search(text)
+        if not m:
+            continue
+        raw = float(m.group(1))
+        # If the value is a percentage (>1.5), convert to decimal.
+        return raw / 100.0 if raw > 1.5 else raw
+    return None
 
 
 def _fetch_chain_median_iv(ticker: str) -> Optional[float]:
@@ -178,6 +200,19 @@ def validate_options_citation(
             stale=True,
         )
 
+    # A zero (or negative) chain median IV is a stale-data signal —
+    # yfinance occasionally returns an empty chain that aggregates to
+    # zero. Surface that as stale regardless of whether a citation
+    # was found, so the downstream badge renders correctly.
+    if chain_iv <= 0:
+        return OptionsValidation(
+            valid=False,
+            message="Options chain returned zero IV — likely stale",
+            cited_iv=cited,
+            chain_median_iv=chain_iv,
+            stale=True,
+        )
+
     if cited is None:
         # No numeric citation but the section exists — pass-through
         # since we have nothing to check against.
@@ -187,15 +222,6 @@ def validate_options_citation(
             cited_iv=None,
             chain_median_iv=chain_iv,
             stale=False,
-        )
-
-    if chain_iv == 0:
-        return OptionsValidation(
-            valid=False,
-            message="Chain median IV is zero — likely a yfinance glitch",
-            cited_iv=cited,
-            chain_median_iv=chain_iv,
-            stale=True,
         )
 
     delta_pct = abs(cited - chain_iv) / chain_iv * 100.0
