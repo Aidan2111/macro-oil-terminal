@@ -282,17 +282,59 @@ async function bootWebGPU({
   scene.add(atmo);
 
   // --- Instanced vessels
+  //
+  // WebGPU caveat (three.js r169 InstanceNode):
+  // ------------------------------------------
+  // Three.js's TSL `InstanceNode.setup()` chooses how to bind the
+  // per-instance matrix at the FIRST material compile. When
+  // `instanceMesh.count <= 1000` it routes the data through a uniform
+  // buffer (UBO). Crucially it sizes that UBO against the underlying
+  // `instanceMatrix.array.byteLength` — i.e. the FULL allocated buffer,
+  // not `count * 64`. With `MAX_INSTANCES_DESKTOP = 2000` the array is
+  // 2000 * 16 floats * 4 bytes = 128,000 bytes, which exceeds the
+  // 65,536-byte WebGPU uniform-buffer-binding limit and the device
+  // refuses to render (cascading: invalid bind group -> invalid command
+  // buffer -> hundreds of warnings -> device gives up).
+  //
+  // Fix: keep `instanced.count = tier.maxInstances` from construction
+  // onward so the very first compile sees `count > 1000` on desktop and
+  // falls back to the per-instance vertex-attribute path (storage-style,
+  // unbounded by the 64KB UBO cap). Mobile's 600-instance buffer is
+  // 38,400 bytes which fits in the UBO budget either way, so the same
+  // code path is safe there too. Slots above the live vessel count are
+  // initialised to a zero-scale matrix so they draw nothing; we track
+  // the live count separately in `activeCount` for raycasting and the
+  // animation loop.
   const dotGeo = new THREE.IcosahedronGeometry(0.005, 0);
   const dotMat = new MeshBasicNodeMaterial();
   dotMat.vertexColors = true;
   const instanced = new THREE.InstancedMesh(dotGeo, dotMat, tier.maxInstances);
-  instanced.count = 0;
+  instanced.count = tier.maxInstances;
   instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const colorAttr = new THREE.InstancedBufferAttribute(
     new Float32Array(tier.maxInstances * 3),
     3,
   );
+  colorAttr.setUsage(THREE.DynamicDrawUsage);
   instanced.instanceColor = colorAttr;
+
+  // Pre-fill every slot with a zero-scale matrix at the origin so that
+  // unused instances are GPU no-ops (the vertex assembler collapses
+  // them) and never appear as a stray dot at world origin before the
+  // first `writeInstances` call.
+  {
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = 0; i < tier.maxInstances; i++) {
+      instanced.setMatrixAt(i, hidden);
+    }
+    instanced.instanceMatrix.needsUpdate = true;
+  }
+
+  // Active count = how many leading slots actually have a real vessel.
+  // Decoupled from `instanced.count` (which stays pinned at maxInstances
+  // for the WebGPU UBO workaround above).
+  let activeCount = 0;
+
   scene.add(instanced);
 
   // --- Trails container (plain group, re-populated on updateTrails)
@@ -342,9 +384,15 @@ async function bootWebGPU({
     raycaster.params.Mesh = { threshold: 0.01 };
     const hits = raycaster.intersectObject(instanced, false);
     if (hits.length) {
-      const id = hits[0].instanceId;
-      if (typeof id === "number" && vesselsByIndex[id]) {
-        onVesselClick(vesselsByIndex[id]);
+      // First hit may be a hidden (zero-scale) slot — skip those.
+      // Realistically zero-scale geometry won't intersect a ray, but
+      // belt-and-braces in case the matrix is mid-update.
+      for (const hit of hits) {
+        const id = hit.instanceId;
+        if (typeof id === "number" && id < activeCount && vesselsByIndex[id]) {
+          onVesselClick(vesselsByIndex[id]);
+          break;
+        }
       }
     }
   });
@@ -382,7 +430,19 @@ async function bootWebGPU({
       const alpha = visible.has(v.flag_category) ? 1 : 0;
       colorAttr.setXYZ(i, colorTmp.r * alpha, colorTmp.g * alpha, colorTmp.b * alpha);
     }
-    instanced.count = n;
+    // Hide unused slots: zero-scale matrix collapses them on the GPU,
+    // and zero color removes them from the colour buffer too. Don't
+    // touch `instanced.count` — it stays pinned at maxInstances so the
+    // TSL InstanceNode keeps using the storage-style attribute path it
+    // chose on first compile (see WebGPU caveat above).
+    const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = n; i < tier.maxInstances; i++) {
+      vesselsByIndex[i] = undefined as unknown as Vessel;
+      instanced.setMatrixAt(i, hiddenMatrix);
+      colorAttr.setXYZ(i, 0, 0, 0);
+    }
+    activeCount = n;
+    instanced.instanceMatrix.needsUpdate = true;
     colorAttr.needsUpdate = true;
     lerpStart = performance.now();
     lerpDuration = 600;
@@ -457,10 +517,13 @@ async function bootWebGPU({
     }
     controls.update();
 
-    // Smooth lerp on position updates
-    if (targetPositions.length) {
+    // Smooth lerp on position updates. Iterate only over `activeCount`
+    // (the live vessel count); slots beyond that retain the zero-scale
+    // hidden matrix written by `writeInstances`.
+    if (activeCount > 0) {
       const t = Math.min(1, (performance.now() - lerpStart) / lerpDuration);
-      for (let i = 0; i < targetPositions.length; i++) {
+      const limit = Math.min(activeCount, targetPositions.length);
+      for (let i = 0; i < limit; i++) {
         const curr = currentPositions[i];
         const tgt = targetPositions[i];
         curr.x = THREE.MathUtils.lerp(curr.x, tgt.x, t);
