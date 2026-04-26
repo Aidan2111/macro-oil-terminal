@@ -70,7 +70,7 @@ export function HeroShaderBackground({ stretchFactor, className }: Props) {
         );
         renderer.setClearColor(new THREE.Color(0x000000), 0);
 
-        const stretchU = uniform(float(stretchRef.current));
+        const stretchU = uniform(stretchRef.current);
 
         const mat = new MeshBasicNodeMaterial();
         mat.transparent = true;
@@ -78,17 +78,12 @@ export function HeroShaderBackground({ stretchFactor, className }: Props) {
         mat.blending = THREE.AdditiveBlending;
 
         const t = timerLocal(0.2);
-        const noise = mx_fractal_noise_float(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (positionWorld as any).xy.mul(t as any) as any,
-        );
+        const noise = mx_fractal_noise_float(positionWorld.xy.mul(t));
         mat.colorNode = mix(
           color("#22d3ee"),
           color("#f43f5e"),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          stretchU as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ).mul((noise.mul(float(0.5)).add(float(0.5))) as any);
+          stretchU,
+        ).mul(noise.mul(float(0.5)).add(float(0.5)));
 
         const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
         scene.add(quad);
@@ -105,9 +100,7 @@ export function HeroShaderBackground({ stretchFactor, className }: Props) {
         let raf = 0;
         const tick = () => {
           raf = requestAnimationFrame(tick);
-          // stretchU is a uniform(float(x)) whose runtime .value is a number.
-          // TS sees it as a Node; cast through unknown for the live update.
-          (stretchU as unknown as { value: number }).value = stretchRef.current;
+          stretchU.value = stretchRef.current;
           renderer.renderAsync(scene, camera).catch(() => {});
         };
         raf = requestAnimationFrame(tick);
