@@ -187,26 +187,18 @@ async function bootWebGPU({
 
   const {
     color,
-    mix,
     dot,
     normalize,
     positionWorld,
     normalLocal,
-    timerLocal,
-    mx_fractal_noise_float,
     uniform,
     texture: texNode,
     uv,
     float,
-    smoothstep,
     clamp,
     pow,
     cameraPosition,
-    vec3,
-  } = TSL as typeof import("three/tsl") & {
-    // Some TSL helpers aren't in the exported .d.ts yet
-    [k: string]: unknown;
-  };
+  } = TSL;
 
   // --- Scene
   const scene = new THREE.Scene();
@@ -238,8 +230,7 @@ async function bootWebGPU({
   if (dayTex && nightTex) {
     const sampleDay = texNode(dayTex, uv());
     const sampleNight = texNode(nightTex, uv());
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lambert = dot(normalLocal, (sunUnif as unknown) as any);
+    const lambert = dot(normalLocal, sunUnif);
     const dayW = clamp(lambert, float(0), float(1));
     const nightW = clamp(lambert.negate(), float(0), float(1));
     earthMat.colorNode = sampleDay.mul(dayW).add(sampleNight.mul(nightW));
@@ -257,22 +248,19 @@ async function bootWebGPU({
   atmoMat.side = THREE.BackSide;
   atmoMat.transparent = true;
   atmoMat.blending = THREE.AdditiveBlending;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const viewDir = normalize((cameraPosition as any).sub(positionWorld as any));
+  const viewDir = normalize(cameraPosition.sub(positionWorld));
   const rim = pow(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    float(1).sub(dot(normalLocal, viewDir as any) as any),
+    float(1).sub(dot(normalLocal, viewDir)),
     float(3),
   ).mul(float(0.4));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  atmoMat.colorNode = color("#22d3ee").mul(rim as any);
+  atmoMat.colorNode = color("#22d3ee").mul(rim);
   const atmo = new THREE.Mesh(atmoGeo, atmoMat);
   scene.add(atmo);
 
   // --- Instanced vessels
   const dotGeo = new THREE.IcosahedronGeometry(0.005, 0);
   const dotMat = new MeshBasicNodeMaterial();
-  (dotMat as unknown as { vertexColors: boolean }).vertexColors = true;
+  dotMat.vertexColors = true;
   const instanced = new THREE.InstancedMesh(dotGeo, dotMat, MAX_INSTANCES);
   instanced.count = 0;
   instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -463,9 +451,7 @@ async function bootWebGPU({
     }
 
     // Refresh sun direction every second — slow enough to not dominate CPU
-    (sunUnif as unknown as { value: TVector3 }).value.fromArray(
-      solarUnitVector(new Date()),
-    );
+    sunUnif.value.fromArray(solarUnitVector(new Date()));
 
     renderer.renderAsync(scene, camera).catch(() => {});
   };
