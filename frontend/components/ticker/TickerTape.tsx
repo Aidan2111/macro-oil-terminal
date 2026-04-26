@@ -142,7 +142,11 @@ function TickerTile({ tile }: { tile: TileData }) {
 
   return (
     <li
-      className="flex shrink-0 items-center gap-3 rounded-btn border border-border bg-bg-3/40 px-3 py-1 text-xs"
+      // Tighter padding + gaps + a max-width cap so a single tile never
+      // overruns a 390px iPhone viewport (was rendering at 383px which
+      // bled past the body padding). On md+ the marquee animation is
+      // immune because the parent is overflow-hidden.
+      className="flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg-3/40 px-2 md:px-3 py-1 text-xs max-w-full"
       aria-label={`${tile.name} ${tile.current.toFixed(2)}`}
     >
       <span className="font-mono uppercase tracking-wide text-text-secondary">
@@ -152,7 +156,7 @@ function TickerTile({ tile }: { tile: TileData }) {
       <span className="font-mono text-text-primary">
         {formatValue(tile.current, tile.unit)}
       </span>
-      <span className={cn("font-mono", color)}>
+      <span className={cn("font-mono whitespace-nowrap", color)}>
         {sign}
         {delta.toFixed(2)} ({sign}
         {deltaPct.toFixed(2)}%)

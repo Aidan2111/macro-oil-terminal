@@ -59,7 +59,9 @@ export function Nav() {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-btn px-3 py-2 text-sm",
+                // min-h-[44px] hits the WCAG AA / Apple HIG touch-target
+                // floor; previously the rail link rendered at 36px tall.
+                "flex items-center gap-3 rounded-btn px-3 py-2 text-sm min-h-[44px]",
                 active
                   ? "bg-bg-3 text-primary"
                   : "text-text-secondary hover:bg-bg-3 hover:text-text-primary",

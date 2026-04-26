@@ -32,7 +32,9 @@ export function GlobeControls({ visibleCategories, onToggle, counts }: Props) {
             onClick={() => onToggle(cat)}
             aria-pressed={on}
             className={[
-              "flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition",
+              // min-h-[44px] meets the WCAG AA / Apple HIG touch-target
+              // floor; chips were 24px tall and flagged in the audit.
+              "flex items-center gap-2 rounded-full px-3 py-2 min-h-[44px] text-xs font-medium transition",
               on
                 ? "bg-bg-3 text-text-primary"
                 : "bg-transparent text-text-muted line-through opacity-60 hover:opacity-80",

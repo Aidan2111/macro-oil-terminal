@@ -28,11 +28,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="min-h-screen bg-bg-1 text-text-primary font-sans">
+      {/*
+        overflow-x-hidden on body is the defensive cap — every page-level
+        horizontal-scroll bug we surfaced traced back to a flex child
+        whose intrinsic width (the ticker tape's w-max ul) was forcing
+        the main panel to grow past the viewport. min-w-0 + overflow-hidden
+        on the main panel below lets the flex item shrink below its
+        content's natural size; this body-level cap is a belt to the
+        suspenders so we never paint horizontal scroll at any viewport.
+      */}
+      <body className="min-h-screen bg-bg-1 text-text-primary font-sans overflow-x-hidden">
         <Providers>
           <div className="flex flex-col md:flex-row min-h-screen">
             <Nav />
-            <div className="flex-1 flex flex-col md:ml-60">
+            <div className="flex-1 min-w-0 overflow-hidden flex flex-col md:ml-60">
               <TickerTape />
               <main className="flex-1 pb-20 md:pb-0">{children}</main>
               <Footer />
