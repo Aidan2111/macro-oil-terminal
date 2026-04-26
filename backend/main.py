@@ -760,6 +760,28 @@ def thesis_latest_fixture() -> dict[str, Any]:
     }
 
 
+@app.get("/api/calibration")
+def calibration_endpoint(limit: int = 200) -> Any:
+    """Confidence-calibration stats for the public /track-record page.
+
+    Reads the same audit log the frontend hits at /api/thesis/history,
+    bands the rows by stated conviction, and returns per-bucket hit
+    rates + a Brier score + a "calibrated/overconfident/underconfident"
+    verdict. The frontend renders a 4-bar reliability diagram.
+    """
+    if limit < 1 or limit > 500:
+        return JSONResponse(status_code=422, content={"detail": "limit out of range"})
+    try:
+        from backend.services.thesis_service import get_thesis_history
+        from backend.services.calibration import compute_calibration
+
+        rows = get_thesis_history(limit)
+        stats = compute_calibration(rows)
+        return stats.to_dict()
+    except Exception as exc:
+        return _provider_error("calibration", exc)
+
+
 @app.get("/api/thesis/history")
 def thesis_history(limit: int = 30) -> Any:
     if limit < 1 or limit > 200:

@@ -25,6 +25,7 @@ import {
   computeTrackStats,
 } from "./stats";
 import type { ThesisHistoryResponse, ThesisRow } from "./types";
+import { CalibrationChart } from "./CalibrationChart";
 
 type FetchState =
   | { status: "loading" }
@@ -270,6 +271,8 @@ function TrackRecordReady({ rows }: { rows: ThesisRow[] }) {
           </ResponsiveContainer>
         </ChartCard>
       </div>
+
+      <CalibrationChart />
     </div>
   );
 }
