@@ -172,7 +172,7 @@ def fetch_ais_data(n_vessels: int = 500) -> AISResult:
                 frame=df,
                 source="aisstream.io (live)",
                 is_live=True,
-                fetched_at=pd.Timestamp.utcnow(),
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
                 snapshot_notice=None,
             )
         except Exception as exc:
@@ -185,7 +185,7 @@ def fetch_ais_data(n_vessels: int = 500) -> AISResult:
                 frame=_historical_ais_snapshot(n_vessels),
                 source="Historical snapshot (Q3 2024) — aisstream.io unreachable",
                 is_live=False,
-                fetched_at=pd.Timestamp.utcnow(),
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
                 snapshot_notice=notice,
             )
 
@@ -193,7 +193,7 @@ def fetch_ais_data(n_vessels: int = 500) -> AISResult:
         frame=_historical_ais_snapshot(n_vessels),
         source="Historical snapshot (Q3 2024 crude-tanker fleet composition)",
         is_live=False,
-        fetched_at=pd.Timestamp.utcnow(),
+        fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
         snapshot_notice=(
             "🚢 AIS LIVE FEED — not yet connected. "
             "[Get a free aisstream.io key](https://aisstream.io/apikeys) (2 minutes, no credit card), "

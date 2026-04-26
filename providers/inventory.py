@@ -55,7 +55,7 @@ def fetch_inventory() -> InventoryResult:
                 frame=df,
                 source=name,
                 source_url=url,
-                fetched_at=pd.Timestamp.utcnow(),
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
             )
         except Exception as exc:
             errors.append(f"{name}: {exc!r}")

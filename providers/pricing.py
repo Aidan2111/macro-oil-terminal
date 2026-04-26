@@ -41,7 +41,7 @@ def fetch_pricing_daily(years: int = 5) -> PricingResult:
         return PricingResult(
             frame=df, source="yfinance", kind="daily",
             source_url="https://finance.yahoo.com/quote/BZ=F",
-            fetched_at=pd.Timestamp.utcnow(),
+            fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
         )
     except Exception as exc:
         errors.append(f"yfinance: {exc!r}")
@@ -53,7 +53,7 @@ def fetch_pricing_daily(years: int = 5) -> PricingResult:
             return PricingResult(
                 frame=df, source="Twelve Data", kind="daily",
                 source_url="https://twelvedata.com/",
-                fetched_at=pd.Timestamp.utcnow(),
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
             )
         except Exception as exc:
             errors.append(f"twelvedata: {exc!r}")
@@ -65,7 +65,7 @@ def fetch_pricing_daily(years: int = 5) -> PricingResult:
             return PricingResult(
                 frame=df, source="Polygon.io", kind="daily",
                 source_url="https://polygon.io/",
-                fetched_at=pd.Timestamp.utcnow(),
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
             )
         except Exception as exc:
             errors.append(f"polygon: {exc!r}")
@@ -85,7 +85,7 @@ def fetch_pricing_intraday(interval: str = "1m", period: str = "2d") -> PricingR
             source="yfinance",
             kind="intraday",
             source_url="https://finance.yahoo.com/quote/BZ=F",
-            fetched_at=pd.Timestamp.utcnow(),
+            fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
         )
     except Exception as exc:
         errors.append(f"yfinance: {exc!r}")

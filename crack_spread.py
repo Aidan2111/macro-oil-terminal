@@ -15,7 +15,7 @@ scale by 42 (gallons per barrel) before computing the crack.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import numpy as np
@@ -44,7 +44,7 @@ def _load(tickers, years=1):
     except Exception as exc:  # pragma: no cover
         raise RuntimeError(f"yfinance unavailable: {exc!r}")
 
-    end = datetime.utcnow()
+    end = datetime.now(timezone.utc).replace(tzinfo=None)
     start = end - timedelta(days=int(years * 365))
     raw = yf.download(
         tickers=tickers,
