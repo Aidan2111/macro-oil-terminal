@@ -31,12 +31,6 @@ _client: Any = None
 _client_lock = threading.Lock()
 
 
-def reset_client_cache() -> None:
-    """Drop the cached TradingClient. Test hook."""
-    global _client
-    _client = None
-
-
 def get_client() -> Any:
     """Return a cached TradingClient bound to paper trading.
 

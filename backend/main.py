@@ -226,9 +226,7 @@ def _fixture_spread() -> dict[str, Any]:
 def _real_spread(history_bars: int = 90) -> dict[str, Any]:
     """Hit yfinance via the legacy provider stack and return a
     SpreadLiveResponse-shaped payload."""
-    # Lazy imports — keep cold-start fast.
-    import pandas as pd  # noqa: F401  (pulled in via the chain anyway)
-
+    # Lazy import — keep cold-start fast.
     from backend.services.spread_service import get_spread_response
 
     resp = get_spread_response(history_bars=history_bars)
@@ -236,8 +234,6 @@ def _real_spread(history_bars: int = 90) -> dict[str, Any]:
     # frontend tickers and macro charts already consume.
     base = resp.model_dump(mode="json")
     history = base.get("history", []) or []
-    # latest mirror — model already exposes top-level brent/wti/spread.
-    latest = history[-1] if history else {}
     return {
         **base,
         "brent_price": base.get("brent"),
@@ -278,8 +274,6 @@ async def _sse_spread_heartbeat():
     emit one immediate frame, then a 20-s ping so the channel stays
     open without churning the network. Backend has no live tick yet,
     so this is best-effort."""
-    import asyncio
-
     yield ": connected\n\n"
     while True:
         await asyncio.sleep(20)
@@ -754,8 +748,6 @@ async def _sse_stream_thesis_real(mode: str, portfolio_usd: int):
 async def _sse_stream_thesis_fixture():
     """Fallback SSE that streams the fixture thesis progressively. Used by
     /api/thesis/generate/fixture."""
-    import asyncio
-
     yield f"event: progress\ndata: {json.dumps({'stage': 'fetching_context', 'pct': 10})}\n\n"
     await asyncio.sleep(0.3)
     yield f"event: progress\ndata: {json.dumps({'stage': 'calling_llm', 'pct': 40})}\n\n"
@@ -919,32 +911,6 @@ async def backtest_fixture(req: Request) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-# Frontend PaperPosition shape: symbol / qty / avg_entry / current_px /
-# unrealized_pnl / unrealized_pnl_pct (+ optional thesis_id). Older
-# scaffold rows used `avg_entry_price` / `current_price` / `unrealized_pl`
-# — they never reached the wire so we adopt the frontend names directly.
-_FIXTURE_POSITIONS_DATA = [
-    {
-        "symbol": "BNO",
-        "qty": 100,
-        "avg_entry": 32.10,
-        "current_px": 32.84,
-        "unrealized_pnl": 74.00,
-        "unrealized_pnl_pct": 2.30,
-        "thesis_id": "fixture-2026-04-24",
-    },
-    {
-        "symbol": "USO",
-        "qty": -120,
-        "avg_entry": 74.20,
-        "current_px": 73.10,
-        "unrealized_pnl": 132.00,
-        "unrealized_pnl_pct": 1.50,
-        "thesis_id": "fixture-2026-04-24",
-    },
-]
-
-
 def _alpaca_positions() -> dict[str, Any]:
     from backend.services import alpaca_service
 
@@ -1099,8 +1065,6 @@ async def _sse_positions_heartbeat():
     error and the auto-reconnect loop the browser otherwise enters
     when the response is mistakenly served as HTML.
     """
-    import asyncio
-
     # Send a comment-only frame immediately so the browser sees a
     # valid SSE stream during the very first paint.
     yield ": connected\n\n"

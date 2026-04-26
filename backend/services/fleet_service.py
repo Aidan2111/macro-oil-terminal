@@ -11,8 +11,8 @@ to aisstream.io. For every `PositionReport` it:
 
 SSE endpoints call `subscribe()` to get a fresh queue, then
 `unsubscribe()` on disconnect. Tests can push events directly via
-`publish_delta()` / `ingest_for_test()` and skip the real websocket via
-the `_ensure_producer_running` hook.
+`publish_delta()` and skip the real websocket via the
+`_ensure_producer_running` hook.
 
 The root `providers/_aisstream.py` module is NOT modified — we reuse its
 flag-state helper only.
@@ -135,11 +135,6 @@ async def publish_delta(vessel: dict[str, Any]) -> None:
             dead.append(q)
     for q in dead:
         _subscribers.discard(q)
-
-
-def ingest_for_test(vessel: dict[str, Any]) -> None:
-    """Synchronous seed helper used by unit tests."""
-    _ingest(vessel)
 
 
 # --- Internal ---------------------------------------------------------------
