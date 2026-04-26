@@ -1,21 +1,14 @@
-import dynamic from "next/dynamic";
 import { Section } from "@/components/common/Section";
 import { ChartShimmer } from "@/components/illustrations/ChartShimmer";
 import { TradeIdeaHero } from "@/components/hero/TradeIdeaHero";
+import { DataQualityTileLazy } from "@/components/data-quality/DataQualityTileLazy";
 
 /**
- * `DataQualityTile` is a client component that polls /api/data-quality
- * every 60 s. We dynamic-import with `ssr: false` so the tile JS isn't
- * on the LCP critical path — Lighthouse keeps the hero card as the
- * LCP candidate and the tile fades in client-side once below-the-fold.
+ * Q1 data-quality slice: `DataQualityTileLazy` is a Client Component
+ * shell that owns the `next/dynamic({ ssr: false })` import — Next.js
+ * 15 disallows ssr: false from a Server Component, so the wrapper
+ * lives in its own "use client" file.
  */
-const DataQualityTile = dynamic(
-  () =>
-    import("@/components/data-quality/DataQualityTile").then(
-      (m) => m.DataQualityTile,
-    ),
-  { ssr: false },
-);
 
 /**
  * Home page shell. Wave 2 Sub-F ships the real `TradeIdeaHero`; the
@@ -39,7 +32,7 @@ export default function HomePage() {
         subtitle="Per-provider sanity at a glance &mdash; hover for last-good and observation count."
       >
         {/* Q1-DATA-QUALITY-TILE */}
-        <DataQualityTile />
+        <DataQualityTileLazy />
       </Section>
       <Section
         id="ticker"
