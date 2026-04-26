@@ -3,13 +3,13 @@ name: keep-warm
 # Pings every public service every 10 min in waking hours so the
 # FastAPI App Service container stays hot. The Static Web App is
 # CDN-fronted and doesn't need warming — pinged here as a 200-check.
-# Streamlit canadaeast is the 48h rollback target and is allowed to
-# be cold (non-fatal warning if it doesn't respond).
 #
 # History: this workflow used to ping the decommissioned westus2
 # Streamlit URL (oil-tracker-app-4281) which started failing once
 # the React cutover landed. Updated 2026-04-25 to hit the canonical
-# canadaeast backend + SWA root.
+# canadaeast backend + SWA root. The Streamlit canadaeast ping was
+# removed on 2026-04-26 alongside the wider Streamlit teardown — the
+# 48h-stable rollback window closed at 2026-04-27 04:00 UTC.
 
 on:
   schedule:
@@ -54,14 +54,4 @@ jobs:
             echo "  SWA build-info reachable"
           else
             echo "SWA build-info unreachable (non-fatal)" >&2
-          fi
-
-      - name: Ping Streamlit canadaeast rollback (non-fatal)
-        run: |
-          set -eu
-          URL="https://oil-tracker-app-canadaeast-4474.azurewebsites.net/_stcore/health"
-          if curl -fsS --max-time 20 "$URL"; then
-            echo "  Streamlit canadaeast warm (48h rollback healthy)"
-          else
-            echo "Streamlit canadaeast cold (non-fatal — rollback only)" >&2
           fi

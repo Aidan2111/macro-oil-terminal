@@ -2,8 +2,8 @@
 
 ## Development workflow
 
-Any change bigger than a typo fix goes through: **brainstorm → design →
-worktree → plan → TDD → review → finish**. See [`docs/workflow.md`](docs/workflow.md)
+Any change bigger than a typo fix goes through: **brainstorm -> design ->
+worktree -> plan -> TDD -> review -> finish**. See [`docs/workflow.md`](docs/workflow.md)
 for the full picture, and `docs/brainstorms/`, `docs/designs/`, `docs/plans/`
 for in-flight work.
 
@@ -13,7 +13,7 @@ TL;DR:
 2. Distil a spec in `docs/designs/<feature>.md` (reviewable in 5 minutes).
 3. Break into tasks in `docs/plans/<feature>.md` (2–5 min each, tests-first).
 4. `git worktree add ../macro_oil_terminal-<feature> <feature>` — work happens there.
-5. Red → Green → Refactor → Commit, per task.
+5. Red -> Green -> Refactor -> Commit, per task.
 6. Review after each task. Critical issues block progress.
 7. `finishing-a-development-branch`: verify tests, merge to main, clean up worktree.
 
@@ -31,31 +31,45 @@ log message tweaks.
 git clone git@github.com:Aidan2111/macro-oil-terminal.git
 cd macro-oil-terminal
 python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -r backend/requirements.txt
 
-# (optional) enable opt-in pre-commit hooks: gitleaks, ruff, trailing-ws, …
+# (optional) enable opt-in pre-commit hooks: gitleaks, ruff, trailing-ws, ...
 pip install pre-commit && pre-commit install
 
-cp .env.example .env   # fill in AZURE_OPENAI_* if you want the Trade Thesis tab to call the real model
-python test_runner.py  # must be 24/24 green before you push
-streamlit run app.py
+cp .env.example .env   # fill in AZURE_OPENAI_* (or USE_FOUNDRY=true + Foundry vars)
+
+# Run the unit suite (fast, offline)
+python -m pytest tests/unit backend/
+
+# Boot the FastAPI backend on :8000
+uvicorn backend.main:app --reload --port 8000
+
+# In another shell, boot the Next.js dev server on :3000
+cd frontend && npm ci --legacy-peer-deps
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run dev
 ```
 
 ## Test gate
 
-`test_runner.py` is the authoritative check. CI runs it on every push to `main`
-and on every pull request. Add a new check under the appropriate `test_*`
-section whenever you touch a module.
+`pytest` under `tests/unit/` and `backend/tests/` is the authoritative check.
+CI runs both on every push to `main` and on every pull request.
+
+The frontend gate is `npm run lint && npm run typecheck && npm test` from the
+`frontend/` directory; CI runs the same trio in `ci-nextjs.yml`.
 
 ## CD expectations
 
-Every push to `main` triggers `.github/workflows/cd.yml`:
+Every push to `main` that touches `backend/**` or `frontend/**` triggers
+`.github/workflows/cd-nextjs.yml`:
 
-1. `pip install -r requirements.txt`
-2. `python test_runner.py` (blocks the deploy if any check fails)
-3. `azure/login@v2` via OIDC federated credential — no client secret.
-4. Zip → `azure/webapps-deploy@v3` → `oil-tracker-app-4281`.
-5. Post-deploy `/_stcore/health` retry loop (10 attempts, 10s gaps).
+1. `pip install -r requirements.txt -r backend/requirements.txt`
+2. Smoke-import `backend.main` (full pytest gate returns once services re-wire)
+3. `azure/login@v3` via OIDC federated credential — no client secret.
+4. Zip `backend/` + shared root modules -> `azure/webapps-deploy@v3` ->
+   `oil-tracker-api-canadaeast-0f18`.
+5. `next build` (with `NEXT_PUBLIC_API_URL` baked in) -> `Azure/static-web-apps-deploy@v1`
+   -> `delightful-pebble-00d8eb30f.7.azurestaticapps.net`.
+6. Post-deploy `/api/build-info` SHA-match retry loop (15 attempts, 15s gaps).
 
 If your change alters the data contract (e.g. adds a required env var),
 update both `.env.example` and `DEPLOY.md` in the same commit.
@@ -77,15 +91,15 @@ update both `.env.example` and `DEPLOY.md` in the same commit.
 ## Code layout
 
 ```
-app.py                  # Streamlit entrypoint (tabs, sidebar, WebGPU hooks)
+frontend/               # Next.js 15 App Router UI (hero band, charts, fleet globe)
+backend/                # FastAPI service (router stubs + Pydantic schemas)
 data_ingestion.py       # Public API over providers/
 providers/              # Real-data adapters: EIA, FRED, yfinance, aisstream
 quantitative_models.py  # Spread z-score, depletion, categorisation, backtest
-webgpu_components.py    # Three.js TSL hero + day/night Earth globe
-trade_thesis.py         # Azure OpenAI JSON-schema thesis generator
+trade_thesis.py         # Azure OpenAI / Foundry JSON-schema thesis generator
 thesis_context.py       # Rich real-data payload builder
 alerts.py               # SMTP email alert stub
-test_runner.py          # 24-check validation suite
+scripts/                # Operational scripts (Streamlit decom, etc.)
 ```
 
 ## Questions
