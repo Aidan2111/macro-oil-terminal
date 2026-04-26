@@ -2,6 +2,78 @@
 
 Timestamps are UTC (sandbox time).
 
+## 2026-04-26 — Streamlit retired (code-side teardown)
+
+The React/FastAPI stack hit 48h of clean uptime; Aidan greenlit the
+Streamlit teardown ahead of the 2026-04-27 04:00 UTC decommission
+window. This commit is the code-side half — the Azure web app + plan
+delete is deferred to `scripts/streamlit-decommission.sh` which Aidan
+runs manually once the window opens.
+
+**Removed from the repo:**
+- `app.py` — the Streamlit entry point (data_ingestion / quantitative_models
+  / providers / theme stay; they're shared with the FastAPI backend via the
+  `backend.services._compat` shim).
+- `Dockerfile` + `.dockerignore` — Streamlit-only container image.
+- `.streamlit/` (config + secrets example) — Streamlit runtime config.
+- `tests/e2e/` — every test in there booted a headless Streamlit via the
+  `streamlit_server` fixture. The replacement React e2e suite will live
+  under `frontend/__tests__/` (Playwright wiring in a follow-up PR).
+- `tests/unit/test_input_hardening.py` — pulled the `_clamp` helper out of
+  `app.py` via regex; obsolete with `app.py` gone.
+- `test_runner.py` — the legacy Streamlit "27-check" validation runner.
+  Pytest under `tests/unit/` and `backend/tests/` is now the only test gate.
+- `.github/workflows/cd.yml` — the Streamlit Azure CD pipeline.
+- `.github/workflows/e2e.yml` — Playwright pipeline that targeted the
+  Streamlit fixture.
+
+**Updated:**
+- `requirements.txt` — dropped `streamlit` and `plotly` (only `app.py`
+  imported either). `pandas`, `numpy`, `yfinance`, etc. stay because the
+  shared modules still need them.
+- `.github/workflows/keep-warm.yml` — removed the Streamlit canadaeast
+  `/_stcore/health` ping. Keep-warm now only hits FastAPI + the SWA.
+- `.github/workflows/ci.yml` — dropped the `streamlit-smoke` and
+  `legacy-runner` jobs. The Next.js + FastAPI pipelines (`ci-nextjs.yml`,
+  `cd-nextjs.yml`) carry the test/deploy gates.
+- `tests/unit/test_workflows.py` — required-file list updated to reflect
+  the new pipeline shape.
+- `README.md` — Quick-start, deploy, and structure sections rewritten
+  around the React + FastAPI stack. Streamlit retirement noted at the
+  top.
+- `CONTRIBUTING.md` — removed `streamlit run app.py` from the dev loop.
+- `docs/architecture.md` — Streamlit boxes pulled from the data-flow and
+  deployment Mermaid diagrams; replaced with FastAPI + Next.js SWA boxes.
+
+**Added:**
+- `scripts/streamlit-decommission.sh` — guarded one-shot Azure teardown.
+  Pre-flight curls the React SWA and FastAPI `/health`; aborts if either
+  is down. Refuses to run without the explicit
+  `--i-have-confirmed-window-passed` flag. Deletes the web app first,
+  then the App Service plan only if `numberOfSites == 0`.
+
+**Deferred:**
+- Azure web app delete (`oil-tracker-app-canadaeast-4474`) and App
+  Service plan delete (`oil-tracker-canadaeast-plan`) — both run by
+  the script above, after 2026-04-27 04:00 UTC.
+
+**Flagged as ambiguous, left untouched (call out in PR):**
+- `static/logo.svg` + `static/favicon.ico` — referenced by `theme.py` and
+  `tests/unit/test_theme_meta.py`, both Streamlit-flavoured. Removing the
+  assets would break those tests; removing `theme.py` is out of scope
+  ("don't remove backend code that's used by the React stack — only the
+  Streamlit entry surface"). React SWA has its own `frontend/app/favicon.ico`.
+- `theme.py`, `auth/`, `webgpu_components.py` — only imported by the
+  retired `app.py` today, but the React stack may want to crib bits.
+  Leaving in place for now.
+- `.github/workflows/release.yml` — still targets the decommissioned
+  `oil-tracker-app-4281` (westus2) Streamlit web app and runs
+  `test_runner.py`. It's already broken (target gone); re-pointing it
+  at a tag-driven SWA release is a separate cleanup PR.
+- `language.py`, `test_runner.py` references in `docs/reviews/*` — those
+  are historical review artefacts; not editing the time-series.
+
+
 ## 2026-04-24 — Stage-3 Wave 1 green on `feat/nextjs-fastapi-stack`
 
 ### 03:25Z — CI + CD green on Wave 1 integration

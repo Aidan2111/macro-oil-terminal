@@ -9,32 +9,15 @@ finding the branch just closed.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import theme
 
 
-APP_PY = Path(__file__).resolve().parents[2] / "app.py"
-
-
-# ---------------------------------------------------------------------------
-# Fix 1 — Remove "HERO · " layout-tag prefix from the user-visible chip.
-# ---------------------------------------------------------------------------
-def test_app_py_does_not_ship_hero_dot_prefix_as_user_copy():
-    """The chip must not render the literal string ``HERO &middot;``.
-
-    ``HERO`` is a layout tag the persona flagged as critical: it is a
-    developer comment that shipped as user-visible copy. The hero band's
-    wrapper ``data-testid="hero-band"`` survives; only the copy changes.
-    """
-    src = APP_PY.read_text()
-    # Scope: only the rendered markup (``st.markdown(`` blocks), not
-    # comments or docstrings. The raw string ``HERO &middot;`` — the
-    # HTML-escaped form the fix removed — must not appear at all.
-    assert "HERO &middot;" not in src, (
-        "app.py still renders the 'HERO · ' layout tag as user copy; "
-        "persona 11 finding #1 remains open."
-    )
+# Note: the original ``test_app_py_does_not_ship_hero_dot_prefix_as_user_copy``
+# regression check was retired with ``app.py`` on 2026-04-26 (Streamlit
+# teardown). The remaining tests in this file still guard the legacy
+# ``theme.py`` CSS contracts; the React stack has its own UI tests under
+# ``frontend/__tests__/``.
 
 
 # ---------------------------------------------------------------------------

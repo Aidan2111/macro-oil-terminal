@@ -1,7 +1,13 @@
-streamlit>=1.42.0
+# Root requirements — used by the legacy modules at the repo root
+# (data_ingestion, providers/, quantitative_models, language, theme,
+# trade_thesis, ...). The FastAPI backend imports these via the
+# backend.services._compat shim, so they need to stay installed in CI
+# even after the Streamlit entry point retires.
+#
+# Streamlit + plotly were dropped on 2026-04-26 when app.py was retired.
+
 pandas>=2.0.0
 numpy>=1.24.0
-plotly>=6.7.0
 scikit-learn>=1.3.0
 yfinance>=0.2.30
 requests>=2.33.1
