@@ -6,6 +6,7 @@ import { ChartShimmer } from "@/components/illustrations/ChartShimmer";
 import { SpreadChart } from "@/components/charts/SpreadChart";
 import { StretchChart } from "@/components/charts/StretchChart";
 import { BacktestChart } from "@/components/charts/BacktestChart";
+import { ChartErrorBoundary } from "@/components/common/ChartErrorBoundary";
 import { fetchJson } from "@/lib/api";
 import type { BacktestLiveResponse, SpreadLiveResponse } from "@/types/api";
 
@@ -41,10 +42,12 @@ export default function MacroPage() {
         {spread.isLoading ? (
           <ChartShimmer height={300} bars={20} />
         ) : (
-          <SpreadChart
-            data={spread.data?.history ?? []}
-            error={spread.isError ? "Spread feed unavailable." : null}
-          />
+          <ChartErrorBoundary label="Brent–WTI spread chart">
+            <SpreadChart
+              data={spread.data?.history ?? []}
+              error={spread.isError ? "Spread feed unavailable." : null}
+            />
+          </ChartErrorBoundary>
         )}
       </Section>
 
@@ -56,10 +59,12 @@ export default function MacroPage() {
         {spread.isLoading ? (
           <ChartShimmer height={300} bars={20} />
         ) : (
-          <StretchChart
-            data={spread.data?.history ?? []}
-            error={spread.isError ? "Stretch unavailable." : null}
-          />
+          <ChartErrorBoundary label="Spread stretch chart">
+            <StretchChart
+              data={spread.data?.history ?? []}
+              error={spread.isError ? "Stretch unavailable." : null}
+            />
+          </ChartErrorBoundary>
         )}
       </Section>
 
@@ -71,10 +76,12 @@ export default function MacroPage() {
         {backtest.isLoading ? (
           <ChartShimmer height={320} bars={24} />
         ) : (
-          <BacktestChart
-            data={backtest.data ?? null}
-            error={backtest.isError ? "Backtest failed." : null}
-          />
+          <ChartErrorBoundary label="Backtest equity curve">
+            <BacktestChart
+              data={backtest.data ?? null}
+              error={backtest.isError ? "Backtest failed." : null}
+            />
+          </ChartErrorBoundary>
         )}
       </Section>
     </div>

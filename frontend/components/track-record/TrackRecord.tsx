@@ -18,6 +18,7 @@ import { ChartShimmer } from "@/components/illustrations/ChartShimmer";
 import { EquityCurveFlat } from "@/components/illustrations/EquityCurveFlat";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { ChartErrorBoundary } from "@/components/common/ChartErrorBoundary";
 import {
   computeEquityCurve,
   computeReturnHistogram,
@@ -169,6 +170,16 @@ function TrackRecordReady({ rows }: { rows: ThesisRow[] }) {
         {curve.length === 0 ? (
           <InlineEmpty message="No closed trades to plot yet." />
         ) : (
+          <ChartErrorBoundary label="Equity curve">
+          {(() => {
+            const last = curve[curve.length - 1]?.cum_return ?? 0;
+            const baselineIdx = Math.max(0, curve.length - 31);
+            const baseline = curve[baselineIdx]?.cum_return ?? last;
+            const dPct = (last - baseline) * 100;
+            const sign = dPct >= 0 ? "+" : "";
+            const lbl = `Equity curve, latest cumulative ${(last * 100).toFixed(2)}%, ${sign}${dPct.toFixed(2)}% last 30 trades`;
+            return (
+          <div role="img" aria-label={lbl}>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart
               data={curve.map((p) => ({
@@ -196,6 +207,10 @@ function TrackRecordReady({ rows }: { rows: ThesisRow[] }) {
               />
             </LineChart>
           </ResponsiveContainer>
+          </div>
+            );
+          })()}
+          </ChartErrorBoundary>
         )}
       </ChartCard>
 

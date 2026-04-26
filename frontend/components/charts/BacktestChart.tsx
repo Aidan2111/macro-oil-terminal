@@ -57,10 +57,24 @@ export function BacktestChart({ data, error, height = 320 }: Props) {
     .filter((p) => p.cum_pnl_usd != null && p.Date != null)
     .map((p) => ({ date: p.Date as string, pnl: p.cum_pnl_usd as number }));
 
+  // Richer aria-label — surface the latest cumulative PnL + Sharpe so
+  // AT users get the ground truth, not just "backtest equity curve".
+  // Review #13 axis 7.
+  const latest = series[series.length - 1]?.pnl ?? 0;
+  const sharpe = data?.sharpe;
+  const ariaLabel =
+    series.length > 0
+      ? `Backtest equity curve, latest cumulative PnL $${Math.round(latest).toLocaleString()}${
+          sharpe != null && !Number.isNaN(sharpe)
+            ? `, Sharpe ${sharpe.toFixed(2)}`
+            : ""
+        }`
+      : "Backtest equity curve";
+
   return (
     <div
       data-testid="backtest-chart"
-      aria-label="Backtest equity curve"
+      aria-label={ariaLabel}
       role="img"
       className="w-full"
     >

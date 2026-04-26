@@ -118,14 +118,21 @@ export function PositionsView({ initialPositions, initialAccount }: Props) {
     lastError: null,
   });
 
-  // SSE live updates — open on mount, close on unmount. Guarded so
-  // SSR passes never try to construct an EventSource.
+  // SSE live updates with capped exponential backoff (1/2/4/8/16s,
+  // max 30s, 5 retries). Guarded so SSR passes never try to construct
+  // an EventSource. Review #13 axis 2 — pre-fix a single network blip
+  // silently downgraded paper-trading updates to no updates at all.
+  const reconnectTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   React.useEffect(() => {
     if (typeof window === "undefined" || typeof EventSource === "undefined") {
       return;
     }
-    const url = `${API_BASE}/api/positions/stream`;
-    const es = new EventSource(url);
+    let closed = false;
+    let es: EventSource | null = null;
+    let attempt = 0;
+    const MAX_ATTEMPTS = 5;
     const onTradeUpdate = (evt: MessageEvent) => {
       try {
         const parsed = JSON.parse(evt.data) as TradeUpdatePayload;
@@ -134,10 +141,39 @@ export function PositionsView({ initialPositions, initialAccount }: Props) {
         // Ignore malformed payloads — never bubble to the user.
       }
     };
-    es.addEventListener("trade_update", onTradeUpdate as EventListener);
+
+    const open = () => {
+      if (closed) return;
+      const url = `${API_BASE}/api/positions/stream`;
+      es = new EventSource(url);
+      es.onopen = () => {
+        attempt = 0;
+      };
+      es.addEventListener("trade_update", onTradeUpdate as EventListener);
+      es.onerror = () => {
+        es?.removeEventListener(
+          "trade_update",
+          onTradeUpdate as EventListener,
+        );
+        es?.close();
+        es = null;
+        if (closed || attempt >= MAX_ATTEMPTS) return;
+        const delay = Math.min(30_000, 1_000 * Math.pow(2, attempt));
+        attempt += 1;
+        reconnectTimerRef.current = setTimeout(open, delay);
+      };
+    };
+
+    open();
+
     return () => {
-      es.removeEventListener("trade_update", onTradeUpdate as EventListener);
-      es.close();
+      closed = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      es?.removeEventListener("trade_update", onTradeUpdate as EventListener);
+      es?.close();
     };
   }, []);
 

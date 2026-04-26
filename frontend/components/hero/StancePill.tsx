@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { normalizeStance } from "@/lib/api";
 import type { Stance } from "@/types/api";
 
 type Props = {
@@ -10,17 +11,15 @@ type Props = {
 };
 
 /**
- * Translate any stance casing to the plain-English copy we ship in
- * `language.TERMS` / `describe_stance`. Keeping this local to the pill
- * (not a shared helper yet) so the next component that needs it pulls
- * it into `lib/language.ts` with tests at that point.
+ * Translate canonical stance to the plain-English copy we ship in
+ * `language.TERMS` / `describe_stance`. Stance is already canonicalised
+ * to upper-case at the call boundary via `normalizeStance()`.
  */
-function stanceCopy(stance: string): string {
-  const s = stance.toUpperCase();
-  if (s === "LONG_SPREAD") return "Lean long";
-  if (s === "SHORT_SPREAD") return "Lean short";
-  // FLAT / STAND_ASIDE / anything else → "No edge" (trader vocabulary;
-  // persona 12 flagged "stand aside" as poker-tutorial phrasing).
+function stanceCopy(stance: Stance): string {
+  if (stance === "LONG_SPREAD") return "Lean long";
+  if (stance === "SHORT_SPREAD") return "Lean short";
+  // FLAT / STAND_ASIDE → "No edge" (trader vocabulary; persona 12
+  // flagged "stand aside" as poker-tutorial phrasing).
   return "No edge";
 }
 
@@ -29,13 +28,12 @@ function stanceCopy(stance: string): string {
  * in `HeroShaderBackground` (cyan for lean long, rose for lean short,
  * amber for flat).
  */
-function stanceTokens(stance: string): {
+function stanceTokens(stance: Stance): {
   container: string;
   glow: string;
   accent: string;
 } {
-  const s = stance.toUpperCase();
-  if (s === "LONG_SPREAD") {
+  if (stance === "LONG_SPREAD") {
     return {
       container: "bg-positive/15 text-positive border border-positive/40",
       // CSS custom property `--stance` lets the shadow mix against the
@@ -44,7 +42,7 @@ function stanceTokens(stance: string): {
       accent: "positive",
     };
   }
-  if (s === "SHORT_SPREAD") {
+  if (stance === "SHORT_SPREAD") {
     return {
       container: "bg-negative/15 text-negative border border-negative/40",
       glow: "shadow-[0_0_20px_color-mix(in_srgb,var(--negative)_22%,transparent)]",
@@ -66,15 +64,16 @@ function stanceTokens(stance: string): {
  * `stance` prop changes so the eye catches the new state.
  */
 export function StancePill({ stance, className }: Props) {
-  const copy = stanceCopy(stance);
-  const tokens = stanceTokens(stance);
+  const canonical = normalizeStance(stance);
+  const copy = stanceCopy(canonical);
+  const tokens = stanceTokens(canonical);
   const reduced = useReducedMotion();
 
   return (
     <motion.span
       key={stance}
       data-testid="stance-pill"
-      data-stance={stance}
+      data-stance={canonical}
       data-accent={tokens.accent}
       animate={
         reduced

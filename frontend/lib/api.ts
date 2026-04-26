@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import type { ApiErrorPayload } from "@/types/api";
+import type { ApiErrorPayload, Stance } from "@/types/api";
 
 /**
  * Base URL resolver.
@@ -148,6 +148,30 @@ function parseBlock(block: string): SseEvent | null {
   }
   if (dataLines.length === 0) return null;
   return { event, data: dataLines.join("\n") };
+}
+
+
+/**
+ * Canonicalise any stance value the backend may emit (lower-case, mixed
+ * case, or unknown garbage) to an UPPER_CASE `Stance`. Every consumer
+ * (StancePill, ConfidenceBar, accentClass) historically did its own
+ * `.toUpperCase()` — review #13 axis 1 flagged the drift risk.
+ *
+ * Returns "STAND_ASIDE" for anything we don't recognise so the UI never
+ * silently mis-coloured a tile on a backend rename.
+ */
+export function normalizeStance(raw: unknown): Stance {
+  if (typeof raw !== "string") return "STAND_ASIDE";
+  const upper = raw.toUpperCase();
+  if (
+    upper === "LONG_SPREAD" ||
+    upper === "SHORT_SPREAD" ||
+    upper === "FLAT" ||
+    upper === "STAND_ASIDE"
+  ) {
+    return upper;
+  }
+  return "STAND_ASIDE";
 }
 
 export function createQueryClient(): QueryClient {

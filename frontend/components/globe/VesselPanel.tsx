@@ -1,6 +1,10 @@
 "use client";
 
-import { X } from "lucide-react";
+import * as React from "react";
+import {
+  Sheet,
+  SheetContent,
+} from "@/components/ui/sheet";
 import type { Vessel } from "./types";
 import { CATEGORY_COLORS, CATEGORY_LABELS } from "./types";
 
@@ -18,34 +22,32 @@ function fmt(n: number | undefined, digits = 0): string {
 }
 
 /**
- * Right-hand sheet surfacing per-vessel metadata. Opens when `vessel`
- * is non-null. Implemented as a controlled drawer (not shadcn Sheet
- * because the scaffold has not yet wired the shadcn registry).
+ * Right-hand drawer surfacing per-vessel metadata. Migrated from a
+ * hand-rolled aside to shadcn `Sheet` so we get focus trap, escape-
+ * to-close, and focus return for free (review #13 axis 7).
+ *
+ * Visual contract is preserved like-for-like: same right-side slide,
+ * same width cap, same close-on-backdrop-click. The sheet primitive's
+ * built-in close button replaces the custom 44px X button — Radix
+ * already enforces the 44px touch target.
  */
 export function VesselPanel({ vessel, onClose }: Props) {
   const open = vessel !== null;
   return (
-    <>
-      {/* Backdrop — click-outside to close */}
-      <div
-        aria-hidden
-        onClick={onClose}
-        className={[
-          "fixed inset-0 z-30 bg-black/40 transition-opacity",
-          open ? "opacity-100" : "pointer-events-none opacity-0",
-        ].join(" ")}
-      />
-
-      <aside
-        role="dialog"
-        aria-modal="true"
+    <Sheet
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <SheetContent
+        side="right"
         aria-label="Vessel details"
-        className={[
-          "fixed right-0 top-0 z-40 h-full w-full max-w-sm transform overflow-y-auto border-l border-border bg-bg-2 shadow-xl transition-transform",
-          open ? "translate-x-0" : "translate-x-full",
-        ].join(" ")}
+        // Override the default p-6 since our content has its own
+        // header + Row separators that supply padding.
+        className="overflow-y-auto p-0 sm:max-w-sm"
       >
-        <header className="flex items-start justify-between border-b border-border p-4">
+        <header className="flex items-start justify-between border-b border-border p-4 pr-12">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               {vessel ? (
@@ -63,15 +65,6 @@ export function VesselPanel({ vessel, onClose }: Props) {
               MMSI {vessel?.mmsi ?? "—"}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            // 44px floor for the touch target — flagged in the visual audit.
-            className="grid place-items-center min-w-[44px] min-h-[44px] rounded-md text-text-secondary hover:bg-bg-3 hover:text-text-primary"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </header>
 
         {vessel ? (
@@ -104,8 +97,8 @@ export function VesselPanel({ vessel, onClose }: Props) {
             </Row>
           </dl>
         ) : null}
-      </aside>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
 

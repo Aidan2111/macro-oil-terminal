@@ -2,6 +2,8 @@
 
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { normalizeStance } from "@/lib/api";
+import type { Stance } from "@/types/api";
 
 type Props = {
   /** 1..10; we clamp out-of-band values silently. */
@@ -23,12 +25,11 @@ function confidenceBand(n: number): string {
   return "Very High";
 }
 
-function stanceTint(stance: string): { fill: string; track: string } {
-  const s = stance.toUpperCase();
-  if (s === "LONG_SPREAD") {
+function stanceTint(stance: Stance): { fill: string; track: string } {
+  if (stance === "LONG_SPREAD") {
     return { fill: "bg-positive", track: "bg-positive/15" };
   }
-  if (s === "SHORT_SPREAD") {
+  if (stance === "SHORT_SPREAD") {
     return { fill: "bg-negative", track: "bg-negative/15" };
   }
   return { fill: "bg-warn", track: "bg-warn/15" };
@@ -42,7 +43,7 @@ export function ConfidenceBar({ value, stance, className }: Props) {
   const clamped = Math.max(0, Math.min(10, Math.round(value)));
   const band = confidenceBand(clamped);
   const pct = clamped * 10;
-  const { fill, track } = stanceTint(stance);
+  const { fill, track } = stanceTint(normalizeStance(stance));
 
   return (
     <div className={cn("space-y-2", className)}>
