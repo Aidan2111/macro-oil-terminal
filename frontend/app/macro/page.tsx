@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Section } from "@/components/common/Section";
-import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
+import { ChartShimmer } from "@/components/illustrations/ChartShimmer";
 import { SpreadChart } from "@/components/charts/SpreadChart";
 import { StretchChart } from "@/components/charts/StretchChart";
 import { BacktestChart } from "@/components/charts/BacktestChart";
@@ -39,7 +39,7 @@ export default function MacroPage() {
         subtitle="90-day rolling view of the arbitrage window."
       >
         {spread.isLoading ? (
-          <LoadingSkeleton lines={6} height="h-6" />
+          <ChartShimmer height={300} bars={20} />
         ) : (
           <SpreadChart
             data={spread.data?.history ?? []}
@@ -51,10 +51,10 @@ export default function MacroPage() {
       <Section
         id="stretch"
         title="Spread stretch"
-        subtitle="Rolling 90-day Z-score — Stretched beyond plus or minus 2.3 sigma."
+        subtitle="Rolling 90-day Z-score. Stretched beyond plus or minus 2.3 sigma."
       >
         {spread.isLoading ? (
-          <LoadingSkeleton lines={6} height="h-6" />
+          <ChartShimmer height={300} bars={20} />
         ) : (
           <StretchChart
             data={spread.data?.history ?? []}
@@ -66,10 +66,10 @@ export default function MacroPage() {
       <Section
         id="backtest"
         title="Thesis backtest"
-        subtitle="Mean-reversion trade on the live spread, 1y lookback."
+        subtitle="How the mean-reversion model performed over the past year (walk-forward)."
       >
         {backtest.isLoading ? (
-          <LoadingSkeleton lines={6} height="h-6" />
+          <ChartShimmer height={320} bars={24} />
         ) : (
           <BacktestChart
             data={backtest.data ?? null}

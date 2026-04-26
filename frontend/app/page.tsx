@@ -1,5 +1,5 @@
 import { Section } from "@/components/common/Section";
-import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
+import { ChartShimmer } from "@/components/illustrations/ChartShimmer";
 import { TradeIdeaHero } from "@/components/hero/TradeIdeaHero";
 
 /**
@@ -9,19 +9,20 @@ import { TradeIdeaHero } from "@/components/hero/TradeIdeaHero";
 export default function HomePage() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-2">
+      <h1 className="sr-only">Macro Oil Terminal — today&rsquo;s read</h1>
       <Section
         id="home"
-        title="Today's dislocation"
-        subtitle="Live trade idea, stance, and executable tiers."
+        title="Today&rsquo;s read"
+        subtitle="Live stance and trade idea on the Brent-WTI spread."
       >
         <TradeIdeaHero />
       </Section>
       <Section
         id="ticker"
         title="Market ticker"
-        subtitle="Rolling quotes and session headlines land here in Wave 2."
+        subtitle="Live Brent, WTI, spread, and inventory — updated as quotes arrive."
       >
-        <LoadingSkeleton lines={3} height="h-6" />
+        <ChartShimmer height={120} bars={16} />
       </Section>
     </div>
   );
