@@ -22,6 +22,13 @@ websockets>=12.0
 openai>=1.50.0
 alpaca-py>=0.32.0
 
+# Azure AI Foundry — Agent Service migration (FT-Foundry).
+# Pulled at module level by ``backend.services.trade_thesis_foundry`` only
+# when ``USE_FOUNDRY=true``; otherwise lazy-imported behind the flag so
+# the existing AOAI path doesn't pay the import cost.
+azure-ai-projects>=2.1.0
+azure-identity>=1.25.0
+
 # dev / test (CI installs these too)
 pytest>=8.2.0
 pytest-asyncio>=0.24.0

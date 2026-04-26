@@ -38,6 +38,15 @@ def _scrub_env(monkeypatch):
         "AZURE_OPENAI_DEPLOYMENT",
         "AZURE_OPENAI_DEPLOYMENT_FAST",
         "AZURE_OPENAI_DEPLOYMENT_DEEP",
+        # Foundry vars — the FT-Foundry migration adds a feature flag
+        # plus three Foundry-specific env vars. Scrub them in unit
+        # tests so a developer's shell setup never accidentally routes
+        # the AOAI test suite through the Foundry branch.
+        "USE_FOUNDRY",
+        "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT",
+        "AZURE_AI_FOUNDRY_PROJECT_CONNECTION_STRING",
+        "AZURE_AI_FOUNDRY_AGENT_MODEL_FAST",
+        "AZURE_AI_FOUNDRY_AGENT_MODEL_DEEP",
     ):
         monkeypatch.delenv(key, raising=False)
     yield

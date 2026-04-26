@@ -889,6 +889,20 @@ def history_stats(records: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Foundry feature-flag helper
+# ---------------------------------------------------------------------------
+def _use_foundry_enabled() -> bool:
+    """Return True iff ``USE_FOUNDRY`` env var is truthy.
+
+    Accepts ``"1" / "true" / "yes"`` (case-insensitive). Anything else —
+    including the var being unset — selects the existing AOAI path. This
+    is a hard switch; the Foundry path raises on any error rather than
+    silently falling back, so the operator controls routing explicitly.
+    """
+    return os.environ.get("USE_FOUNDRY", "").strip().lower() in ("1", "true", "yes")
+
+
+# ---------------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------------
 def generate_thesis(
@@ -903,7 +917,24 @@ def generate_thesis(
     ``mode`` ∈ {"fast", "deep", "legacy"}. Auto-downgrades deep → fast on
     excessive latency. ``stream_handler`` receives partial text deltas
     as the API streams tokens; ``None`` uses non-streaming.
+
+    When ``USE_FOUNDRY`` is set, routes to
+    ``backend.services.trade_thesis_foundry.generate_thesis_foundry``.
+    The Foundry branch raises on error (no silent fallback) — the
+    operator flips the env var to revert to the AOAI path.
     """
+    if _use_foundry_enabled():
+        # Lazy import — keep azure-ai-projects out of the import graph
+        # whenever the flag is off. Tests that exercise the AOAI path
+        # never need the Foundry SDK installed.
+        from backend.services.trade_thesis_foundry import (  # type: ignore
+            generate_thesis_foundry,
+        )
+
+        return generate_thesis_foundry(
+            ctx, log=log, mode=mode, stream_handler=stream_handler
+        )
+
     if mode not in _VALID_MODES:
         mode = "fast"
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
