@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE, fetchJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -104,19 +105,19 @@ export function TickerTape() {
               className="flex w-max animate-scroll gap-6 px-4 py-2 group-hover:[animation-play-state:paused]"
               aria-live="polite"
             >
-              {tiles.map((t) => (
-                <TickerTile key={`a-${t.key}`} tile={t} />
+              {tiles.map((t, i) => (
+                <TickerTile key={`a-${t.key}`} tile={t} index={i} />
               ))}
               {/* Duplicate for seamless loop. */}
-              {tiles.map((t) => (
-                <TickerTile key={`b-${t.key}`} tile={t} />
+              {tiles.map((t, i) => (
+                <TickerTile key={`b-${t.key}`} tile={t} index={i} />
               ))}
             </ul>
           </div>
           {/* Mobile: flex-wrap — no animation. */}
           <ul className="md:hidden flex flex-wrap gap-2 px-2 py-2" aria-live="polite">
-            {tiles.map((t) => (
-              <TickerTile key={`m-${t.key}`} tile={t} />
+            {tiles.map((t, i) => (
+              <TickerTile key={`m-${t.key}`} tile={t} index={i} />
             ))}
           </ul>
         </>
@@ -125,7 +126,14 @@ export function TickerTape() {
   );
 }
 
-function TickerTile({ tile }: { tile: TileData }) {
+function TickerTile({
+  tile,
+  index = 0,
+}: {
+  tile: TileData;
+  index?: number;
+}) {
+  const reduced = useReducedMotion();
   const delta =
     tile.prev != null ? tile.current - tile.prev : 0;
   const deltaPct =
@@ -141,19 +149,28 @@ function TickerTile({ tile }: { tile: TileData }) {
   const sign = delta > 0 ? "+" : delta < 0 ? "" : "";
 
   return (
-    <li
+    <motion.li
       // Tighter padding + gaps + a max-width cap so a single tile never
       // overruns a 390px iPhone viewport (was rendering at 383px which
       // bled past the body padding). On md+ the marquee animation is
       // immune because the parent is overflow-hidden.
-      className="flex shrink-0 items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg-3/40 px-2 md:px-3 py-1 text-xs max-w-full"
+      // `flex-nowrap` + `whitespace-nowrap` on the value+unit pair keeps
+      // "466 Mbbl" reading as one phrase on mobile (persona 12 fix).
+      className="flex shrink-0 flex-nowrap items-center gap-2 md:gap-3 rounded-btn border border-border bg-bg-3/40 px-2 md:px-3 py-1 text-xs max-w-full whitespace-nowrap"
       aria-label={`${tile.name} ${tile.current.toFixed(2)}`}
+      initial={reduced ? { opacity: 1 } : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{
+        duration: 0.2,
+        delay: reduced ? 0 : index * 0.05,
+        ease: "easeOut",
+      }}
     >
       <span className="font-mono uppercase tracking-wide text-text-secondary">
         {tile.symbol}
       </span>
       <span className="text-text-primary">{tile.name}</span>
-      <span className="font-mono text-text-primary">
+      <span className="font-mono text-text-primary whitespace-nowrap">
         {formatValue(tile.current, tile.unit)}
       </span>
       <span className={cn("font-mono whitespace-nowrap", color)}>
@@ -162,7 +179,7 @@ function TickerTile({ tile }: { tile: TileData }) {
         {deltaPct.toFixed(2)}%)
       </span>
       <Sparkline values={tile.sparkline} color={colorHex(delta)} />
-    </li>
+    </motion.li>
   );
 }
 

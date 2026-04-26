@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { API_BASE } from "@/lib/api";
-import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
+import { EmptyPortfolioChart } from "@/components/illustrations/EmptyPortfolioChart";
 import type {
   PaperAccount,
   PaperPosition,
@@ -184,8 +185,8 @@ export function PositionsView({ initialPositions, initialAccount }: Props) {
     <div data-testid="positions-panel" className="space-y-4">
       <header className="flex items-center justify-between gap-3">
         <div className="text-sm text-text-secondary">
-          Live paper-trading account. Closes fire a market order in the
-          opposite direction.
+          Live paper-trading account. Closing a position fires a market
+          order in the opposite direction.
         </div>
         <span
           data-testid="paper-badge"
@@ -199,11 +200,22 @@ export function PositionsView({ initialPositions, initialAccount }: Props) {
       <AccountSummary account={state.account} />
 
       {state.positions.length === 0 ? (
-        <EmptyState
-          variant="barrel"
-          title="No open paper positions."
-          message="Place a trade from any Trade Idea."
-        />
+        <div
+          data-testid="positions-empty"
+          className="flex flex-col items-center gap-3 rounded-card border border-border bg-bg-2/40 py-10 text-center"
+        >
+          <EmptyPortfolioChart className="text-text-muted" />
+          <div className="text-sm font-medium text-text-primary">
+            No open paper positions
+          </div>
+          <div className="max-w-sm text-xs text-text-secondary">
+            Open a trade from today&rsquo;s read on the home page and it
+            shows up here.
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/">View today&rsquo;s read</Link>
+          </Button>
+        </div>
       ) : (
         <PositionsTable
           positions={state.positions}

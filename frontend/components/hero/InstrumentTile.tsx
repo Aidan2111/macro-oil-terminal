@@ -1,5 +1,6 @@
 "use client";
 
+import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,11 @@ type Props = {
   tier: 1 | 2 | 3;
   instrument: Instrument;
   stance: string;
+  /**
+   * 0-based index of the tile within the row — drives the stagger-in
+   * delay (i * 0.08s). Optional; defaults to 0 for single-tile use.
+   */
+  index?: number;
   className?: string;
 };
 
@@ -34,9 +40,11 @@ export function InstrumentTile({
   tier,
   instrument,
   stance,
+  index = 0,
   className,
 }: Props) {
   const accent = accentClass(stance);
+  const reduced = useReducedMotion();
   // Tolerate older / variant backend shapes — `suggested_size_pct`
   // may arrive as `suggested_pct_of_capital`, and either may be
   // missing entirely. Never let a `.toFixed` call on undefined take
@@ -67,6 +75,15 @@ export function InstrumentTile({
       : "No capital at risk";
 
   return (
+    <motion.div
+      initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        delay: reduced ? 0 : index * 0.08,
+        duration: 0.35,
+        ease: "easeOut",
+      }}
+    >
     <Card
       data-testid="instrument-tile"
       data-tier={tier}
@@ -122,5 +139,6 @@ export function InstrumentTile({
         </Button>
       </CardContent>
     </Card>
+    </motion.div>
   );
 }

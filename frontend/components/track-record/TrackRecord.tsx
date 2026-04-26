@@ -14,8 +14,10 @@ import {
   YAxis,
 } from "recharts";
 import { API_BASE } from "@/lib/api";
-import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
+import { ChartShimmer } from "@/components/illustrations/ChartShimmer";
+import { EquityCurveFlat } from "@/components/illustrations/EquityCurveFlat";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import {
   computeEquityCurve,
   computeReturnHistogram,
@@ -70,19 +72,32 @@ export function TrackRecord() {
   if (state.status === "loading") {
     return (
       <div data-testid="track-record" className="space-y-4">
-        <LoadingSkeleton lines={6} height="h-5" />
+        <ChartShimmer height={260} bars={20} />
       </div>
     );
   }
 
   if (state.status === "error") {
     return (
-      <div data-testid="track-record">
-        <EmptyState
-          variant="chart"
-          title="Track record unavailable"
-          message={state.message}
-        />
+      <div
+        data-testid="track-record"
+        className="flex flex-col items-center gap-3 rounded-card border border-alert/40 bg-alert/10 py-10 text-center"
+      >
+        <EquityCurveFlat className="text-alert" />
+        <div className="text-sm font-medium text-text-primary">
+          Track record unavailable
+        </div>
+        <div className="max-w-sm text-xs text-text-secondary">
+          {state.message}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => window.location.reload()}
+        >
+          Retry
+        </Button>
       </div>
     );
   }
@@ -90,12 +105,21 @@ export function TrackRecord() {
   const rows = state.rows;
   if (rows.length === 0) {
     return (
-      <div data-testid="track-record">
-        <EmptyState
-          variant="chart"
-          title="No thesis history yet"
-          message="Once the model has generated theses with outcomes, they show up here."
-        />
+      <div
+        data-testid="track-record"
+        className="flex flex-col items-center gap-3 rounded-card border border-border bg-bg-2/40 py-10 text-center"
+      >
+        <EquityCurveFlat className="text-text-muted" />
+        <div className="text-sm font-medium text-text-primary">
+          No thesis history yet
+        </div>
+        <div className="max-w-sm text-xs text-text-secondary">
+          Once the model has generated theses with outcomes, they show
+          up here.
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/">Generate today&rsquo;s read</Link>
+        </Button>
       </div>
     );
   }

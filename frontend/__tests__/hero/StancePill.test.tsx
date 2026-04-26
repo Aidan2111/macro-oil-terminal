@@ -8,8 +8,10 @@ describe("StancePill", () => {
   it.each([
     ["LONG_SPREAD", "Lean long"],
     ["SHORT_SPREAD", "Lean short"],
-    ["FLAT", "Stand aside"],
-    ["STAND_ASIDE", "Stand aside"],
+    // Wave 4: "Stand aside" rephrased to trader vocabulary "No edge"
+    // (persona 12 v2 finding — "stand aside" reads as poker-tutorial).
+    ["FLAT", "No edge"],
+    ["STAND_ASIDE", "No edge"],
   ] as const)("renders %s as '%s' with correct data-stance", (stance, copy) => {
     render(<StancePill stance={stance} />);
     const pill = screen.getByTestId("stance-pill");
