@@ -58,6 +58,16 @@ export function StretchChart({ data, error, height = 300 }: Props) {
     .map((d) => ({ date: d.date, z: d.z_score as number }));
 
   const latest = series[series.length - 1]?.z ?? 0;
+  // Richer aria-label — surface latest sigma + 30d delta. Review #13
+  // axis 7.
+  const baselineIdx = Math.max(0, series.length - 31);
+  const baseline = series[baselineIdx]?.z ?? latest;
+  const dz = latest - baseline;
+  const dzSign = dz >= 0 ? "+" : "";
+  const ariaLabel =
+    series.length > 0
+      ? `Spread stretch (rolling 90d Z-score), latest ${latest.toFixed(2)}σ, ${dzSign}${dz.toFixed(2)}σ last 30 days`
+      : "Spread Stretch — rolling 90d Z-score";
   const bandY1 = Math.sign(latest) >= 0 ? BAND_BOUND : -BAND_BOUND;
   const bandY2 = Math.sign(latest) >= 0 ? 4 : -4;
   const bandColor =
@@ -68,7 +78,7 @@ export function StretchChart({ data, error, height = 300 }: Props) {
   return (
     <div
       data-testid="stretch-chart"
-      aria-label="Spread Stretch — rolling 90d Z-score"
+      aria-label={ariaLabel}
       role="img"
       className="w-full"
       style={{ height }}

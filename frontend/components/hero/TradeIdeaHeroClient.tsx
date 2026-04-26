@@ -323,6 +323,8 @@ function LoadedHero({
           {stream.pct > 0 && !stream.done && stream.stage !== "idle" ? (
             <div
               data-testid="trade-idea-hero-stream-hint"
+              role="status"
+              aria-live="polite"
               className="text-xs text-text-muted"
             >
               Generating new thesis… {stream.stage} · {stream.pct}%

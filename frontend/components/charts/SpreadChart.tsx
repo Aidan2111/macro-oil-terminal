@@ -53,10 +53,23 @@ export function SpreadChart({ data, error, height = 300 }: Props) {
     .filter((d) => d.spread != null)
     .map((d) => ({ date: d.date, spread: d.spread as number }));
 
+  // Build a richer aria-label with the latest value + 30d delta so AT
+  // users get more than the static "spread chart" header. Review #13
+  // axis 7.
+  const latest = series[series.length - 1]?.spread ?? 0;
+  const baselineIdx = Math.max(0, series.length - 31);
+  const baseline = series[baselineIdx]?.spread ?? latest;
+  const delta = latest - baseline;
+  const sign = delta >= 0 ? "+" : "";
+  const ariaLabel =
+    series.length > 0
+      ? `Brent–WTI spread chart, latest ${latest.toFixed(2)}, ${sign}${delta.toFixed(2)} last 30 days`
+      : "Brent–WTI spread chart (90 days)";
+
   return (
     <div
       data-testid="spread-chart"
-      aria-label="Brent-WTI spread chart (90 days)"
+      aria-label={ariaLabel}
       role="img"
       className="w-full"
       style={{ height }}
