@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 
 WORKFLOWS = pathlib.Path(".github/workflows")
@@ -16,7 +17,10 @@ def test_workflow_files_present():
 def test_cd_uses_oidc_and_test_gate():
     txt = (WORKFLOWS / "cd.yml").read_text()
     assert "id-token: write" in txt
-    assert "azure/login@v2" in txt
+    # Major version is allowed to drift (Dependabot promotes us through
+    # azure/login@v2 → @v3 → ...). The OIDC contract is the same; only
+    # the action's input/output shape may change. Match any major.
+    assert re.search(r"azure/login@v\d+", txt), "cd.yml must use azure/login OIDC"
     assert "test_runner.py" in txt or "pytest" in txt
 
 
