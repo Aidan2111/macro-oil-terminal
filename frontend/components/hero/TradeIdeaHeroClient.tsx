@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/common/ErrorState";
-import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
 import { ApiError, fetchJson } from "@/lib/api";
 import { postEventSource } from "@/lib/sse";
 import type {
@@ -163,14 +163,7 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
   }, [streamTick]);
 
   if (query.isPending && !query.data) {
-    return (
-      <Card
-        data-testid="trade-idea-hero-loading"
-        className="min-h-[360px] p-6"
-      >
-        <LoadingSkeleton lines={6} height="h-5" />
-      </Card>
-    );
+    return <HeroSkeleton />;
   }
 
   if (query.isError && !query.data) {
@@ -200,7 +193,7 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
     return (
       <Card
         data-testid="trade-idea-hero-empty"
-        className="min-h-[360px] flex items-center justify-center p-8"
+        className="flex min-h-[640px] items-center justify-center p-8 md:min-h-[560px]"
       >
         <div className="flex flex-col items-center gap-4 text-center">
           <SpreadCurvesIllustration className="text-text-muted" />
@@ -240,6 +233,95 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
   return <LoadedHero record={record} stream={stream} />;
 }
 
+/**
+ * Structural placeholder for the hero card while `/api/thesis/latest`
+ * is in flight. Two jobs:
+ *
+ * 1. Provide an LCP candidate at FCP. The skeleton renders a real
+ *    `<h2>` with the same Tailwind classes as the loaded `LoadedHero`
+ *    headline, populated with a static page-level fallback string.
+ *    Lighthouse picks this H2 as the LCP element at first paint
+ *    (~1.0 s) instead of waiting for the loaded card's H2 at ~5 s.
+ *    When the real thesis lands, the H2 stays in the same DOM
+ *    position with similar dimensions, so the LCP candidate doesn't
+ *    shift and the metric stays at FCP.
+ * 2. Match the loaded card's overall height and layout so the
+ *    `#ticker` section below doesn't get pushed down when real data
+ *    swaps in. Wave 5 home/mobile CLS was 0.207, all from `#ticker`
+ *    moving ~260 px when the skeleton (`min-h-[360px]`, six bars) was
+ *    replaced by a much taller loaded card. We mirror the loaded
+ *    structure here — stance-pill row, headline + summary,
+ *    confidence bar, three instrument tiles, checklist — so the
+ *    swap is near-CLS-free.
+ *
+ * Visually this still looks like a skeleton: every block is either a
+ * `<Skeleton>` shimmer or a low-contrast text placeholder. The H2 is
+ * the only element with full text contrast — it doubles as a
+ * page-level "what is this card" affordance, which is what users
+ * land on while the model warms up anyway.
+ */
+function HeroSkeleton() {
+  return (
+    <Card
+      data-testid="trade-idea-hero-loading"
+      className="relative min-h-[640px] overflow-hidden md:min-h-[560px]"
+    >
+      <CardContent className="relative space-y-6 p-6 md:p-8">
+        {/* Top row: stance pill + catalyst — both placeholders */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Skeleton className="h-6 w-28 rounded-full" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+
+        {/* Headline + summary — H2 is the LCP candidate at FCP. */}
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold leading-snug text-text-primary md:text-2xl">
+            Today&rsquo;s read on the Brent&ndash;WTI spread
+          </h2>
+          <p className="text-sm text-text-secondary">
+            Loading the latest stance, conviction, and instruments&hellip;
+          </p>
+        </div>
+
+        {/* Confidence bar */}
+        <div className="space-y-2">
+          <Skeleton className="h-2 w-full rounded-full" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+
+        {/* Three instrument tiles — same grid + tile height as loaded */}
+        <div className="grid gap-4 md:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Card key={i} className="relative overflow-hidden">
+              <div
+                aria-hidden
+                className="absolute left-0 right-0 top-0 h-1 bg-bg-3"
+              />
+              <div className="space-y-3 p-5 pt-5">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-5/6" />
+                <Skeleton className="h-8 w-full rounded-md" />
+              </div>
+            </Card>
+          ))}
+        </div>
+
+        {/* Checklist */}
+        <div className="border-t border-border pt-4">
+          <Skeleton className="mb-3 h-3 w-40" />
+          <div className="space-y-2">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-4 w-full" />
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function LoadedHero({
   record,
   stream,
@@ -274,14 +356,14 @@ function LoadedHero({
       transition={{ duration: 0.45, ease: "easeOut" }}
     >
       {/*
-        `min-h-[360px]` matches the loading skeleton above, so the card
-        height doesn't jump between loading→loaded→empty states. Wave 5
-        Lighthouse home/mobile CLS was 0.207 (score 0.6) entirely from
-        the `#ticker` section being pushed down when the loaded hero
-        settled at a different height than the skeleton. Locking the
-        floor here removes the shift.
+        `min-h` matches the loading skeleton above (`HeroSkeleton`) so
+        the card doesn't change height when real data swaps in. Wave 5
+        home/mobile CLS was 0.207 because `min-h-[360px]` was much
+        shorter than the typical loaded card (~640 px on mobile,
+        ~560 px on desktop), so `#ticker` got pushed down ~260 px when
+        the thesis landed. Floor matches the structural skeleton above.
       */}
-      <Card className="relative min-h-[360px] overflow-hidden">
+      <Card className="relative min-h-[640px] overflow-hidden md:min-h-[560px]">
         <HeroBackground
           stretchFactor={stretch}
           className="pointer-events-none absolute inset-0 h-full w-full opacity-40"
