@@ -469,7 +469,11 @@ def test_workflows() -> None:
     def t_cd_has_oidc() -> None:
         txt = pathlib.Path(".github/workflows/cd.yml").read_text()
         assert "id-token: write" in txt
-        assert "azure/login@v2" in txt
+        # azure/login major version is allowed to drift (Dependabot
+        # promotes us through v2 → v3 → ...). The OIDC contract is the
+        # same; only the action's input/output shape may change between
+        # majors. Assert the action is referenced, not a specific tag.
+        assert "azure/login@" in txt
         assert "test_runner.py" in txt
 
     def t_release_builds_notes() -> None:
