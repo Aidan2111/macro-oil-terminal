@@ -69,7 +69,9 @@ jobs:
         run: npm run typecheck --if-present
       - name: lint
         run: npm run lint --if-present
-      - name: test
+      - name: test (vitest — includes axe-core a11y suite)
+        # __tests__/a11y.test.tsx mounts top-level components and
+        # asserts axe-core finds zero WCAG 2 A/AA violations.
         run: npm test -- --run
       - name: build
         run: npm run build
