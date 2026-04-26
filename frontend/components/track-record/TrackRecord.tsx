@@ -16,6 +16,7 @@ import {
 import { API_BASE } from "@/lib/api";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
+import { ChartErrorBoundary } from "@/components/common/ChartErrorBoundary";
 import {
   computeEquityCurve,
   computeReturnHistogram,
@@ -145,6 +146,7 @@ function TrackRecordReady({ rows }: { rows: ThesisRow[] }) {
         {curve.length === 0 ? (
           <InlineEmpty message="No closed trades to plot yet." />
         ) : (
+          <ChartErrorBoundary label="Equity curve">
           <ResponsiveContainer width="100%" height={240}>
             <LineChart
               data={curve.map((p) => ({
@@ -172,6 +174,7 @@ function TrackRecordReady({ rows }: { rows: ThesisRow[] }) {
               />
             </LineChart>
           </ResponsiveContainer>
+          </ChartErrorBoundary>
         )}
       </ChartCard>
 
