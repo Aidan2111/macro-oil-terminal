@@ -359,7 +359,14 @@ def _make_openai_client():  # noqa: ANN202
 # Run loop
 # ---------------------------------------------------------------------------
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled", "expired", "incomplete"}
-_DEFAULT_RUN_DEADLINE_S = 90.0
+# gpt-5 cold-start + function-tool round-trip can easily exceed 90s. Two
+# production retries (USE_FOUNDRY=true on 2026-04-26) elapsed 70-95s and
+# both tripped the previous 90s deadline, raising FoundryRunError just as
+# the assistant's text was about to land. Bumping to 240s gives generous
+# margin while still bounding pathological hangs. The SSE bridge in
+# thesis_service.py wraps `await runner_task` in try/except so a deadline
+# trip emits event:error rather than truncating the stream.
+_DEFAULT_RUN_DEADLINE_S = 240.0
 _DEFAULT_POLL_INTERVAL_S = 0.6
 
 

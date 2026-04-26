@@ -333,7 +333,24 @@ async def stream_thesis(
     }
 
     # await the runner so we surface any exception from the worker thread.
-    thesis_obj = await runner_task
+    # If the runner raised (e.g. FoundryRunError on a deadline trip), wrap
+    # it as an `event: error` SSE frame instead of letting the exception
+    # bubble up and truncate the stream silently. Without this, the user-
+    # visible symptom is "progress went 10/40/90 then nothing" — same
+    # symptom we hit on the 2026-04-26 USE_FOUNDRY=true retry.
+    try:
+        thesis_obj = await runner_task
+    except Exception as exc:  # pragma: no cover — exercised in production
+        yield {
+            "event": "error",
+            "data": json.dumps(
+                {
+                    "stage": "generate",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            ),
+        }
+        return
 
     applied_guardrails = list(getattr(thesis_obj, "guardrails_applied", []) or [])
     raw = _thesis_to_dict(thesis_obj)
