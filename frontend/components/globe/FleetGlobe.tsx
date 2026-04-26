@@ -204,9 +204,17 @@ async function bootWebGPU({
   trails,
 }: BootArgs): Promise<() => void> {
   const tier = mobileTier();
-  const THREE = await import("three");
-  const { WebGPURenderer, MeshBasicNodeMaterial } = await import("three/webgpu");
-  const TSL = await import("three/tsl");
+  // Single dynamic import covering both core THREE.* + WebGPU + TSL.
+  // `three.webgpu.js` re-exports every class (Scene, Mesh, Vector3, …)
+  // *and* every TSL helper (color, dot, uniform, vec3, …) — see
+  // `node_modules/three/build/three.webgpu.js` exports list. Importing
+  // both `three` and `three/webgpu` at runtime triggers three's own
+  // `globalThis.__THREE__` guard ("Multiple instances of Three.js
+  // being imported.") because each file re-runs the side-effect
+  // bootstrap. One import = one bootstrap.
+  const THREE = await import("three/webgpu");
+  const TSL = THREE; // alias for legibility on the destructure below
+  const { WebGPURenderer, MeshBasicNodeMaterial } = THREE;
   const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
 
   const {
