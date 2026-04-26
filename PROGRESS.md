@@ -1250,4 +1250,32 @@ he should pick the session model explicitly: **opus** for the
 reviewer personas + top-finding implementation, **sonnet** for Wave 4
 polish, **haiku** for quick verification checks.
 
+---
+
+## Open work transferred to GitHub issues — 2026-04-26
+
+Per Aidan's directive to halt active development and convert all
+pending / in-progress items to GitHub issues, the following 12 issues
+were filed on `Aidan2111/macro-oil-terminal`. After these were
+created, autonomous work on this repo stopped.
+
+| #  | Title | Branch (if any) |
+|----|-------|-----------------|
+| [#37](https://github.com/Aidan2111/macro-oil-terminal/issues/37) | `USE_FOUNDRY=true` retry: SSE truncates between applying_guardrails (90%) and event:complete | _future_ `feat/foundry-flip-retry` |
+| [#38](https://github.com/Aidan2111/macro-oil-terminal/issues/38) | three.js: drop `import("three/tsl")` to silence Multiple instances of Three.js warning | _future_ `feat/drop-three-tsl-import` |
+| [#39](https://github.com/Aidan2111/macro-oil-terminal/issues/39) | Streamlit decommission: delete `oil-tracker-app-canadaeast-4474` + plan after 48h window | n/a (infra) |
+| [#40](https://github.com/Aidan2111/macro-oil-terminal/issues/40) | Healthcheck skill drift: SWA build-info path is `.txt` key=value, not `.json` | n/a (skill lives outside repo) |
+| [#41](https://github.com/Aidan2111/macro-oil-terminal/issues/41) | Healthcheck skill drift: `az webapp deployment list` is not a valid command | n/a (skill lives outside repo) |
+| [#42](https://github.com/Aidan2111/macro-oil-terminal/issues/42) | Bump openai 1.x → 2.x (deferred from major-bump batch) | _future_ `chore/openai-2x-bump` |
+| [#43](https://github.com/Aidan2111/macro-oil-terminal/issues/43) | Bump yfinance 0.x → 1.x (deferred — pulls in curl_cffi / peewee / protobuf) | _future_ `chore/yfinance-1x-bump` |
+| [#44](https://github.com/Aidan2111/macro-oil-terminal/issues/44) | Bump vite 5 → 7/8 + esbuild 0.21 → 0.27 | _future_ `chore/vite-7-bump` |
+| [#45](https://github.com/Aidan2111/macro-oil-terminal/issues/45) | Bump Dockerfile to `python:3.14` | _future_ `chore/dockerfile-python-3.14` |
+| [#46](https://github.com/Aidan2111/macro-oil-terminal/issues/46) | Custom domain (default rec: `oilmonitor.app`) — SWA hostname + DNS | n/a (Aidan picks domain first) |
+| [#47](https://github.com/Aidan2111/macro-oil-terminal/issues/47) | Monthly perf monitor: re-run Lighthouse on `/macro` mobile | n/a (monitoring rhythm) |
+| [#48](https://github.com/Aidan2111/macro-oil-terminal/issues/48) | Monthly calibration monitor: review verdict + Brier on `/track-record` | n/a (monitoring rhythm) |
+
+**Halt note.** Autonomous overnight loop stopped here. No further
+pushes, deploys, or diagnostics from the agent. Future work picks up
+by triaging the issues above.
+
 
