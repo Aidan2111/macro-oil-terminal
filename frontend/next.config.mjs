@@ -9,8 +9,9 @@ const nextConfig = {
   trailingSlash: true,
   images: { unoptimized: true },
   experimental: {
-    // Next.js 15 ships these out of experimental, kept here as a
-    // parking lot for future tweaks (optimizePackageImports etc).
+    // Tree-shake recharts (notorious D3 chain), lucide icon set, and
+    // framer-motion's nested module surface — review #13 axis 5.
+    optimizePackageImports: ["recharts", "lucide-react", "framer-motion"],
   },
   // /api/* is proxied at the Next.js layer (works on Static Web Apps
   // hybrid mode where staticwebapp.config.json routes lose to Next.js

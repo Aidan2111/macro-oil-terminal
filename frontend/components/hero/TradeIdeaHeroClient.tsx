@@ -20,7 +20,18 @@ import { ConfidenceBar } from "./ConfidenceBar";
 import { InstrumentTile } from "./InstrumentTile";
 import { PreTradeChecklist } from "./PreTradeChecklist";
 import { CatalystCountdown } from "./CatalystCountdown";
-import { HeroShaderBackground } from "./HeroShaderBackground";
+import dynamic from "next/dynamic";
+
+// Lazy-load the WebGPU/TSL background. Static import drags ~three.js
+// + TSL into the / route bundle even for users on Safari/iOS who'll
+// hit the early-return branch at runtime — review #13 axis 5.
+const HeroShaderBackground = dynamic(
+  () =>
+    import("./HeroShaderBackground").then((m) => ({
+      default: m.HeroShaderBackground,
+    })),
+  { ssr: false },
+);
 
 type Props = {
   initialData: ThesisLatestResponse | undefined;
