@@ -29,7 +29,10 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from backend.security import require_execute_origin
+from backend.security import (
+    enforce_execute_rate_limit,
+    require_execute_origin,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1016,6 +1019,7 @@ def positions_orders(status: str = "open") -> Any:
 async def positions_execute(
     req: Request,
     _origin: None = Depends(require_execute_origin),
+    _rate: None = Depends(enforce_execute_rate_limit),
 ):
     """Place a real paper order via alpaca-py.
 
@@ -1025,10 +1029,12 @@ async def positions_execute(
     a response body — alpaca_service maps every Alpaca object through
     a whitelist.
 
-    Wave 4 hardening (review #14, S-3): `require_execute_origin`
-    rejects browser POSTs from any Origin outside the SWA + localhost
-    dev allowlist. The previous in-memory rate-limit is still in place;
-    a persistent dual-gate lands in the S-4 follow-up commit.
+    Wave 4 hardening (review #14):
+      * S-3: `require_execute_origin` rejects browser POSTs from any
+        Origin outside the SWA + localhost dev allowlist.
+      * S-4: `enforce_execute_rate_limit` is a file-backed dual gate —
+        1 req / 2s inner floor + 30 req / 5min outer ceiling. State
+        survives container restart (was a per-process bucket before).
     """
     if os.environ.get("ALPACA_PAPER", "").strip().lower() != "true":
         return JSONResponse(
