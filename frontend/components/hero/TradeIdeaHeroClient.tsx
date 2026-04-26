@@ -159,7 +159,16 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
         },
         onError: (err) => {
           // SSE failures are non-fatal — the `latest` fetch already
-          // seeded the card. Surface the error quietly in dev.
+          // seeded the card. The dominant case is the user navigating
+          // away mid-stream: our cleanup `controller.abort()` fires an
+          // AbortError into the fetch loop. That's expected, not an
+          // error worth logging. Anything else is real backend trouble
+          // and stays a warn so it shows up in App Insights.
+          const isAbort =
+            err instanceof Error &&
+            (err.name === "AbortError" ||
+              /BodyStreamBuffer was aborted/i.test(err.message));
+          if (isAbort) return;
           // eslint-disable-next-line no-console
           console.warn("[TradeIdeaHero] SSE error", err);
         },
