@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/staticwebapp.config.json",
+  "_comment": "AUTHORITATIVE — this is the staticwebapp.config.json that ships. Azure Static Web Apps reads the config at app_location root (cd-nextjs.yml app_location: \"frontend\"). The previous duplicate at static-web-apps/staticwebapp.config.json was removed in Wave 4 to prevent drift (review #14, S-9). Edit only this file.",
   "routes": [
     {
       "route": "/api/*",
