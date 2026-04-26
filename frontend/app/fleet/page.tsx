@@ -48,9 +48,26 @@ export default function FleetPage() {
     });
   };
 
+  // Mobile: the app shell stacks the ticker tape above <main> and pins a
+  // fixed h-16 bottom nav, while <main> already carries pb-20 to clear
+  // that nav. The previous fixed `h-[calc(100vh-4rem)]` ignored both the
+  // ticker tape and the bottom nav, so on mobile the FleetPage container
+  // was taller than the available main slot. Combined with the parent's
+  // `overflow-hidden`, the canvas was sized off-screen behind the bottom
+  // nav and the route looked broken on iPhone.
+  //
+  // Switch to `100dvh` (dynamic viewport unit, defined for iOS Safari
+  // since 15.4) on mobile so URL-bar collapse doesn't whiplash the
+  // globe height. Subtract the ~10rem of mobile chrome (ticker + bottom
+  // nav + main pb-20). On md+ the desktop rail keeps the original
+  // 100vh - 4rem math. `min-h-[480px]` matches FleetGlobe's own canvas
+  // floor so the globe is never smaller than its useful render size.
   return (
-    <div className="relative flex h-[calc(100vh-4rem)] w-full flex-col">
-      <div className="relative flex-1">
+    <div
+      data-testid="fleet-page"
+      className="relative flex w-full flex-col min-h-[480px] h-[calc(100dvh-10rem)] md:h-[calc(100vh-4rem)]"
+    >
+      <div className="relative flex-1 min-h-[480px]">
         <FleetGlobe
           vessels={vessels}
           visibleCategories={visibleCategories}
