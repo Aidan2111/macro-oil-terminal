@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import type { HeroShaderBackground as HeroShaderBackgroundType } from "./HeroShaderBackground";
 
 type Props = {
   /** 0 = calm cyan, 1 = turbulent crimson. Forwarded to the WebGPU shader. */
@@ -11,46 +11,90 @@ type Props = {
 };
 
 /**
- * Viewport- and motion-gated wrapper around `HeroShaderBackground`.
+ * Viewport- and motion-gated wrapper around the WebGPU/TSL hero shader.
  *
- * SSR / initial paint always renders the same static tokenised gradient
- * — this means the WebGPU/TSL chunk is never on the critical path.
- * After mount, on desktop (`min-width: 768px`) without
- * `prefers-reduced-motion`, we lazily `import()` `HeroShaderBackground`
- * and overlay it. On mobile (or reduced-motion, or no-WebGPU) the
- * gradient is the final state.
+ * Wave 6 rewrite: PR #20's `useEffect` matchMedia gate failed to lift
+ * home/mobile Lighthouse off 71. Even though `import("./HeroShaderBackground")`
+ * was guarded behind a media query, the chunk was still being parsed +
+ * preloaded on mobile and the WebGPU symbols stayed on the critical
+ * path. Two structural fixes here:
  *
- * Why the gate: Wave 4 Lighthouse showed home/mobile at 79 (target ≥90)
- * with the WebGPU/TSL chunk dominating TBT on mid-tier mobile. The
- * shader is decorative — opacity 0.4 noise behind the card — so we ship
- * a static gradient with the same hue palette as the fallback for
- * mobile and reduced-motion users.
+ * 1. The matchMedia probe runs synchronously at first render via
+ *    `useSyncExternalStore`, so the desktop JSX subtree is never even
+ *    created on mobile (no React node ever instantiates the dynamic
+ *    component, so webpack's chunk fetch never fires).
+ * 2. The dynamic import target is `HeroBackgroundDesktop`, a separate
+ *    file that is the *only* place referencing `HeroShaderBackground`.
+ *    Combined with `next/dynamic({ ssr: false, loading: () => null })`,
+ *    webpack splits the WebGPU/three.js graph into a chunk that is
+ *    fetched lazily only when the desktop branch renders.
+ *
+ * The `output: "export"` in `next.config.mjs` rules out a true
+ * server-side `userAgent()` gate (no per-request render at runtime),
+ * so the gate has to be the next best thing: a synchronous client-side
+ * probe that runs *before* the dynamic component is mounted.
+ *
+ * SSR + first paint + mobile + reduced-motion + no-WebGPU users all
+ * see the static tokenised gradient defined inline below — same hue
+ * palette as the shader's `mix(color("#22d3ee"), color("#f43f5e"))`.
  */
+
+// Module-level dynamic import: webpack creates a dedicated chunk that
+// only loads when this component is rendered. The fact that the
+// reference exists in the module graph is fine — what matters is the
+// runtime fetch, which is gated by whether the JSX node is ever
+// instantiated below.
+const HeroBackgroundDesktop = dynamic(
+  () =>
+    import("./HeroBackgroundDesktop").then((m) => m.HeroBackgroundDesktop),
+  { ssr: false, loading: () => null },
+);
+
+const DESKTOP_MQ = "(min-width: 768px)";
+const REDUCED_MQ = "(prefers-reduced-motion: reduce)";
+
+function subscribe(query: string) {
+  return (cb: () => void) => {
+    if (typeof window === "undefined") return () => undefined;
+    const mql = window.matchMedia(query);
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", cb);
+      return () => mql.removeEventListener("change", cb);
+    }
+    // Safari < 14 fallback
+    mql.addListener(cb);
+    return () => mql.removeListener(cb);
+  };
+}
+
+function getSnapshot(query: string) {
+  return () => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia(query).matches;
+  };
+}
+
+// SSR snapshot: assume mobile + reduced-motion (the conservative
+// branch that never schedules the shader). This means SSR HTML always
+// emits the static gradient, and on mount the client either keeps it
+// (mobile / reduced-motion) or upgrades to the shader (desktop).
+function getServerSnapshot() {
+  return false;
+}
+
 export function HeroBackground({ stretchFactor, className }: Props) {
-  const [Shader, setShader] = useState<typeof HeroShaderBackgroundType | null>(
-    null,
+  const isDesktop = useSyncExternalStore(
+    subscribe(DESKTOP_MQ),
+    getSnapshot(DESKTOP_MQ),
+    getServerSnapshot,
+  );
+  const reduced = useSyncExternalStore(
+    subscribe(REDUCED_MQ),
+    getSnapshot(REDUCED_MQ),
+    getServerSnapshot,
   );
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    // Desktop-only gate. The matchMedia query mirrors Tailwind's `md`
-    // breakpoint so the hero card's responsive padding (p-6 / md:p-8)
-    // and the shader gate flip together.
-    const mq = window.matchMedia("(min-width: 768px)");
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (!mq.matches || reduced.matches) return;
-
-    let cancelled = false;
-    void import("./HeroShaderBackground").then((mod) => {
-      if (!cancelled) setShader(() => mod.HeroShaderBackground);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // The static gradient — cyan→amber→rose, mirroring the shader's
-  // `mix(color("#22d3ee"), color("#f43f5e"), stretchU)` palette so the
+  // Static gradient — cyan→rose, mirroring the shader's palette so the
   // mobile experience is visually consistent with desktop's first paint
   // before the shader hydrates. `stretchFactor` nudges the rose stop's
   // opacity so the card still reflects regime intensity.
@@ -61,8 +105,26 @@ export function HeroBackground({ stretchFactor, className }: Props) {
       `radial-gradient(ellipse at 80% 100%, color-mix(in srgb, #f43f5e ${10 + stretch * 22}%, transparent) 0%, transparent 60%)`,
   };
 
-  if (Shader) {
-    return <Shader stretchFactor={stretchFactor} className={className} />;
+  // CRITICAL: the desktop branch is the *only* code path that creates a
+  // JSX node referencing `HeroBackgroundDesktop`. On mobile / reduced-
+  // motion the branch is never taken so the dynamic chunk is never
+  // requested. The static gradient is always present underneath as the
+  // SSR-equivalent fallback.
+  if (isDesktop && !reduced) {
+    return (
+      <>
+        <div
+          aria-hidden
+          data-testid="hero-shader-fallback"
+          className={cn(className)}
+          style={fallbackStyle}
+        />
+        <HeroBackgroundDesktop
+          stretchFactor={stretchFactor}
+          className={className}
+        />
+      </>
+    );
   }
 
   return (
