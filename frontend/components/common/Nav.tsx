@@ -62,6 +62,7 @@ export function Nav() {
                 // min-h-[44px] hits the WCAG AA / Apple HIG touch-target
                 // floor; previously the rail link rendered at 36px tall.
                 "flex items-center gap-3 rounded-btn px-3 py-2 text-sm min-h-[44px]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg-1",
                 active
                   ? "bg-bg-3 text-primary"
                   : "text-text-secondary hover:bg-bg-3 hover:text-text-primary",
@@ -89,6 +90,7 @@ export function Nav() {
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] flex-1",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset",
                 active ? "text-primary" : "text-text-secondary",
               )}
             >
