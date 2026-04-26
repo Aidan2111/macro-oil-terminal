@@ -152,6 +152,8 @@ def run_backtest(
         "calmar": _jsonable(raw.get("calmar", 0.0)),
         "var_95": _jsonable(raw.get("var_95", 0.0)),
         "es_95": _jsonable(raw.get("es_95", 0.0)),
+        # Q3 prediction-quality slice — desk-grade tail metric.
+        "es_975": _jsonable(raw.get("es_975", 0.0)),
         "max_drawdown": _jsonable(raw.get("max_drawdown_usd", 0.0)),
         "hit_rate": _jsonable(raw.get("win_rate", 0.0)),
         "total_pnl_usd": _jsonable(raw.get("total_pnl_usd", 0.0)),

@@ -104,6 +104,10 @@ export type BacktestLiveResponse = {
   calmar: number | null;
   var_95?: number | null;
   es_95?: number | null;
+  /** Q3 prediction-quality slice — Expected Shortfall at 97.5% confidence
+   *  (average loss in the worst 2.5% of trades). Surfaced on the new
+   *  `BacktestRiskMetrics` strip. */
+  es_975?: number | null;
   max_drawdown: number | null;
   hit_rate: number | null;
   total_pnl_usd: number | null;
@@ -221,7 +225,25 @@ export type ThesisAuditRecord = {
   source: string;
   model: string | null;
   context_fingerprint: string;
-  context: Record<string, unknown> & { hours_to_next_eia?: number | null; current_z?: number };
+  context: Record<string, unknown> & {
+    hours_to_next_eia?: number | null;
+    current_z?: number;
+    // Q3 prediction-quality slice — surfaced on the hero card via
+    // `CointegrationStat`, `RegimeBadges`, and the GARCH `AdvancedToggle`.
+    coint_p_value?: number | null;
+    coint_verdict?: string | null;
+    coint_half_life_days?: number | null;
+    coint_hedge_ratio?: number | null;
+    regime_term_structure?: "contango" | "backwardation" | "flat" | null;
+    regime_vol_bucket?: "low" | "normal" | "high" | "unknown" | null;
+    regime_vol_percentile?: number | null;
+    regime_realized_vol_20d_pct?: number | null;
+    garch_z?: number | null;
+    garch_ok?: boolean | null;
+    garch_sigma?: number | null;
+    garch_persistence?: number | null;
+    garch_fallback_reason?: string | null;
+  };
   thesis: ThesisRaw;
   guardrails?: string[];
   /** Decorated rows carry these; legacy rows may not. */

@@ -98,6 +98,8 @@ def build_context(
     coint_info: dict | None = None,
     crack_info: dict | None = None,
     cftc_res=None,
+    regime_info: dict | None = None,
+    garch_info: dict | None = None,
 ) -> ThesisContext:
     latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
     latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
@@ -254,4 +256,36 @@ def build_context(
         cftc_swap_net=cftc_sw,
         cftc_mm_zscore_3y=cftc_mm_z,
         cftc_mm_pctile_3y=cftc_mm_pct,
+        # --- Q3 prediction-quality slice ---------------------------------
+        # Regime + GARCH come in as plain dicts so build_context stays
+        # unaware of the backend.services.* layer (which is where the
+        # services live). Each field defaults to None so legacy callers
+        # that don't pass these blocks get the unchanged context shape.
+        regime_term_structure=(str(regime_info.get("term_structure"))
+                               if regime_info and regime_info.get("term_structure") is not None
+                               else None),
+        regime_vol_bucket=(str(regime_info.get("vol_bucket"))
+                           if regime_info and regime_info.get("vol_bucket") is not None
+                           else None),
+        regime_vol_percentile=(float(regime_info.get("vol_percentile"))
+                               if regime_info and regime_info.get("vol_percentile") is not None
+                               else None),
+        regime_realized_vol_20d_pct=(float(regime_info.get("realized_vol_20d_pct"))
+                                     if regime_info and regime_info.get("realized_vol_20d_pct") is not None
+                                     else None),
+        garch_z=(float(garch_info.get("z"))
+                 if garch_info and garch_info.get("z") is not None
+                 else None),
+        garch_ok=(bool(garch_info.get("ok"))
+                  if garch_info and garch_info.get("ok") is not None
+                  else None),
+        garch_sigma=(float(garch_info.get("sigma"))
+                     if garch_info and garch_info.get("sigma") is not None
+                     else None),
+        garch_persistence=(float(garch_info.get("persistence"))
+                           if garch_info and garch_info.get("persistence") is not None
+                           else None),
+        garch_fallback_reason=(str(garch_info.get("fallback_reason"))
+                               if garch_info and garch_info.get("fallback_reason")
+                               else None),
     )

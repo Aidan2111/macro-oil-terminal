@@ -30,6 +30,9 @@ import { InstrumentTile } from "./InstrumentTile";
 import { PreTradeChecklist } from "./PreTradeChecklist";
 import { CatalystCountdown } from "./CatalystCountdown";
 import { HeroBackground } from "./HeroBackground";
+import { CointegrationStat } from "./CointegrationStat";
+import { RegimeBadges } from "./RegimeBadges";
+import { AdvancedToggle } from "./AdvancedToggle";
 
 // `HeroBackground` synchronously gates on viewport (≥768px) and
 // `prefers-reduced-motion` and only mounts the WebGPU/TSL desktop
@@ -387,6 +390,51 @@ function LoadedHero({
               {lineage ? <LineagePill lineage={lineage} /> : null}
               <CatalystCountdown hoursToEia={hoursToEia} />
             </div>
+          </div>
+
+          {/* Q3 prediction-quality strip — cointegration pill + regime
+              badges + GARCH/rolling stretch toggle. Sits below the stance
+              row so the quant rigor is visible before the headline copy. */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <CointegrationStat
+                pValue={(ctx as { coint_p_value?: number | null }).coint_p_value}
+                halfLifeDays={
+                  (ctx as { coint_half_life_days?: number | null })
+                    .coint_half_life_days
+                }
+                verdict={
+                  (ctx as { coint_verdict?: string | null }).coint_verdict
+                }
+              />
+              <RegimeBadges
+                termStructure={
+                  (ctx as { regime_term_structure?: "contango" | "backwardation" | "flat" | null })
+                    .regime_term_structure ?? null
+                }
+                volBucket={
+                  (ctx as { regime_vol_bucket?: "low" | "normal" | "high" | "unknown" | null })
+                    .regime_vol_bucket ?? null
+                }
+                volPercentile={
+                  (ctx as { regime_vol_percentile?: number | null })
+                    .regime_vol_percentile
+                }
+                realizedVolPct={
+                  (ctx as { regime_realized_vol_20d_pct?: number | null })
+                    .regime_realized_vol_20d_pct
+                }
+              />
+            </div>
+            <AdvancedToggle
+              rollingZ={(ctx as { current_z?: number | null }).current_z ?? null}
+              garchZ={(ctx as { garch_z?: number | null }).garch_z ?? null}
+              garchOk={(ctx as { garch_ok?: boolean | null }).garch_ok ?? null}
+              fallbackReason={
+                (ctx as { garch_fallback_reason?: string | null })
+                  .garch_fallback_reason ?? null
+              }
+            />
           </div>
 
           {/* Headline — plain-English first, technical summary as secondary */}

@@ -152,6 +152,41 @@ def _build_thesis_context() -> Any:
     except Exception:
         cftc_res = None
 
+    # 8. Q3 prediction-quality enrichments — cointegration + regime + GARCH.
+    #    All three are best-effort and each has its own defensive
+    #    fallback inside the service so a failure here only shows up as
+    #    a missing pill in the UI, never a 500 on the SSE path. We keep
+    #    the spread frame in scope from step 3.
+    coint_info: dict | None = None
+    regime_info: dict | None = None
+    garch_info: dict | None = None
+    try:
+        from .cointegration_service import compute_cointegration_for_thesis  # type: ignore
+        # Engle-Granger needs Brent + WTI series — pull them off the
+        # pricing frame, not the (mean-augmented) spread frame.
+        coint_input = pricing_res.frame[["Brent", "WTI"]].copy()
+        cs = compute_cointegration_for_thesis(coint_input)
+        coint_info = {
+            "p_value": cs.eg_pvalue,
+            "verdict": cs.verdict,
+            "hedge_ratio": cs.hedge_ratio,
+            "half_life_days": cs.half_life_days,
+        }
+    except Exception:
+        coint_info = None
+    try:
+        from .regime_service import detect_regime  # type: ignore
+        rs = detect_regime(pricing_res.frame)
+        regime_info = rs.to_dict()
+    except Exception:
+        regime_info = None
+    try:
+        from .garch_stretch import compute_garch_normalized_stretch  # type: ignore
+        gz, gdiag = compute_garch_normalized_stretch(spread_df)
+        garch_info = {"z": gz, **gdiag}
+    except Exception:
+        garch_info = None
+
     return thesis_context.build_context(
         pricing_res=pricing_res,
         inventory_res=inventory_res,
@@ -163,6 +198,9 @@ def _build_thesis_context() -> Any:
         z_threshold=2.0,
         floor_bbls=300_000_000.0,
         cftc_res=cftc_res,
+        coint_info=coint_info,
+        regime_info=regime_info,
+        garch_info=garch_info,
     )
 
 

@@ -112,6 +112,26 @@ class ThesisContext:
     cftc_mm_zscore_3y: Optional[float] = None             # Z-score of MM net vs ~3y
     cftc_mm_pctile_3y: Optional[float] = None             # percentile 0..100 of MM net
 
+    # --- Q3 prediction-quality slice ---------------------------------------
+    # Regime detection — term structure (contango/backwardation/flat) and
+    # the bucketed realized-vol percentile. Backed by
+    # ``backend.services.regime_service``. All optional so legacy audit-log
+    # rows still deserialise cleanly.
+    regime_term_structure: Optional[str] = None           # "contango" | "backwardation" | "flat"
+    regime_vol_bucket: Optional[str] = None               # "low" | "normal" | "high" | "unknown"
+    regime_vol_percentile: Optional[float] = None         # 0..100 percentile of 20d realized vol
+    regime_realized_vol_20d_pct: Optional[float] = None   # latest annualised vol (%)
+
+    # GARCH-normalised stretch — the "true" sigma replacement for the
+    # rolling-std Z. Backed by ``backend.services.garch_stretch``. When
+    # the fit fails we fall back to the rolling Z and ``garch_ok`` is
+    # False so the LLM (and the UI) can flag it.
+    garch_z: Optional[float] = None
+    garch_ok: Optional[bool] = None
+    garch_sigma: Optional[float] = None
+    garch_persistence: Optional[float] = None             # α + β
+    garch_fallback_reason: Optional[str] = None           # populated when garch_ok=False
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -238,7 +258,29 @@ SYSTEM_PROMPT = (
     "The JSON schema has a required ``reasoning_summary`` field. In Quick-read "
     "mode keep it short (1-2 sentences describing the path from data to "
     "conclusion). In Deep-analysis mode expand it to 3-6 sentences covering "
-    "the competing hypotheses you considered and why you picked the stance you did."
+    "the competing hypotheses you considered and why you picked the stance you did.\n\n"
+    # Q3 prediction-quality slice — make the new context fields first-class
+    # citizens. The model MUST cite them when present rather than paper
+    # over the data caveats they encode.
+    "The context now carries four prediction-quality fields you MUST consult before "
+    "stating conviction:\n"
+    "  * ``coint_p_value`` and ``coint_half_life_days`` — Engle-Granger cointegration. "
+    "    A p-value above 0.10 means the pair is NOT mean-reverting on this window; "
+    "    you must downgrade conviction and add a data caveat saying the spread "
+    "    looks de-cointegrated. Reference the half-life when sizing horizon — if "
+    "    half-life > 30 days, a 14-day horizon trade is mismatched.\n"
+    "  * ``regime_term_structure`` (contango / backwardation / flat) and "
+    "    ``regime_vol_bucket`` (low / normal / high) — frame the trade in the "
+    "    current term-structure + vol regime. A high-vol bucket should reduce "
+    "    suggested position size; a flat term structure should reduce conviction.\n"
+    "  * ``garch_z`` plus ``garch_ok`` — the GARCH(1,1)-normalised dislocation. "
+    "    Prefer ``garch_z`` over ``current_z`` when ``garch_ok=true``; the rolling-z "
+    "    under-counts vol clustering. If ``garch_ok=false`` cite "
+    "    ``garch_fallback_reason`` as a data caveat.\n"
+    "When any of these fields is present, weave the cite into ``key_drivers`` or "
+    "``invalidation_risks`` in plain English — e.g. \"Engle-Granger p=0.04 means "
+    "the pair is still cointegrated, supporting the snap-back thesis\" — never "
+    "drop them silently."
 )
 
 
