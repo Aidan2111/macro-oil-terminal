@@ -112,7 +112,8 @@ export function CalibrationChart() {
   }
 
   const { stats } = state;
-  const data = stats.buckets.map((b) => ({
+  const buckets = stats.buckets ?? [];
+  const data = buckets.map((b) => ({
     bucket: b.label,
     midpoint_pct: b.midpoint * 100,
     hit_rate_pct: b.hit_rate * 100,
@@ -155,8 +156,9 @@ export function CalibrationChart() {
         </span>
       </div>
       <div className="mb-3 text-[11px] text-text-muted">
-        Brier {stats.brier_score.toFixed(3)} - signed error{" "}
-        {(stats.mean_signed_error * 100).toFixed(1)}% - n={stats.n_total}
+        Brier {(stats.brier_score ?? 0).toFixed(3)} - signed error{" "}
+        {((stats.mean_signed_error ?? 0) * 100).toFixed(1)}% - n=
+        {stats.n_total ?? 0}
       </div>
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart
