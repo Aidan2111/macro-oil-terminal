@@ -232,6 +232,8 @@ export type ThesisAuditRecord = {
 export type ThesisLatestResponse = {
   thesis: ThesisAuditRecord | null;
   empty: boolean;
+  /** Q1 data-quality: optional lineage for the headline numeric. */
+  lineage?: Lineage;
 };
 
 export type ThesisSseDoneEvent = {
@@ -320,4 +322,47 @@ export type BuildInfo = {
   sha_short?: string | null;
   time: string;
   region: string;
+};
+
+
+// ---- Q1 Data-quality slice -------------------------------------------
+// Q1-DATA-QUALITY-TYPES
+
+export type ProviderName =
+  | "yfinance"
+  | "eia"
+  | "cftc"
+  | "aisstream"
+  | "alpaca_paper"
+  | "audit_log";
+
+export type HealthStatus = "green" | "amber" | "red";
+
+export type ProviderHealth = {
+  name: ProviderName;
+  status: HealthStatus;
+  last_good_at: string | null;
+  n_obs: number | null;
+  latency_ms: number | null;
+  freshness_target_hours: number;
+  message: string | null;
+};
+
+export type DataQualityEnvelope = {
+  generated_at: string;
+  overall: HealthStatus;
+  providers: ProviderHealth[];
+};
+
+/**
+ * Optional lineage block attached to /api/thesis/latest. Renders as a
+ * tooltip on hover over the spread numeric. Backend writes it only
+ * when spread_service has at least one successful fetch in memory.
+ */
+export type Lineage = {
+  source: string;
+  symbol: string;
+  asof: string | null;
+  n_obs: number | null;
+  latency_ms: number | null;
 };

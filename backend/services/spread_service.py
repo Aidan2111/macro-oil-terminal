@@ -86,3 +86,96 @@ def get_spread_response(history_bars: int = 90) -> SpreadResponse:
         source=result.source,
         history=history,
     )
+
+
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-LAST-FETCH-STATE
+# Tiny in-memory snapshot of the last successful fetch. Exposed so
+# backend.services.data_quality can build a /api/data-quality envelope
+# without reaching across legacy provider internals.
+# ---------------------------------------------------------------------------
+
+import threading as _dq_threading
+from datetime import datetime as _dq_datetime, timezone as _dq_timezone
+
+_DQ_STATE_LOCK = _dq_threading.Lock()
+_DQ_LAST_FETCH: dict[str, object] = {
+    "last_good_at": None,   # datetime | None — UTC
+    "n_obs": None,          # int | None
+    "latency_ms": None,     # int | None
+    "message": None,        # str | None — populated on guard violation
+    "status": "amber",      # "green" | "amber" | "red"
+}
+
+
+def record_fetch_success(*, n_obs: int | None, latency_ms: int | None,
+                          message: str | None = None,
+                          degraded: bool = False) -> None:
+    """Mark a successful fetch (or degraded/amber if a sanity guard tripped)."""
+    with _DQ_STATE_LOCK:
+        _DQ_LAST_FETCH["last_good_at"] = _dq_datetime.now(_dq_timezone.utc)
+        _DQ_LAST_FETCH["n_obs"] = n_obs
+        _DQ_LAST_FETCH["latency_ms"] = latency_ms
+        _DQ_LAST_FETCH["message"] = message
+        _DQ_LAST_FETCH["status"] = "amber" if degraded else "green"
+
+
+def record_fetch_failure(message: str) -> None:
+    with _DQ_STATE_LOCK:
+        _DQ_LAST_FETCH["status"] = "red"
+        _DQ_LAST_FETCH["message"] = message
+
+
+def get_last_fetch_state() -> dict[str, object]:
+    """Return a snapshot dict (caller-owned copy)."""
+    with _DQ_STATE_LOCK:
+        return dict(_DQ_LAST_FETCH)
+
+
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-LINEAGE
+# Wrap the legacy `get_spread_response` so each successful call records
+# last-fetch state for /api/data-quality. Failures bubble up untouched
+# so the existing 503 envelope still fires.
+# ---------------------------------------------------------------------------
+
+import time as _dq_time
+import logging as _dq_logging
+
+_dq_log = _dq_logging.getLogger(__name__)
+
+_real_get_spread_response = get_spread_response
+
+
+def get_spread_response(history_bars: int = 90):  # type: ignore[no-redef]
+    t0 = _dq_time.monotonic()
+    try:
+        resp = _real_get_spread_response(history_bars=history_bars)
+    except Exception as exc:
+        record_fetch_failure(f"yfinance fetch failed: {type(exc).__name__}: {exc}")
+        raise
+    latency_ms = int((_dq_time.monotonic() - t0) * 1000.0)
+    n_obs = len(resp.history) if getattr(resp, "history", None) else None
+    degraded = False
+    msg = None
+    try:
+        from backend.services.data_quality import GuardViolation, guard_yfinance_frame
+        # Guard runs against a tiny synthetic frame built from the
+        # response history so we don't double-fetch yfinance.
+        import pandas as _dq_pd
+        if resp.history:
+            frame = _dq_pd.DataFrame(
+                [{"Close": p.spread, "Brent": p.brent, "WTI": p.wti} for p in resp.history]
+            )
+            try:
+                guard_yfinance_frame(frame)
+            except GuardViolation as gv:
+                degraded = True
+                msg = str(gv)
+                _dq_log.warning("yfinance guard tripped: %s", gv)
+    except Exception:
+        # Guard is best-effort — never fail the request because of it.
+        pass
+    record_fetch_success(n_obs=n_obs, latency_ms=latency_ms,
+                         message=msg, degraded=degraded)
+    return resp

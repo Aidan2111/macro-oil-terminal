@@ -692,13 +692,46 @@ def _wrap_thesis_audit_record(t: dict[str, Any]) -> dict[str, Any]:
 
 
 def _real_thesis_latest() -> dict[str, Any]:
-    """Read the most recent audit record written by trade_thesis."""
+    """Read the most recent audit record written by trade_thesis.
+
+    Q1 data-quality slice: thread an OPTIONAL ``lineage`` block onto the
+    response so the React hero card can show "yfinance, BZ=F+CL=F front-
+    month, fetched 2m ago, n=251" as a tooltip on hover. Lineage is a
+    NEW field — not in the original ThesisLatestResponse schema — so the
+    frontend treats it as optional.
+
+    # Q1-DATA-QUALITY-THESIS-LINEAGE
+    """
     from backend.services.thesis_service import get_latest_thesis
 
     rec = get_latest_thesis()
+    base: dict[str, Any]
     if rec is None:
-        return {"thesis": None, "empty": True, "source": "audit_log"}
-    return {"thesis": rec, "empty": False, "source": "audit_log"}
+        base = {"thesis": None, "empty": True, "source": "audit_log"}
+    else:
+        base = {"thesis": rec, "empty": False, "source": "audit_log"}
+
+    # Attach spread lineage when spread_service has been hit at least
+    # once. The hero card's spread value is the headline numeric, so
+    # lineage on yfinance is the most actionable.
+    try:
+        from backend.services.spread_service import get_last_fetch_state
+
+        snap = get_last_fetch_state()
+        last_good = snap.get("last_good_at")
+        n_obs = snap.get("n_obs")
+        if last_good is not None:
+            base["lineage"] = {
+                "source": "yfinance",
+                "symbol": "BZ=F+CL=F",
+                "asof": last_good.isoformat() if hasattr(last_good, "isoformat") else None,
+                "n_obs": n_obs,
+                "latency_ms": snap.get("latency_ms"),
+            }
+    except Exception:
+        pass
+
+    return base
 
 
 @app.get("/api/thesis/latest")
@@ -1090,3 +1123,28 @@ async def positions_stream():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Data quality — Q1 slice (read-only collator over per-provider state)
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-ROUTE
+
+
+@app.get("/api/data-quality")
+def data_quality() -> Any:
+    """Per-provider health envelope.
+
+    Returns 200 even when individual providers are red — red is *data*,
+    not a transport error. The frontend DataQualityTile renders the
+    grid + per-cell tooltip from this body. Endpoint is intentionally
+    public for now; auth gate will land alongside the rest of /api in a
+    follow-up.
+    """
+    try:
+        from backend.services.data_quality import compute_quality_envelope
+
+        env = compute_quality_envelope()
+        return env.model_dump(mode="json")
+    except Exception as exc:  # pragma: no cover — collator is pure
+        return _provider_error("data_quality", exc)

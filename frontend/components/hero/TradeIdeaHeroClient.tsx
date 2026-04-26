@@ -11,10 +11,17 @@ import { postEventSource } from "@/lib/sse";
 import type {
   ChecklistItem,
   Instrument,
+  Lineage,
   ThesisAuditRecord,
   ThesisLatestResponse,
   ThesisRaw,
 } from "@/types/api";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { SpreadCurvesIllustration } from "@/components/illustrations/SpreadCurvesIllustration";
 import { Button } from "@/components/ui/button";
 import { StancePill } from "./StancePill";
@@ -183,6 +190,7 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
 
   const record: ThesisAuditRecord | null = query.data?.thesis ?? null;
   const empty = query.data?.empty ?? record === null;
+  const lineage = query.data?.lineage;
 
   if (empty || record === null) {
     // The streaming generate call is auto-fired in the SSE effect
@@ -230,7 +238,7 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
     );
   }
 
-  return <LoadedHero record={record} stream={stream} />;
+  return <LoadedHero record={record} stream={stream} lineage={lineage} />;
 }
 
 /**
@@ -325,9 +333,11 @@ function HeroSkeleton() {
 function LoadedHero({
   record,
   stream,
+  lineage,
 }: {
   record: ThesisAuditRecord;
   stream: StreamState;
+  lineage?: Lineage;
 }) {
   const raw: ThesisRaw = record.thesis ?? {};
   const stance = (raw.stance ?? "flat") as string;
@@ -372,7 +382,11 @@ function LoadedHero({
           {/* Top row: stance pill + catalyst line + (live stream hint) */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <StancePill stance={stance} />
-            <CatalystCountdown hoursToEia={hoursToEia} />
+            <div className="flex items-center gap-2">
+              {/* Q1-DATA-QUALITY-LINEAGE */}
+              {lineage ? <LineagePill lineage={lineage} /> : null}
+              <CatalystCountdown hoursToEia={hoursToEia} />
+            </div>
           </div>
 
           {/* Headline — plain-English first, technical summary as secondary */}
@@ -456,5 +470,62 @@ function LoadedHero({
         </CardContent>
       </Card>
     </motion.div>
+  );
+}
+
+
+/**
+ * Q1 data-quality slice: tiny lineage pill rendered next to the
+ * catalyst countdown. Hover surfaces "yfinance, BZ=F+CL=F front-month,
+ * fetched 2m ago, n=251". When the backend hasn't attached lineage
+ * yet (cold start, /api/thesis/latest returned no `lineage` field),
+ * the pill is omitted entirely.
+ */
+function relAge(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "—";
+  const ageS = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (ageS < 60) return `${ageS}s ago`;
+  const ageM = Math.floor(ageS / 60);
+  if (ageM < 60) return `${ageM}m ago`;
+  const ageH = Math.floor(ageM / 60);
+  if (ageH < 24) return `${ageH}h ago`;
+  const ageD = Math.floor(ageH / 24);
+  return `${ageD}d ago`;
+}
+
+function LineagePill({ lineage }: { lineage: Lineage }) {
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            data-testid="trade-idea-hero-lineage"
+            className="inline-flex items-center gap-1 rounded-btn border border-border bg-bg-2 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-text-muted hover:bg-bg-3 focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <span>lineage</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs text-xs">
+          <div className="space-y-0.5">
+            <div className="font-semibold">{lineage.source}</div>
+            <div className="text-text-secondary">
+              {lineage.symbol} front-month
+            </div>
+            <div className="text-text-secondary">
+              fetched {relAge(lineage.asof)}
+            </div>
+            {lineage.n_obs !== null ? (
+              <div className="text-text-muted">
+                n=<span className="num">{lineage.n_obs}</span> obs
+              </div>
+            ) : null}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

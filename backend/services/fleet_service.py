@@ -280,3 +280,47 @@ def _flag_from_mmsi(mmsi: int) -> str:
         775: "Venezuela",
     }
     return table.get(prefix, "Other")
+
+
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-LAST-FETCH-STATE
+# Tiny in-memory snapshot of the last successful fetch. Exposed so
+# backend.services.data_quality can build a /api/data-quality envelope
+# without reaching across legacy provider internals.
+# ---------------------------------------------------------------------------
+
+import threading as _dq_threading
+from datetime import datetime as _dq_datetime, timezone as _dq_timezone
+
+_DQ_STATE_LOCK = _dq_threading.Lock()
+_DQ_LAST_FETCH: dict[str, object] = {
+    "last_good_at": None,   # datetime | None — UTC
+    "n_obs": None,          # int | None
+    "latency_ms": None,     # int | None
+    "message": None,        # str | None — populated on guard violation
+    "status": "amber",      # "green" | "amber" | "red"
+}
+
+
+def record_fetch_success(*, n_obs: int | None, latency_ms: int | None,
+                          message: str | None = None,
+                          degraded: bool = False) -> None:
+    """Mark a successful fetch (or degraded/amber if a sanity guard tripped)."""
+    with _DQ_STATE_LOCK:
+        _DQ_LAST_FETCH["last_good_at"] = _dq_datetime.now(_dq_timezone.utc)
+        _DQ_LAST_FETCH["n_obs"] = n_obs
+        _DQ_LAST_FETCH["latency_ms"] = latency_ms
+        _DQ_LAST_FETCH["message"] = message
+        _DQ_LAST_FETCH["status"] = "amber" if degraded else "green"
+
+
+def record_fetch_failure(message: str) -> None:
+    with _DQ_STATE_LOCK:
+        _DQ_LAST_FETCH["status"] = "red"
+        _DQ_LAST_FETCH["message"] = message
+
+
+def get_last_fetch_state() -> dict[str, object]:
+    """Return a snapshot dict (caller-owned copy)."""
+    with _DQ_STATE_LOCK:
+        return dict(_DQ_LAST_FETCH)
