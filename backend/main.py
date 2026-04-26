@@ -157,12 +157,18 @@ def _series(base: float, days: int, noise: float = 0.3) -> list[dict[str, Any]]:
 
 @app.get("/health")
 def health_root() -> dict[str, Any]:
-    return {"status": "ok", "mode": "fixture"}
+    # Phase 1 wired every canonical endpoint to a real upstream
+    # provider; the "fixture" label is a leftover from the cutover-week
+    # branding and was misleading the healthcheck. Flip to "live" now
+    # that the route surface is real-data first. /api/<x>/fixture debug
+    # endpoints still exist for provisioning, but the canonical surface
+    # never serves fixtures.
+    return {"status": "ok", "mode": "live"}
 
 
 @app.get("/api/health")
 def health_api() -> dict[str, Any]:
-    return {"status": "ok", "mode": "fixture"}
+    return {"status": "ok", "mode": "live"}
 
 
 @app.get("/api/build-info")
@@ -172,7 +178,7 @@ def build_info() -> dict[str, Any]:
         "sha_short": os.environ.get("BUILD_VERSION", "dev"),
         "time": os.environ.get("BUILD_TIME", _utcnow_iso()),
         "region": os.environ.get("BACKEND_REGION", "canadaeast"),
-        "mode": "fixture",
+        "mode": "live",
     }
 
 
