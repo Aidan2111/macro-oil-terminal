@@ -67,9 +67,10 @@ export function VesselPanel({ vessel, onClose }: Props) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-text-secondary hover:bg-bg-3 hover:text-text-primary"
+            // 44px floor for the touch target — flagged in the visual audit.
+            className="grid place-items-center min-w-[44px] min-h-[44px] rounded-md text-text-secondary hover:bg-bg-3 hover:text-text-primary"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </header>
 
