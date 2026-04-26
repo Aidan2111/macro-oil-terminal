@@ -43,10 +43,15 @@ export function TickerTape() {
     staleTime: 55_000,
   });
 
-  // Optional SSE upgrade — attempts to subscribe but silently falls
-  // back to polling on 404/network error. The refetch call just
-  // invalidates the cached snapshot so React Query refetches on the
-  // next tick.
+  // Optional SSE upgrade with capped exponential backoff. On `onerror`
+  // we close the source and schedule a reconnect at 1s/2s/4s/8s/16s
+  // (max 30s), capped at 5 retries before going silent and falling
+  // back to React Query's 30s polling. Review #13 axis 2 — without
+  // this, a single network blip silently downgrades live updates to
+  // polling forever.
+  const reconnectTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const ES = (window as typeof window & { EventSource?: typeof EventSource })
@@ -54,22 +59,43 @@ export function TickerTape() {
     if (!ES) return;
     let closed = false;
     let source: EventSource | null = null;
-    try {
-      // Use the absolute API_BASE — static export doesn't proxy
-      // /api/* on the SWA host, so a relative URL would 404 to HTML
-      // and the browser would log an EventSource MIME-type error.
-      source = new ES(`${API_BASE}/api/spread/stream`);
-      source.onmessage = () => {
-        if (!closed) spreadQ.refetch();
-      };
-      source.onerror = () => {
-        source?.close();
-      };
-    } catch {
-      // Ignore — polling already running.
-    }
+    let attempt = 0;
+    const MAX_ATTEMPTS = 5;
+
+    const open = () => {
+      if (closed) return;
+      try {
+        // Use the absolute API_BASE — static export doesn't proxy
+        // /api/* on the SWA host, so a relative URL would 404 to HTML
+        // and the browser would log an EventSource MIME-type error.
+        source = new ES(`${API_BASE}/api/spread/stream`);
+        source.onopen = () => {
+          attempt = 0;
+        };
+        source.onmessage = () => {
+          if (!closed) spreadQ.refetch();
+        };
+        source.onerror = () => {
+          source?.close();
+          source = null;
+          if (closed || attempt >= MAX_ATTEMPTS) return;
+          const delay = Math.min(30_000, 1_000 * Math.pow(2, attempt));
+          attempt += 1;
+          reconnectTimerRef.current = setTimeout(open, delay);
+        };
+      } catch {
+        // Construction failure — polling already running.
+      }
+    };
+
+    open();
+
     return () => {
       closed = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       source?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

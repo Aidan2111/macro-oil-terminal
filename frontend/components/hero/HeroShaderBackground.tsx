@@ -34,7 +34,6 @@ export function HeroShaderBackground({ stretchFactor, className }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    let disposed = false;
     let cleanup: (() => void) | undefined;
 
     (async () => {
@@ -125,7 +124,6 @@ export function HeroShaderBackground({ stretchFactor, className }: Props) {
     })();
 
     return () => {
-      disposed = true;
       cleanup?.();
     };
   }, []);
