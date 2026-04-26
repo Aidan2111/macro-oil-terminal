@@ -171,7 +171,30 @@ type BootArgs = {
 const EARTH_DAY = "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg";
 const EARTH_NIGHT = "https://threejs.org/examples/textures/planets/earth_lights_2048.png";
 
-const MAX_INSTANCES = 2000;
+// Viewport-aware caps. Mobile Safari kills WebGL contexts under memory
+// pressure; halving the instance buffer + dropping the earth tessellation
+// keeps /fleet stable on iPhone-class hardware. Desktop is unchanged.
+const MAX_INSTANCES_DESKTOP = 2000;
+const MAX_INSTANCES_MOBILE = 600;
+const EARTH_SEGMENTS_DESKTOP = 64;
+const EARTH_SEGMENTS_MOBILE = 32;
+const DPR_CAP_DESKTOP = 2;
+const DPR_CAP_MOBILE = 1.5;
+
+function isMobileViewport(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 767px)").matches;
+}
+
+function mobileTier() {
+  const mobile = isMobileViewport();
+  return {
+    mobile,
+    maxInstances: mobile ? MAX_INSTANCES_MOBILE : MAX_INSTANCES_DESKTOP,
+    earthSegments: mobile ? EARTH_SEGMENTS_MOBILE : EARTH_SEGMENTS_DESKTOP,
+    dprCap: mobile ? DPR_CAP_MOBILE : DPR_CAP_DESKTOP,
+  };
+}
 
 async function bootWebGPU({
   canvas,
@@ -180,6 +203,7 @@ async function bootWebGPU({
   onVesselClick,
   trails,
 }: BootArgs): Promise<() => void> {
+  const tier = mobileTier();
   const THREE = await import("three");
   const { WebGPURenderer, MeshBasicNodeMaterial } = await import("three/webgpu");
   const TSL = await import("three/tsl");
@@ -207,7 +231,7 @@ async function bootWebGPU({
 
   const renderer = new WebGPURenderer({ canvas, antialias: true, alpha: true });
   await renderer.init();
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  renderer.setPixelRatio(Math.min(tier.dprCap, window.devicePixelRatio));
   renderer.setSize(canvas.clientWidth || 600, canvas.clientHeight || 480, false);
   renderer.setClearColor(new THREE.Color(0x000000), 0);
 
@@ -221,7 +245,7 @@ async function bootWebGPU({
   const [dayTex, nightTex] = await Promise.all([load(EARTH_DAY), load(EARTH_NIGHT)]);
 
   // --- Earth
-  const earthGeo = new THREE.SphereGeometry(1, 64, 64);
+  const earthGeo = new THREE.SphereGeometry(1, tier.earthSegments, tier.earthSegments);
   const sunUnif = uniform(
     new THREE.Vector3().fromArray(solarUnitVector(new Date())),
   );
@@ -243,7 +267,7 @@ async function bootWebGPU({
   scene.add(earth);
 
   // --- Atmosphere rim
-  const atmoGeo = new THREE.SphereGeometry(1.015, 64, 64);
+  const atmoGeo = new THREE.SphereGeometry(1.015, tier.earthSegments, tier.earthSegments);
   const atmoMat = new MeshBasicNodeMaterial();
   atmoMat.side = THREE.BackSide;
   atmoMat.transparent = true;
@@ -261,11 +285,11 @@ async function bootWebGPU({
   const dotGeo = new THREE.IcosahedronGeometry(0.005, 0);
   const dotMat = new MeshBasicNodeMaterial();
   dotMat.vertexColors = true;
-  const instanced = new THREE.InstancedMesh(dotGeo, dotMat, MAX_INSTANCES);
+  const instanced = new THREE.InstancedMesh(dotGeo, dotMat, tier.maxInstances);
   instanced.count = 0;
   instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const colorAttr = new THREE.InstancedBufferAttribute(
-    new Float32Array(MAX_INSTANCES * 3),
+    new Float32Array(tier.maxInstances * 3),
     3,
   );
   instanced.instanceColor = colorAttr;
@@ -345,7 +369,7 @@ async function bootWebGPU({
 
   function writeInstances(list: Vessel[], visible: Set<FlagCategory>) {
     vesselsByIndex.length = 0;
-    const n = Math.min(list.length, MAX_INSTANCES);
+    const n = Math.min(list.length, tier.maxInstances);
     targetPositions.length = n;
     while (currentPositions.length < n) currentPositions.push(new THREE.Vector3());
     for (let i = 0; i < n; i++) {
@@ -485,6 +509,7 @@ async function bootWebGL({
   onVesselClick,
   trails,
 }: BootArgs): Promise<() => void> {
+  const tier = mobileTier();
   const THREE = await import("three");
   const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
 
@@ -492,10 +517,27 @@ async function bootWebGL({
   const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
   camera.position.set(0, 0.6, 3.2);
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: !tier.mobile,
+    alpha: true,
+    // iOS Safari aggressively reclaims WebGL contexts when memory is
+    // tight; powerPreference 'low-power' keeps us on the integrated GPU
+    // and reduces the chance of a frame-1 context-loss event.
+    powerPreference: tier.mobile ? "low-power" : "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(tier.dprCap, window.devicePixelRatio));
   renderer.setSize(canvas.clientWidth || 600, canvas.clientHeight || 480, false);
   renderer.setClearColor(0x000000, 0);
+
+  // If iOS Safari kills the context mid-render, stop the RAF loop
+  // cleanly so the page stays interactive instead of repeatedly
+  // throwing.
+  const onContextLost = (e: Event) => {
+    e.preventDefault();
+    cancelAnimationFrame(raf);
+  };
+  canvas.addEventListener("webglcontextlost", onContextLost as EventListener);
 
   const texLoader = new THREE.TextureLoader();
   texLoader.setCrossOrigin("anonymous");
@@ -504,7 +546,7 @@ async function bootWebGL({
   );
 
   const earth = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 64, 64),
+    new THREE.SphereGeometry(1, tier.earthSegments, tier.earthSegments),
     new THREE.MeshStandardMaterial({
       map: dayTex ?? null,
       color: dayTex ? 0xffffff : 0x1b3550,
@@ -522,11 +564,11 @@ async function bootWebGL({
 
   const dotGeo = new THREE.IcosahedronGeometry(0.005, 0);
   const dotMat = new THREE.MeshBasicMaterial({ vertexColors: true });
-  const instanced = new THREE.InstancedMesh(dotGeo, dotMat, MAX_INSTANCES);
+  const instanced = new THREE.InstancedMesh(dotGeo, dotMat, tier.maxInstances);
   instanced.count = 0;
   instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const colorAttr = new THREE.InstancedBufferAttribute(
-    new Float32Array(MAX_INSTANCES * 3),
+    new Float32Array(tier.maxInstances * 3),
     3,
   );
   instanced.instanceColor = colorAttr;
@@ -596,7 +638,7 @@ async function bootWebGL({
 
   function writeInstances(list: Vessel[], visible: Set<FlagCategory>) {
     vesselsByIndex.length = 0;
-    const n = Math.min(list.length, MAX_INSTANCES);
+    const n = Math.min(list.length, tier.maxInstances);
     targetPositions.length = n;
     while (currentPositions.length < n) currentPositions.push(new THREE.Vector3());
     for (let i = 0; i < n; i++) {
@@ -690,6 +732,7 @@ async function bootWebGL({
 
   return () => {
     cancelAnimationFrame(raf);
+    canvas.removeEventListener("webglcontextlost", onContextLost as EventListener);
     ro.disconnect();
     controls.dispose();
     (earth.geometry as TBufferGeometry).dispose();
