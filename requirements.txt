@@ -6,7 +6,7 @@
 #
 # Streamlit + plotly were dropped on 2026-04-26 when app.py was retired.
 
-pandas>=2.0.0
+pandas>=3.0.2
 numpy>=1.24.0
 scikit-learn>=1.3.0
 yfinance>=0.2.30

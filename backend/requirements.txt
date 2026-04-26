@@ -8,7 +8,7 @@ sse-starlette>=2.1.0
 # route handlers. Container warmup stays fast because main.py only
 # imports FastAPI + stdlib at module level; pandas/yfinance/etc. only
 # load when a route is hit.
-pandas>=2.0.0
+pandas>=3.0.2
 numpy>=1.24.0
 requests>=2.31.0
 yfinance>=0.2.40
