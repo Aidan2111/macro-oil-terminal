@@ -279,7 +279,7 @@ def test_build_context_with_coint_and_crack(eia_fixture, synth_prices, spread_wi
     ais_res = fetch_ais_data(n_vessels=30)
     _, ais_agg = categorize_flag_states(ais_res.frame)
     dep = forecast_depletion(inv_res.frame, floor_bbls=300_000_000.0, lookback_weeks=4)
-    pricing_res = SimpleNamespace(frame=synth_prices, source="yfinance", fetched_at=pd.Timestamp.utcnow())
+    pricing_res = SimpleNamespace(frame=synth_prices, source="yfinance", fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None))
 
     coint_info = {"verdict": "cointegrated", "p_value": 0.01, "hedge_ratio": 0.95, "half_life_days": 18.4}
     crack_info = {"ok": True, "latest_crack_usd": 28.5, "corr_30d_vs_brent_wti": 0.42}

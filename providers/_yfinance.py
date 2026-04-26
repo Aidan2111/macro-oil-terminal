@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,7 @@ def fetch_daily(years: int = 5) -> pd.DataFrame:
     if yf is None:
         raise RuntimeError("yfinance not installed")
 
-    end = datetime.utcnow()
+    end = datetime.now(timezone.utc).replace(tzinfo=None)
     start = end - timedelta(days=years * 365)
 
     raw = yf.download(

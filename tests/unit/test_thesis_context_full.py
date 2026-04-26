@@ -18,7 +18,7 @@ def test_build_context_end_to_end(eia_fixture, synth_prices, spread_with_zscore,
     _, ais_agg = categorize_flag_states(ais_res.frame)
     dep = forecast_depletion(inv_res.frame, floor_bbls=300_000_000.0, lookback_weeks=4)
 
-    pricing_res = SimpleNamespace(frame=synth_prices, source="yfinance", fetched_at=pd.Timestamp.utcnow())
+    pricing_res = SimpleNamespace(frame=synth_prices, source="yfinance", fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None))
 
     ctx = build_context(
         pricing_res=pricing_res,

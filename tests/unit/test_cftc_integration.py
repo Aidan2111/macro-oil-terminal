@@ -30,7 +30,7 @@ def test_fetch_cftc_positioning_passes_through(monkeypatch, stub_cftc_frame):
     class _StubR:
         frame = stub_cftc_frame
         source_url = "https://example.com/zip"
-        fetched_at = pd.Timestamp.utcnow()
+        fetched_at = pd.Timestamp.now(tz="UTC").tz_convert(None)
         market_name = "WTI-PHYSICAL - NEW YORK MERCANTILE EXCHANGE"
         weeks = len(stub_cftc_frame)
 
@@ -56,7 +56,7 @@ def test_build_context_populates_cftc_fields(stub_cftc_frame):
             index=pd.date_range("2024-01-01", periods=60, freq="D"),
         )
         source = "stub"
-        fetched_at = pd.Timestamp.utcnow()
+        fetched_at = pd.Timestamp.now(tz="UTC").tz_convert(None)
 
     class _InvRes:
         frame = pd.DataFrame(
@@ -70,7 +70,7 @@ def test_build_context_populates_cftc_fields(stub_cftc_frame):
         )
         source = "EIA"
         source_url = "https://example.com"
-        fetched_at = pd.Timestamp.utcnow()
+        fetched_at = pd.Timestamp.now(tz="UTC").tz_convert(None)
 
     spread_df = pd.DataFrame(
         {
@@ -93,7 +93,7 @@ def test_build_context_populates_cftc_fields(stub_cftc_frame):
         frame=stub_cftc_frame,
         source="CFTC disaggregated futures",
         source_url="https://example.com/zip",
-        fetched_at=pd.Timestamp.utcnow(),
+        fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
         market_name="WTI-PHYSICAL - NEW YORK MERCANTILE EXCHANGE",
         weeks=len(stub_cftc_frame),
         mm_zscore_3y=0.75,
@@ -130,7 +130,7 @@ def test_build_context_handles_missing_cftc():
             index=pd.date_range("2024-01-01", periods=60, freq="D"),
         )
         source = "stub"
-        fetched_at = pd.Timestamp.utcnow()
+        fetched_at = pd.Timestamp.now(tz="UTC").tz_convert(None)
 
     class _InvRes:
         frame = pd.DataFrame(
@@ -144,7 +144,7 @@ def test_build_context_handles_missing_cftc():
         )
         source = "EIA"
         source_url = "https://example.com"
-        fetched_at = pd.Timestamp.utcnow()
+        fetched_at = pd.Timestamp.now(tz="UTC").tz_convert(None)
 
     spread_df = pd.DataFrame(
         {

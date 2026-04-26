@@ -188,7 +188,7 @@ def build_context(
             cftc_sw = int(latest["swap_net"])
 
     # Calendar
-    today = pd.Timestamp.utcnow().tz_localize(None).normalize()
+    today = pd.Timestamp.now(tz="UTC").tz_convert(None).normalize()
     eia_next = _next_wednesday(today).strftime("%Y-%m-%d")
 
     # NYMEX crude session: roughly 6pm ET Sunday through 5pm ET Friday. We approximate.

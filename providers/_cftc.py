@@ -165,7 +165,7 @@ def fetch_wti_positioning(years: Iterable[int] | None = None) -> COTResult:
     cached in-process for 24h keyed by the set of years requested.
     """
     if years is None:
-        today = pd.Timestamp.utcnow()
+        today = pd.Timestamp.now(tz="UTC").tz_convert(None)
         years = (today.year - 2, today.year - 1, today.year)
     years = tuple(sorted(set(int(y) for y in years)))
     cache_key = ",".join(str(y) for y in years)
@@ -176,7 +176,7 @@ def fetch_wti_positioning(years: Iterable[int] | None = None) -> COTResult:
         return COTResult(
             frame=cached,
             source_url=_year_url(years[-1]),
-            fetched_at=pd.Timestamp.utcfromtimestamp(hit[0]),
+            fetched_at=pd.Timestamp.fromtimestamp(hit[0], tz="UTC").tz_convert(None),
             market_name=cached["market"].iloc[-1] if not cached.empty else "",
             weeks=len(cached),
         )
@@ -197,7 +197,7 @@ def fetch_wti_positioning(years: Iterable[int] | None = None) -> COTResult:
     return COTResult(
         frame=net,
         source_url=_year_url(years[-1]),
-        fetched_at=pd.Timestamp.utcnow(),
+        fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
         market_name=net["market"].iloc[-1] if not net.empty else "",
         weeks=len(net),
     )
@@ -225,7 +225,7 @@ def health_check(timeout: float = 6.0) -> dict:
     """Liveness probe — HEAD on the current-year zip."""
     t0 = time.monotonic()
     try:
-        today = pd.Timestamp.utcnow()
+        today = pd.Timestamp.now(tz="UTC").tz_convert(None)
         resp = requests.head(_year_url(today.year), timeout=timeout, allow_redirects=True)
         ok = resp.status_code == 200
         return {

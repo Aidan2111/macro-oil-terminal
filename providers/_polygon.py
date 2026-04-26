@@ -8,7 +8,7 @@ aggregates endpoint. Keyed on ``POLYGON_API_KEY``.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -41,7 +41,7 @@ def _fetch(ticker: str, frm: str, to: str) -> pd.Series:
 
 
 def fetch_daily(years: int = 5, brent_ticker: str = "C:BRN1!", wti_ticker: str = "C:WTI1!") -> pd.DataFrame:
-    end = datetime.utcnow().date()
+    end = datetime.now(timezone.utc).replace(tzinfo=None).date()
     start = end - timedelta(days=int(years * 365))
     brent = _fetch(brent_ticker, start.isoformat(), end.isoformat())
     wti = _fetch(wti_ticker, start.isoformat(), end.isoformat())
