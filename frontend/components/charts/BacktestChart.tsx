@@ -14,6 +14,7 @@ import {
 import { EmptyState } from "@/components/common/EmptyState";
 import { ErrorState } from "@/components/common/ErrorState";
 import type { BacktestLiveResponse } from "@/types/api";
+import { BacktestRiskMetrics } from "./BacktestRiskMetrics";
 
 type Props = {
   data: BacktestLiveResponse | null;
@@ -44,6 +45,7 @@ export function BacktestChart({ data, error, height = 320 }: Props) {
     return (
       <div data-testid="backtest-chart" aria-label="Backtest equity curve">
         <StatsRow data={data} />
+        <BacktestRiskMetrics data={data} />
         <EmptyState
           variant="chart"
           title="No backtest yet"
@@ -79,6 +81,7 @@ export function BacktestChart({ data, error, height = 320 }: Props) {
       className="w-full"
     >
       <StatsRow data={data} />
+      <BacktestRiskMetrics data={data} />
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={series} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
