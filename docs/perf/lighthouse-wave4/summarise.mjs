@@ -13,6 +13,11 @@ const files = fs
 
 const rows = files
   .map((file) => {
+    // Only canonical {route}-{desktop|mobile}.json files belong in the
+    // summary table. Anything else (e.g. variance-check runs saved as
+    // macro-mobile-r1.json) is supporting evidence and is skipped here.
+    const m = file.match(/^([a-z][a-z0-9-]*?)-(desktop|mobile)\.json$/);
+    if (!m) return null;
     try {
       const json = JSON.parse(
         fs.readFileSync(path.join(__dirname, file), "utf8"),
@@ -20,12 +25,9 @@ const rows = files
       const cats = json.categories ?? {};
       const score = (k) =>
         Math.round(((cats[k]?.score ?? 0) * 100));
-      const m = file.match(/^(.+)-(desktop|mobile)\.json$/);
-      const route = m ? m[1] : file;
-      const viewport = m ? m[2] : "—";
       return {
-        route,
-        viewport,
+        route: m[1],
+        viewport: m[2],
         perf: score("performance"),
         a11y: score("accessibility"),
         bp: score("best-practices"),

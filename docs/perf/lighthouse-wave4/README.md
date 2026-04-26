@@ -10,7 +10,7 @@ user's host (the agent's sandbox cannot reach the live SWA).
 | home | desktop | 98 | 100 | 100 | 100 |
 | home | mobile | 71 | 100 | 100 | 100 |
 | macro | desktop | 97 | 100 | 100 | 100 |
-| macro | mobile | 84 | 100 | 100 | 100 |
+| macro | mobile | 92 | 100 | 100 | 100 |
 | positions | desktop | 98 | 100 | 100 | 100 |
 | positions | mobile | 96 | 100 | 100 | 100 |
 | track-record | desktop | 96 | 100 | 100 | 100 |
