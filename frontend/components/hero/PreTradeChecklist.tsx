@@ -66,8 +66,18 @@ export function PreTradeChecklist({ items, thesisId, className }: Props) {
     [thesisId],
   );
 
+  // We render the container as `<div role="group">` (not `<ul>`) and
+  // each row as `<div role="checkbox">` (not `<li>`). axe-core's
+  // `aria-allowed-role` rule rejects `<li role="checkbox">` because
+  // `checkbox` isn't a permitted override of `<li>`'s implicit
+  // `listitem` role; the same constraint forces `<ul>` to contain
+  // only `<li>`/script/template, which it can't if the children swap
+  // roles. Lighthouse a11y was docking 4 points on `/` for this
+  // pattern (Wave 4, 96 → 100).
   return (
-    <ul
+    <div
+      role="group"
+      aria-label="Pre-trade checklist"
       data-testid="pre-trade-checklist"
       className={cn("space-y-2", className)}
     >
@@ -80,7 +90,7 @@ export function PreTradeChecklist({ items, thesisId, className }: Props) {
         const Icon = checked ? CheckCircle2 : Circle;
 
         return (
-          <li
+          <div
             key={item.key}
             data-testid={`checklist-item-${item.key}`}
             data-checked={String(checked)}
@@ -115,9 +125,9 @@ export function PreTradeChecklist({ items, thesisId, className }: Props) {
               aria-hidden
             />
             <span className="text-text-secondary">{item.prompt}</span>
-          </li>
+          </div>
         );
       })}
-    </ul>
+    </div>
   );
 }
