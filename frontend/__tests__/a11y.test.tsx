@@ -43,6 +43,11 @@ import { ShortcutSheet } from "@/components/common/ShortcutSheet";
 import { GlobeControls } from "@/components/globe/GlobeControls";
 import type { FlagCategory } from "@/components/globe/types";
 import { Nav } from "@/components/common/Nav";
+import { PreTradeChecklist } from "@/components/hero/PreTradeChecklist";
+import { SpreadChart } from "@/components/charts/SpreadChart";
+import { StretchChart } from "@/components/charts/StretchChart";
+import { BacktestChart } from "@/components/charts/BacktestChart";
+import type { ChecklistItem, SpreadHistoryPoint } from "@/types/api";
 
 afterEach(() => cleanup());
 
@@ -104,6 +109,56 @@ describe("axe-core smoke", () => {
 
   it("Primary navigation is accessible", async () => {
     const { container } = render(<Nav />);
+    await expectNoA11yViolations(container);
+  });
+
+  // Wave 5 — locks in the home / macro 100 a11y fix. These were the
+  // two surfaces docking Lighthouse a11y from 100 → 96 in Wave 4:
+  //   • `<li role="checkbox">` inside `<ul>` (aria-allowed-role + list)
+  //   • `aria-label` on recharts XAxis / YAxis leaking onto an SVG
+  //     `<line>` element (aria-prohibited-attr).
+  it("PreTradeChecklist (home) is accessible", async () => {
+    const items: ChecklistItem[] = [
+      { key: "a", prompt: "User-toggleable item", auto_check: null },
+      { key: "b", prompt: "Auto-checked item", auto_check: true },
+    ];
+    const { container } = render(
+      <PreTradeChecklist items={items} thesisId="a11y-test" />,
+    );
+    await expectNoA11yViolations(container);
+  });
+
+  it("Macro charts render without aria-prohibited-attr", async () => {
+    const data: SpreadHistoryPoint[] = Array.from({ length: 60 }).map(
+      (_, i) => ({
+        date: new Date(Date.now() - i * 86400000)
+          .toISOString()
+          .slice(0, 10),
+        brent: 80 + Math.sin(i / 10) * 5,
+        wti: 75 + Math.sin(i / 9) * 4,
+        spread: 5 + Math.sin(i / 11) * 2,
+        z_score: Math.sin(i / 8) * 2.5,
+      }),
+    );
+    const backtest = {
+      sharpe: 1.5,
+      sortino: 1.8,
+      calmar: 1.2,
+      hit_rate: 0.6,
+      max_drawdown: -1500,
+      equity_curve: data.map((d, i) => ({
+        Date: d.date,
+        cum_pnl_usd: 1000 + Math.sin(i / 8) * 500,
+      })),
+      trades: [],
+    };
+    const { container } = render(
+      <div>
+        <SpreadChart data={data} />
+        <StretchChart data={data} />
+        <BacktestChart data={backtest as unknown as Parameters<typeof BacktestChart>[0]["data"]} />
+      </div>,
+    );
     await expectNoA11yViolations(container);
   });
 });

@@ -114,7 +114,6 @@ export function InventoryChart({
             stroke={AXIS_COLOR}
             tick={{ fill: AXIS_COLOR, fontSize: 11 }}
             tickFormatter={(iso: string) => iso.slice(0, 7)}
-            aria-label="Date axis"
             minTickGap={32}
           />
           <YAxis
@@ -123,7 +122,6 @@ export function InventoryChart({
             tick={{ fill: AXIS_COLOR, fontSize: 11 }}
             tickFormatter={(v: number) => `${Math.round(v / 1_000_000)}M`}
             width={52}
-            aria-label="Total crude axis"
           />
           <YAxis
             yAxisId="cushing"
@@ -132,7 +130,6 @@ export function InventoryChart({
             tick={{ fill: CUSHING_COLOR, fontSize: 11 }}
             tickFormatter={(v: number) => `${Math.round(v / 1_000_000)}M`}
             width={48}
-            aria-label="Cushing axis"
           />
           <Tooltip
             cursor={{ stroke: AXIS_COLOR, strokeDasharray: "3 3" }}

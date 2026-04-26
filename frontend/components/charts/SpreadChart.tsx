@@ -82,7 +82,6 @@ export function SpreadChart({ data, error, height = 300 }: Props) {
             stroke={AXIS_COLOR}
             tick={{ fill: AXIS_COLOR, fontSize: 11 }}
             tickFormatter={formatTickDate}
-            aria-label="Date axis"
             minTickGap={28}
           />
           <YAxis
@@ -90,7 +89,6 @@ export function SpreadChart({ data, error, height = 300 }: Props) {
             tick={{ fill: AXIS_COLOR, fontSize: 11 }}
             tickFormatter={(v: number) => `$${v.toFixed(2)}`}
             width={60}
-            aria-label="Spread USD axis"
           />
           <Tooltip
             cursor={{ stroke: AXIS_COLOR, strokeDasharray: "3 3" }}

@@ -91,7 +91,6 @@ export function StretchChart({ data, error, height = 300 }: Props) {
             stroke={AXIS_COLOR}
             tick={{ fill: AXIS_COLOR, fontSize: 11 }}
             tickFormatter={(iso: string) => iso.slice(5)}
-            aria-label="Date axis"
             minTickGap={28}
           />
           <YAxis
@@ -99,7 +98,6 @@ export function StretchChart({ data, error, height = 300 }: Props) {
             stroke={AXIS_COLOR}
             tick={{ fill: AXIS_COLOR, fontSize: 11 }}
             width={40}
-            aria-label="Z-score axis"
           />
           <ReferenceArea
             y1={bandY1}

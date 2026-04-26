@@ -96,7 +96,6 @@ export function BacktestChart({ data, error, height = 320 }: Props) {
               stroke={AXIS_COLOR}
               tick={{ fill: AXIS_COLOR, fontSize: 11 }}
               tickFormatter={(iso: string) => iso.slice(5)}
-              aria-label="Date axis"
               minTickGap={32}
             />
             <YAxis
@@ -104,7 +103,6 @@ export function BacktestChart({ data, error, height = 320 }: Props) {
               tick={{ fill: AXIS_COLOR, fontSize: 11 }}
               width={60}
               tickFormatter={formatCompactUsd}
-              aria-label="Cumulative PnL axis"
             />
             <Tooltip
               cursor={{ stroke: AXIS_COLOR, strokeDasharray: "3 3" }}
