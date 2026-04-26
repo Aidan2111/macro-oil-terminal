@@ -33,6 +33,12 @@ target the Streamlit UI.
 
 ## 3. Custom domain on the Static Web App (~2 hours)
 
+> **Awaiting: domain purchase by Aidan.** Step-by-step unblock
+> sequence documented in
+> [`docs/runbooks/custom-domain.md`](runbooks/custom-domain.md) —
+> picking a domain + walking the runbook is ~10–20 min wall-clock
+> once DNS is in place.
+
 The SWA URL `delightful-pebble-00d8eb30f.7.azurestaticapps.net` is fine
 for demos but the brand polish lands on a custom domain. Buy a domain,
 configure CNAME on the Static Web App, update OIDC AAD redirect-URIs.
