@@ -25,7 +25,9 @@
   --border: #2a3245;
   --text-primary: var(--slate-100);
   --text-secondary: var(--slate-400);
-  --text-muted: #5b6578;
+  /* Bumped from #5b6578 (3.3:1 vs bg-1) to #8593a5 (~6.1:1 vs bg-1)
+     to clear WCAG AA 4.5:1 for normal-weight body copy. */
+  --text-muted: #8593a5;
   --primary: var(--cyan-400);
   --primary-glow: rgba(34, 211, 238, 0.35);
   --warn: var(--amber-400);

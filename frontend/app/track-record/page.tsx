@@ -10,7 +10,7 @@ export default function TrackRecordPage() {
       <Section
         id="track-record"
         title="Track Record"
-        subtitle="Backtest outcomes, hit rate, Sharpe, drawdown."
+        subtitle="How the model has performed — hit rate, returns, drawdowns."
       >
         <TrackRecord />
       </Section>

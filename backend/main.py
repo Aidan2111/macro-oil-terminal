@@ -25,9 +25,14 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, TypeVar
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from backend.security import (
+    enforce_execute_rate_limit,
+    require_execute_origin,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1011,7 +1016,11 @@ def positions_orders(status: str = "open") -> Any:
 
 
 @app.post("/api/positions/execute")
-async def positions_execute(req: Request):
+async def positions_execute(
+    req: Request,
+    _origin: None = Depends(require_execute_origin),
+    _rate: None = Depends(enforce_execute_rate_limit),
+):
     """Place a real paper order via alpaca-py.
 
     Hard-gate: requires ALPACA_PAPER == 'true' (set in App Service
@@ -1019,6 +1028,13 @@ async def positions_execute(req: Request):
     fill to data/executions.jsonl. The ALPACA_API_SECRET is never in
     a response body — alpaca_service maps every Alpaca object through
     a whitelist.
+
+    Wave 4 hardening (review #14):
+      * S-3: `require_execute_origin` rejects browser POSTs from any
+        Origin outside the SWA + localhost dev allowlist.
+      * S-4: `enforce_execute_rate_limit` is a file-backed dual gate —
+        1 req / 2s inner floor + 30 req / 5min outer ceiling. State
+        survives container restart (was a per-process bucket before).
     """
     if os.environ.get("ALPACA_PAPER", "").strip().lower() != "true":
         return JSONResponse(

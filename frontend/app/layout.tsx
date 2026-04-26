@@ -4,6 +4,7 @@ import "./globals.css";
 import { Nav } from "@/components/common/Nav";
 import { Footer } from "@/components/common/Footer";
 import { TickerTape } from "@/components/ticker/TickerTape";
+import { ShortcutSheet } from "@/components/common/ShortcutSheet";
 import { Providers } from "@/lib/providers";
 
 const inter = Inter({
@@ -39,14 +40,23 @@ export default function RootLayout({
       */}
       <body className="min-h-screen bg-bg-1 text-text-primary font-sans overflow-x-hidden">
         <Providers>
+          <a
+            href="#main"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-btn focus:bg-bg-3 focus:px-3 focus:py-2 focus:text-sm focus:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            Skip to main content
+          </a>
           <div className="flex flex-col md:flex-row min-h-screen">
             <Nav />
             <div className="flex-1 min-w-0 overflow-hidden flex flex-col md:ml-60">
               <TickerTape />
-              <main className="flex-1 pb-20 md:pb-0">{children}</main>
+              <main id="main" className="flex-1 pb-20 md:pb-0">
+                {children}
+              </main>
               <Footer />
             </div>
           </div>
+          <ShortcutSheet />
         </Providers>
       </body>
     </html>

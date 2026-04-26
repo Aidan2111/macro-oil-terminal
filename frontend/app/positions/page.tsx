@@ -10,7 +10,7 @@ export default function PositionsPage() {
       <Section
         id="positions"
         title="Positions"
-        subtitle="Open trades, realised/unrealised PnL, account equity."
+        subtitle="Open paper trades, P&amp;L, and account equity."
       >
         <PositionsPanel />
       </Section>

@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/staticwebapp.config.json",
+  "_comment": "AUTHORITATIVE — this is the staticwebapp.config.json that ships. Azure Static Web Apps reads the config at app_location root (cd-nextjs.yml app_location: \"frontend\"). The previous duplicate at static-web-apps/staticwebapp.config.json was removed in Wave 4 to prevent drift (review #14, S-9). Edit only this file.",
   "routes": [
     {
       "route": "/api/*",
@@ -19,7 +20,11 @@
     ".json": "application/json"
   },
   "globalHeaders": {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://oil-tracker-api-canadaeast-0f18.azurewebsites.net wss://stream.aisstream.io; frame-ancestors 'none'; base-uri 'self'",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+    "X-Frame-Options": "DENY",
     "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "strict-origin-when-cross-origin"
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { ErrorState } from "@/components/common/ErrorState";
@@ -15,6 +15,8 @@ import type {
   ThesisLatestResponse,
   ThesisRaw,
 } from "@/types/api";
+import { SpreadCurvesIllustration } from "@/components/illustrations/SpreadCurvesIllustration";
+import { Button } from "@/components/ui/button";
 import { StancePill } from "./StancePill";
 import { ConfidenceBar } from "./ConfidenceBar";
 import { InstrumentTile } from "./InstrumentTile";
@@ -46,11 +48,11 @@ type StreamState = {
 };
 
 const EMPTY_CHECKLIST: ChecklistItem[] = [
-  { key: "stop_in_place", prompt: "I have a stop at ±2σ spread move from entry.", auto_check: null },
-  { key: "vol_clamp_ok", prompt: "Spread realised vol is below the 1y 85th percentile.", auto_check: null },
-  { key: "half_life_ack", prompt: "I understand the implied half-life is ~N days.", auto_check: null },
-  { key: "catalyst_clear", prompt: "No EIA release within the next 24 hours.", auto_check: null },
-  { key: "no_conflicting_recent_thesis", prompt: "No stance flip in the last 5 thesis entries.", auto_check: null },
+  { key: "stop_in_place", prompt: "Stop set at ±2σ from entry.", auto_check: null },
+  { key: "vol_clamp_ok", prompt: "Realised vol below the 1y 85th percentile.", auto_check: null },
+  { key: "half_life_ack", prompt: "Implied half-life is acceptable for the horizon.", auto_check: null },
+  { key: "catalyst_clear", prompt: "Next EIA release is more than 24h away.", auto_check: null },
+  { key: "no_conflicting_recent_thesis", prompt: "No stance flip in the last 5 theses.", auto_check: null },
 ];
 
 /**
@@ -98,15 +100,22 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
     done: false,
     error: null,
   });
-  const streamStartedRef = useRef(false);
+  // Bumping `streamTick` re-runs the SSE effect — used by the empty
+  // state's "Generate now" button to retry without a full remount.
+  const [streamTick, setStreamTick] = useState(0);
 
-  // Open the SSE exactly once per mount. Guardrails live on the
-  // backend; the client is purely a viewer.
+  // Open the SSE on mount (and again whenever the user clicks
+  // "Generate now"). Guardrails live on the backend; the client is
+  // purely a viewer.
   useEffect(() => {
-    if (streamStartedRef.current) return;
-    streamStartedRef.current = true;
-
     const controller = new AbortController();
+    setStream({
+      stage: "warming",
+      pct: 1,
+      delta: "",
+      done: false,
+      error: null,
+    });
     void postEventSource(
       "/api/thesis/generate?mode=fast",
       { mode: "fast", portfolio_usd: 100_000 },
@@ -128,6 +137,9 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
               }));
             } else if (evt.event === "done") {
               setStream((s) => ({ ...s, done: true, pct: 100 }));
+              // The new thesis just landed — pull the latest snapshot
+              // so the populated card replaces the empty state.
+              void query.refetch();
             } else if (evt.event === "error") {
               setStream((s) => ({
                 ...s,
@@ -150,7 +162,8 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
     return () => {
       controller.abort();
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamTick]);
 
   if (query.isPending && !query.data) {
     return (
@@ -182,20 +195,45 @@ export function TradeIdeaHeroClient({ initialData }: Props) {
   const empty = query.data?.empty ?? record === null;
 
   if (empty || record === null) {
+    // The streaming generate call is auto-fired in the SSE effect
+    // above on every mount. While it runs we show the "Generating..."
+    // copy; if it hasn't started (or has failed) we expose a manual
+    // retry that re-mounts the card so the SSE effect re-fires.
+    const generating = stream.pct > 0 && !stream.done && stream.error === null;
     return (
       <Card
         data-testid="trade-idea-hero-empty"
-        className="min-h-[200px] flex items-center justify-center p-8"
+        className="min-h-[260px] flex items-center justify-center p-8"
       >
-        <div className="text-center text-text-secondary">
-          <p className="text-sm">
-            No trade thesis generated yet. Kick off the stream via{" "}
-            <code>POST /api/thesis/generate</code>.
-          </p>
-          {stream.pct > 0 && !stream.done ? (
-            <p className="mt-2 text-xs text-text-muted">
-              Streaming: {stream.stage} · {stream.pct}%
+        <div className="flex flex-col items-center gap-4 text-center">
+          <SpreadCurvesIllustration className="text-text-muted" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-text-primary">
+              {generating
+                ? "Generating today's read…"
+                : "Today's read is on its way."}
             </p>
+            <p className="text-xs text-text-secondary max-w-sm">
+              {generating
+                ? `${stream.stage.replace(/_/g, " ")} · ${stream.pct}%`
+                : "We're warming the model — this usually takes a few seconds."}
+            </p>
+          </div>
+          {!generating ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="trade-idea-hero-empty-cta"
+              onClick={() => {
+                // Bumping streamTick re-runs the SSE effect so the
+                // generate stream re-fires without a full remount.
+                setStreamTick((t) => t + 1);
+                void query.refetch();
+              }}
+            >
+              Generate now
+            </Button>
           ) : null}
         </div>
       </Card>
@@ -229,11 +267,12 @@ function LoadedHero({
 
   const instruments = firstInstrumentsOrEmpty(record);
   const checklist = checklistFromRecord(record);
+  const reduced = useReducedMotion();
 
   return (
     <motion.div
       data-testid="trade-idea-hero"
-      initial={{ opacity: 0, y: 16 }}
+      initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: "easeOut" }}
     >
@@ -284,23 +323,20 @@ function LoadedHero({
             </div>
           </motion.div>
 
-          {/* Instrument tiles */}
+          {/* Instrument tiles — staggered fade-up per tile so the eye
+              tracks them left-to-right on first paint. */}
           {instruments.length > 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.35 }}
-              className="grid gap-4 md:grid-cols-3"
-            >
-              {instruments.slice(0, 3).map((inst) => (
+            <div className="grid gap-4 md:grid-cols-3">
+              {instruments.slice(0, 3).map((inst, i) => (
                 <InstrumentTile
                   key={inst.tier}
                   tier={inst.tier}
                   instrument={inst}
                   stance={stance}
+                  index={i}
                 />
               ))}
-            </motion.div>
+            </div>
           ) : null}
 
           {/* Checklist */}

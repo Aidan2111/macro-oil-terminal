@@ -103,7 +103,7 @@ export function BacktestChart({ data, error, height = 320 }: Props) {
               stroke={AXIS_COLOR}
               tick={{ fill: AXIS_COLOR, fontSize: 11 }}
               width={60}
-              tickFormatter={(v: number) => `$${Math.round(v).toLocaleString()}`}
+              tickFormatter={formatCompactUsd}
               aria-label="Cumulative PnL axis"
             />
             <Tooltip
@@ -153,6 +153,24 @@ function StatsRow({ data }: { data: BacktestLiveResponse | null }) {
       ))}
     </div>
   );
+}
+
+/**
+ * Compact-USD axis formatter — `$947k` instead of `946671`. Recharts
+ * picks tick values that are wide enough to look raw at narrow widths;
+ * a `$` prefix + thousand-suffix keeps every label legible at any
+ * viewport. Persona 12 v2 flagged the raw-tick render as a P0 trust
+ * regression on `/macro/`.
+ */
+function formatCompactUsd(v: number): string {
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) {
+    return `${v < 0 ? "-" : ""}$${(abs / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (abs >= 1_000) {
+    return `${v < 0 ? "-" : ""}$${Math.round(abs / 1_000)}k`;
+  }
+  return `${v < 0 ? "-" : ""}$${Math.round(abs)}`;
 }
 
 function fmt(v: number | null | undefined): string {

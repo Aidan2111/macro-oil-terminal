@@ -23,7 +23,6 @@ on:
       - "backend/**"
       - "frontend/**"
       - ".github/workflows/cd-nextjs.yml"
-      - "static-web-apps/**"
   workflow_dispatch:
 
 concurrency:

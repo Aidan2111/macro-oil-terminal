@@ -16,6 +16,7 @@ import {
   greatCirclePoints,
   solarUnitVector,
 } from "@/lib/globe-physics";
+import { GlobeSilhouette } from "@/components/illustrations/GlobeSilhouette";
 
 type Props = {
   vessels: Vessel[];
@@ -114,18 +115,19 @@ export function FleetGlobe({
         className="relative flex h-full min-h-[480px] w-full items-center justify-center overflow-hidden rounded-lg border border-border bg-bg-2 text-sm text-text-secondary"
         ref={containerRef}
       >
-        <div className="text-center">
+        <div className="flex flex-col items-center gap-3 text-center px-6">
+          <GlobeSilhouette className="text-text-muted" size={104} />
           <div className="font-medium text-text-primary">
             {typeof navigator !== "undefined" && !hasWebGPU
-              ? "WebGPU not available"
-              : "Preparing 3D"}
+              ? "Your browser does not support 3D fleet view"
+              : "Preparing 3D fleet view"}
           </div>
-          <div className="mt-1 text-xs text-text-muted">
+          <div className="max-w-sm text-xs text-text-muted">
             {typeof navigator !== "undefined" && !hasWebGPU
-              ? "Fleet globe requires a WebGPU-capable browser (Chrome 113+, Edge 113+)."
-              : "Boot sequence in progress."}
+              ? "Open this page in Chrome or Edge (version 113 or newer) to see the live globe."
+              : "First paint in progress — the globe loads after WebGPU initialises."}
           </div>
-          <div className="mt-3 text-xs text-text-muted">
+          <div className="text-xs text-text-muted">
             {vessels.length} vessel{vessels.length === 1 ? "" : "s"} staged
           </div>
         </div>

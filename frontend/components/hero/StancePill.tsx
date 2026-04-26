@@ -1,3 +1,6 @@
+"use client";
+
+import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { normalizeStance } from "@/lib/api";
 import type { Stance } from "@/types/api";
@@ -15,8 +18,9 @@ type Props = {
 function stanceCopy(stance: Stance): string {
   if (stance === "LONG_SPREAD") return "Lean long";
   if (stance === "SHORT_SPREAD") return "Lean short";
-  // FLAT / STAND_ASIDE → "Stand aside"
-  return "Stand aside";
+  // FLAT / STAND_ASIDE → "No edge" (trader vocabulary; persona 12
+  // flagged "stand aside" as poker-tutorial phrasing).
+  return "No edge";
 }
 
 /**
@@ -54,20 +58,29 @@ function stanceTokens(stance: Stance): {
 
 /**
  * Stance pill — the hypothetical (never imperative) verb that anchors
- * the hero card. "Lean long / Lean short / Stand aside" matches the
- * copy the Streamlit side ships in `language.TERMS` and
- * `language.describe_stance`.
+ * the hero card. "Lean long / Lean short / No edge" matches the copy
+ * the Streamlit side ships in `language.TERMS` and
+ * `language.describe_stance`. A soft scale pulse plays when the
+ * `stance` prop changes so the eye catches the new state.
  */
 export function StancePill({ stance, className }: Props) {
   const canonical = normalizeStance(stance);
   const copy = stanceCopy(canonical);
   const tokens = stanceTokens(canonical);
+  const reduced = useReducedMotion();
 
   return (
-    <span
+    <motion.span
+      key={stance}
       data-testid="stance-pill"
       data-stance={canonical}
       data-accent={tokens.accent}
+      animate={
+        reduced
+          ? { scale: 1 }
+          : { scale: [1, 1.05, 1] }
+      }
+      transition={{ duration: 0.4, ease: "easeOut" }}
       className={cn(
         "inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold uppercase tracking-wider",
         tokens.container,
@@ -76,6 +89,6 @@ export function StancePill({ stance, className }: Props) {
       )}
     >
       {copy}
-    </span>
+    </motion.span>
   );
 }
