@@ -800,8 +800,12 @@ async def _sse_stream_thesis_real(mode: str, portfolio_usd: int):
     from backend.services.thesis_service import stream_thesis
 
     async for evt in stream_thesis(mode=mode, portfolio_usd=portfolio_usd):
-        # stream_thesis yields {"event": "...", "data": {...}}
         ev = evt.get("event") or "delta"
+        # SSE comment keepalive — prevents Azure App Service ARR proxy
+        # from killing the connection during long Foundry polling runs.
+        if ev == "keepalive":
+            yield ": keepalive\n\n"
+            continue
         data = evt.get("data", {})
         yield f"event: {ev}\ndata: {json.dumps(data)}\n\n"
 
