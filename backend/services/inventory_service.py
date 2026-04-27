@@ -146,3 +146,51 @@ def get_last_fetch_state() -> dict[str, object]:
     """Return a snapshot dict (caller-owned copy)."""
     with _DQ_STATE_LOCK:
         return dict(_DQ_LAST_FETCH)
+
+
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-WIRING — wrapper that calls record_fetch_success/failure
+# ---------------------------------------------------------------------------
+
+import time as _dq_time
+import logging as _dq_logging
+
+_dq_log = _dq_logging.getLogger(__name__)
+
+_real_get_inventory_response = get_inventory_response
+
+
+def get_inventory_response(  # type: ignore[no-redef]
+    history_years: int = 2,
+    floor_bbls: float = _DEFAULT_FLOOR_BBLS,
+) -> InventoryResponse:
+    t0 = _dq_time.monotonic()
+    try:
+        resp = _real_get_inventory_response(
+            history_years=history_years, floor_bbls=floor_bbls,
+        )
+    except Exception as exc:
+        record_fetch_failure(f"EIA fetch failed: {type(exc).__name__}: {exc}")
+        raise
+    latency_ms = int((_dq_time.monotonic() - t0) * 1000.0)
+    n_obs = len(resp.history) if getattr(resp, "history", None) else None
+    degraded = False
+    msg = None
+    try:
+        from backend.services.data_quality import GuardViolation, guard_eia_inventory
+        if resp.history:
+            rows = [
+                {"date": p.date, "commercial_bbls": p.commercial_bbls}
+                for p in resp.history
+            ]
+            try:
+                guard_eia_inventory(rows)
+            except GuardViolation as gv:
+                degraded = True
+                msg = str(gv)
+                _dq_log.warning("EIA guard tripped: %s", gv)
+    except Exception:
+        pass
+    record_fetch_success(n_obs=n_obs, latency_ms=latency_ms,
+                         message=msg, degraded=degraded)
+    return resp

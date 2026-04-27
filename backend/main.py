@@ -988,9 +988,7 @@ def _alpaca_positions() -> dict[str, Any]:
 def _alpaca_account() -> dict[str, Any]:
     from backend.services import alpaca_service
 
-    client = alpaca_service.get_client()
-    acct = client.get_account()
-    base = alpaca_service.map_account(acct)
+    base = alpaca_service.fetch_account()
     base.update({"currency": "USD", "status": "ACTIVE", "paper": True, "source": "alpaca_paper"})
     return base
 

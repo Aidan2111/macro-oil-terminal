@@ -144,3 +144,46 @@ def get_last_fetch_state() -> dict[str, object]:
     """Return a snapshot dict (caller-owned copy)."""
     with _DQ_STATE_LOCK:
         return dict(_DQ_LAST_FETCH)
+
+
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-WIRING — wrapper that records fetch state for the
+# account endpoint (the canonical Alpaca health signal).
+# ---------------------------------------------------------------------------
+
+import time as _dq_time
+import logging as _dq_logging
+
+_dq_log = _dq_logging.getLogger(__name__)
+
+
+def fetch_account() -> dict[str, Any]:
+    """Fetch account via Alpaca client, record data-quality state, return mapped dict."""
+    t0 = _dq_time.monotonic()
+    try:
+        client = get_client()
+        acct = client.get_account()
+    except Exception as exc:
+        record_fetch_failure(f"Alpaca fetch failed: {type(exc).__name__}: {exc}")
+        raise
+    latency_ms = int((_dq_time.monotonic() - t0) * 1000.0)
+    mapped = map_account(acct)
+    degraded = False
+    msg = None
+    try:
+        from backend.services.data_quality import GuardViolation, guard_alpaca_account
+        raw_acct = {
+            "status": str(getattr(acct, "status", "ACTIVE")),
+            "buying_power": mapped.get("buying_power", 0),
+        }
+        try:
+            guard_alpaca_account(raw_acct)
+        except GuardViolation as gv:
+            degraded = True
+            msg = str(gv)
+            _dq_log.warning("Alpaca guard tripped: %s", gv)
+    except Exception:
+        pass
+    record_fetch_success(n_obs=1, latency_ms=latency_ms,
+                         message=msg, degraded=degraded)
+    return mapped
