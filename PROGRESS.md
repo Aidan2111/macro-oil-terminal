@@ -1279,3 +1279,125 @@ pushes, deploys, or diagnostics from the agent. Future work picks up
 by triaging the issues above.
 
 
+## 2026-04-27 — Issue queue drain + pre-staged deps bumps
+
+Cowork session worked through the issue queue end-to-end. Skill-drift
+issues `#41` (`az webapp deployment list` not a valid command) and
+`#40` (SWA build-info is `.txt` key=value, not `.json`) were verified
+already fixed at `~/Documents/Claude/Scheduled/oil-terminal-pipeline-healthcheck/SKILL.md`
+and closed without any repo change. Code-side issues `#38`
+(three.js dedupe — drop the `three/tsl` alias) and `#37` (Foundry SSE
+truncation) shipped as PRs `#50` and `#51`, both auto-merged after
+green CI on `8c021bc`.
+
+### `#37` Foundry SSE retry — verified live (gpt-5 + gpt-5-mini end-to-end)
+
+PR `#51` landed three commits in sequence:
+1. `04b927b` — `fix(foundry): add api-version to OpenAI client + SSE
+   keepalive for long runs`. Root cause was `AIProjectClient.get_openai_client()`
+   omitting the `api-version` query param when no `agent_name` is
+   passed — the Foundry `/openai/v1` proxy then rejected Assistants
+   API calls. Fix: `default_query={"api-version": ...}` on the client
+   ctor + a 15s `: keepalive` SSE comment so Azure App Service ARR
+   doesn't kill idle sockets during the 60–240s poll wait.
+2. `db3a25b` — `fix(foundry): use AzureOpenAI directly for Assistants
+   API`. Foundry's `/openai/v1` proxy doesn't support `beta.threads`
+   / `beta.assistants`. Switched to AzureOpenAI targeting
+   `AZURE_OPENAI_ENDPOINT` directly. Supports both managed-identity
+   and API-key auth.
+3. `6f4f203` — `fix(foundry): defer azure.identity import to avoid
+   crash on API-key path`.
+
+**Live verification post-merge:**
+
+| Endpoint | Mode | Model served | Latency | Stream terminates on |
+|----------|------|--------------|---------|----------------------|
+| `POST /api/thesis/generate` | `fast` (default) | `gpt-5-mini` | 59.7s | `event:done` ✅ |
+| `POST /api/thesis/regenerate` | `deep` | `gpt-5` | 70.1s | `event:done` ✅ |
+
+Both responses contain `"source": "Foundry: <model>"`, confirming
+the Foundry path (not AOAI). `USE_FOUNDRY=true` is set on
+`oil-tracker-api-canadaeast-0f18`. `/health` returns
+`{"status":"ok","mode":"live"}`. Main / SWA / API SHAs all in sync
+on `8c021bc`. Foundry retry is closed.
+
+### `#39` Streamlit decom — auto-armed for 04:00 UTC
+
+A detached watcher (PID 55669, host shell) is sleeping until
+`2026-04-27 04:00:00 UTC`; on fire it runs
+`scripts/streamlit-decommission.sh --i-have-confirmed-window-passed`,
+captures stdout/stderr to `/tmp/streamlit-decom.log`, and writes
+`/tmp/streamlit-decom.done` as the completion sentinel. Pre-flight
+gates inside the script (SWA + API HEAD must be 2xx) protect against
+running into a degraded stack.
+
+### Pre-staged deps bumps — branches pushed, PRs to be opened after rate-limit reset
+
+Claude CLI hit the per-window quota mid-`#42`; the work continued
+without it via direct file edits + host-side test runs. Branches are
+on origin, ready for `gh pr create` + auto-merge once the limit
+resets at `2026-04-27 05:10 UTC` (10:10 PM `America/Los_Angeles`).
+
+| # | Branch | Head SHA | Local verification |
+|---|--------|----------|--------------------|
+| `#42` | `feat/issue-42-openai-2x` | `548dc53` | `pytest tests/unit`: 243 passed, 3 skipped. `hasattr` audit confirms every `client.beta.assistants.*` and `client.beta.threads.*` method `trade_thesis_foundry.py` calls is intact in `openai 2.32.0`. Pin moved `>=1.50.0` → `>=2.0.0,<3.0.0`. |
+| `#43` | `feat/issue-43-yfinance-bump` | `bfe7484` | `pytest tests/unit`: 243 passed, 3 skipped. Manual smoke: `yf.Ticker('BZ=F').history(period='1d')` returns shape `(1, 7)`; `yf.Ticker('AAPL').option_chain(<exp>).calls` returns the same column set as 0.x. Pin `>=0.2.40` → `>=1.3.0`. |
+| `#44` | `feat/issue-44-vite-bump` | `5de6950` | `npm test`: 104 / 104 pass. `npm run typecheck`: clean. `npm run build`: 10 / 10 routes static-generate. Bumped vitest `2.1` → `4.1.5`, `@vitejs/plugin-react` `4.7.0` → `6.0.1`, `vite-tsconfig-paths` `5.1.4` → `6.1.1`; `vite` resolves to `8.0.10`; `esbuild` is no longer in the dep tree (vite 8 swapped to oxc). Removed the now-redundant `esbuild.jsx: "automatic"` in `vitest.config.ts` so oxc no longer warns. |
+
+### `#42` openai issue body was wrong about the surface removal
+
+The original `#42` body warned that openai 2.x removed
+`client.beta.assistants.*`. That was false. The deprecation in 2.x
+targeted the *legacy* `client.assistants.*` (no `beta` prefix), not
+`client.beta.*`. Verified by ctor-level introspection on
+`openai 2.32.0`:
+
+```
+client.beta.assistants.list / .create               True
+client.beta.threads.create                           True
+client.beta.threads.messages.create / .list          True
+client.beta.threads.runs.create / .retrieve / .submit_tool_outputs   True
+```
+
+Every method `trade_thesis_foundry.py` calls is still there. The
+explicit `<3.0.0` ceiling is in the pin so a future 3.x major can't
+sneak in without a fresh audit.
+
+### `#45` Dockerfile bump — not actionable as written; needs Aidan input
+
+Issue `#45` says "Update `backend/Dockerfile` base image to Python
+3.14". There is no `backend/Dockerfile` in the repo. The only
+Dockerfile that ever existed was the Streamlit one at the repo root,
+deleted in `#26` (`feat(streamlit): retire app.py + Streamlit CI/CD/docs
+surface`). The current FastAPI deploy uses Azure App Service Linux
+with Oryx (no container). Either:
+
+- the issue should be reframed as "stand up `backend/Dockerfile` to
+  pin the runtime image to Python 3.14" — that's a new feature, not
+  a deps bump, and changes the deploy mechanism, OR
+- the issue should be closed obsolete since there's no Dockerfile to
+  bump and Azure App Service is the source of truth for the runtime
+  Python version (which Oryx can be told via `LinuxFxVersion`).
+
+Marked **blocked / needs Aidan call**, no branch staged.
+
+### `#46`, `#47`, `#48` — skipped per the queue rules
+
+`#46` custom domain is gated on Aidan picking a registrar; `#47` and
+`#48` are recurring monthly monitors, not closeable.
+
+### Final state at hand-off
+
+- main: `8c021bc`
+- SWA build-info: `8c021bc`
+- API build-info: `8c021bc`
+- Open PRs (waiting): none — all four pre-staged branches are on
+  origin without an open PR. Run `gh pr create` per branch with
+  `Closes #<N>` in the body, then `gh pr merge --squash --auto
+  --delete-branch` once CI is green.
+- Closed in this session: `#37`, `#38`, `#40`, `#41`.
+- Open after this session: `#39` (auto-running at 04:00 UTC), `#42`,
+  `#43`, `#44` (PR-ready), `#45` (needs reframe), `#46`–`#48`
+  (skipped per rules).
+
+
