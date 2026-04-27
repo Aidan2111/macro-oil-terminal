@@ -30,20 +30,24 @@ set -euo pipefail
 
 RG="oil-price-tracker"
 STREAMLIT_APP="oil-tracker-app-canadaeast-4474"
-STREAMLIT_PLAN="oil-tracker-canadaeast-plan"
+STREAMLIT_PLAN="oil-tracker-plan-canadaeast"
 REACT_SWA_URL="https://delightful-pebble-00d8eb30f.7.azurestaticapps.net/"
 API_URL="https://oil-tracker-api-canadaeast-0f18.azurewebsites.net/health"
 
 echo "==> Pre-flight: confirm React stack still green"
 echo "  React SWA: $REACT_SWA_URL"
-curl -fI "$REACT_SWA_URL" > /dev/null || {
+curl -fsS -o /dev/null "$REACT_SWA_URL" || {
   echo "REACT_DOWN: aborting Streamlit decommission" >&2
   exit 1
 }
 echo "  -> React SWA reachable."
 
+# NB: GET, not HEAD. /health is a FastAPI route registered for GET only;
+# HEAD returns 405 (Method Not Allowed) and aborts the script even when
+# the API is healthy. We discard the body anyway, so a GET probe with
+# -o /dev/null is the right shape.
 echo "  FastAPI backend: $API_URL"
-curl -fI "$API_URL" > /dev/null || {
+curl -fsS -o /dev/null "$API_URL" || {
   echo "API_DOWN: aborting Streamlit decommission" >&2
   exit 1
 }
