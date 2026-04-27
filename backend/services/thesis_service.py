@@ -28,6 +28,11 @@ from . import _compat  # noqa: F401 — sets sys.path for legacy imports
 # Sentinel pushed on the queue to signal the producer finished.
 _DONE = object()
 
+# SSE keepalive interval (seconds). Azure App Service's ARR proxy drops
+# idle connections; sending a comment line keeps the socket alive during
+# the Foundry polling phase where no deltas flow.
+_SSE_KEEPALIVE_INTERVAL_S = 15
+
 
 def _read_recent_theses(limit: int) -> list[dict]:
     """Proxy to ``trade_thesis.read_recent_theses`` with lazy import.
@@ -317,8 +322,19 @@ async def stream_thesis(
     runner_task = asyncio.create_task(_runner())
 
     # --- Stage 3: stream deltas as they arrive ---
+    # The Foundry path is poll-based and emits a single bulk delta only
+    # after the run completes (60-240s). During that silence the Azure
+    # App Service ARR proxy can kill the idle connection. We use
+    # asyncio.wait_for with a short timeout and yield SSE comment lines
+    # (`: keepalive`) to keep the socket alive.
     while True:
-        item = await queue.get()
+        try:
+            item = await asyncio.wait_for(
+                queue.get(), timeout=_SSE_KEEPALIVE_INTERVAL_S
+            )
+        except asyncio.TimeoutError:
+            yield {"event": "keepalive"}
+            continue
         if item is _DONE:
             break
         yield {

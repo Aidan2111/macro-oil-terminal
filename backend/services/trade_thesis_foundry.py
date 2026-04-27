@@ -344,6 +344,11 @@ def _make_openai_client():  # noqa: ANN202
     Tests monkey-patch this function to inject a fake. Production calls
     AIProjectClient → .get_openai_client(), which yields a token-credential
     OpenAI client targeting the Foundry openai surface.
+
+    ``default_query`` injects ``api-version`` into every request URL.
+    ``AIProjectClient.get_openai_client()`` only adds this automatically
+    when ``agent_name`` is provided; without it the Foundry ``/openai/v1``
+    surface rejects requests with *"api-version is not provided"*.
     """
     from azure.ai.projects import AIProjectClient
     from azure.identity import DefaultAzureCredential
@@ -352,7 +357,9 @@ def _make_openai_client():  # noqa: ANN202
         endpoint=_project_endpoint(),
         credential=DefaultAzureCredential(),
     )
-    return project.get_openai_client()
+    return project.get_openai_client(
+        default_query={"api-version": "2025-03-01-preview"},
+    )
 
 
 # ---------------------------------------------------------------------------
