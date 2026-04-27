@@ -39,10 +39,7 @@ export function HeroShaderBackground({ stretchFactor, className }: Props) {
       try {
         // Single dynamic import. `three.webgpu.js` re-exports every core
         // class (Scene, Camera, Mesh, Vector3, …) AND every TSL helper
-        // (`color`, `uniform`, `mix`, `mx_fractal_noise_float`, …) so
-        // we don't need separate `three` and `three/tsl` imports. Using
-        // both at runtime triggers three's `globalThis.__THREE__` guard
-        // and prints "Multiple instances of Three.js being imported."
+        // (`color`, `uniform`, `mix`, `mx_fractal_noise_float`, …).
         const THREE = await import("three/webgpu");
         const TSL = THREE; // alias for legibility on the destructure
         const { WebGPURenderer, MeshBasicNodeMaterial } = THREE;
