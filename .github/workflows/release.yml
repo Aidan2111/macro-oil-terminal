@@ -11,25 +11,17 @@ on:
         required: true
 
 permissions:
-  id-token: write
   contents: write  # needs write to create the release
 
 concurrency:
   group: release-prod
   cancel-in-progress: false
 
-env:
-  AZURE_WEBAPP_NAME: oil-tracker-app-4281
-  PYTHON_VERSION: "3.11"
-
 jobs:
   release:
     name: Tag-driven release
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    environment:
-      name: production
-      url: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net
+    timeout-minutes: 15
     steps:
       - name: Checkout (with full history)
         uses: actions/checkout@v4
@@ -46,49 +38,17 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Python ${{ env.PYTHON_VERSION }}
+      - name: Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.11"
           cache: pip
 
       - name: Install + test gate
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          python test_runner.py
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v3
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Package
-        run: |
-          mkdir -p dist
-          zip -rq dist/app.zip . \
-            -x "*.venv*" -x "*.git*" -x "__pycache__/*" \
-            -x ".agent-scripts/*" -x "docs/screenshots/*" -x "dist/*"
-
-      - name: Deploy to Azure
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          package: dist/app.zip
-
-      - name: Health check
-        run: |
-          set -eu
-          URL="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if curl -fsS --max-time 20 "$URL/_stcore/health" > /dev/null; then
-              echo "healthy on attempt $attempt"; exit 0
-            fi
-            sleep 10
-          done
-          echo "unhealthy" >&2; exit 1
+          python -m pytest tests/unit -x -q
 
       - name: Compose release notes from PROGRESS.md diff
         id: notes
@@ -132,5 +92,4 @@ jobs:
           TAG="${{ steps.tag.outputs.tag }}"
           gh release create "$TAG" \
             --title "$TAG" \
-            --notes-file /tmp/release-notes.md \
-            dist/app.zip
+            --notes-file /tmp/release-notes.md
