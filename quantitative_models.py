@@ -393,16 +393,32 @@ def backtest_zscore_meanreversion(
         ann_return = total / years
         calmar = float(ann_return / abs(max_dd)) if max_dd < 0 else float("inf")
 
-        # Historical VaR-95 / ES-95 on per-trade PnL (5% worst trades)
-        sorted_pnl = pnl_series.sort_values().reset_index(drop=True)
-        cutoff_idx = max(0, int(0.05 * len(sorted_pnl)) - 1)
-        var95 = float(sorted_pnl.iloc[cutoff_idx]) if len(sorted_pnl) else 0.0
-        es95 = float(sorted_pnl.iloc[: cutoff_idx + 1].mean()) if cutoff_idx >= 0 and len(sorted_pnl) else 0.0
-        # ES-97.5 — average loss in the worst 2.5% of trades. The same
-        # historical-quantile recipe; we floor the cutoff at the worst
-        # single trade so a small blotter still reports a finite tail.
-        cutoff_idx_975 = max(0, int(0.025 * len(sorted_pnl)) - 1)
-        es975 = float(sorted_pnl.iloc[: cutoff_idx_975 + 1].mean()) if cutoff_idx_975 >= 0 and len(sorted_pnl) else 0.0
+        # Historical VaR / ES via numpy quantile (linear interpolation),
+        # which gives smoothly-distinct values on small blotters where the
+        # earlier integer-index recipe collapsed all three to the worst
+        # single trade.  See issue #64.
+        #
+        # Definitions on the per-trade PnL distribution (negative = loss):
+        #   var_95 = 5th-percentile single-trade outcome
+        #   es_95  = mean of trades at or below var_95
+        #   es_975 = mean of trades at or below the 2.5th-percentile cutoff
+        #
+        # On a non-degenerate distribution: |VaR-95| ≤ |ES-95| ≤ |ES-97.5|
+        # because the ES tail averages strictly worse outcomes.
+        pnl_arr = pnl_series.to_numpy(dtype=float)
+        if pnl_arr.size:
+            var95 = float(np.quantile(pnl_arr, 0.05))
+            cutoff_975 = float(np.quantile(pnl_arr, 0.025))
+            tail_95 = pnl_arr[pnl_arr <= var95]
+            tail_975 = pnl_arr[pnl_arr <= cutoff_975]
+            # tail arrays cannot be empty (the cutoff observation itself
+            # always satisfies the <= predicate), but guard anyway.
+            es95 = float(tail_95.mean()) if tail_95.size else var95
+            es975 = float(tail_975.mean()) if tail_975.size else cutoff_975
+        else:
+            var95 = 0.0
+            es95 = 0.0
+            es975 = 0.0
 
         # Rolling 12-month Sharpe (window = trades fitting in ~365 days)
         rolling_sharpe_last = float("nan")
