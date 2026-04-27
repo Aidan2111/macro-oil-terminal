@@ -49,9 +49,39 @@ class MockEventSource {
   }
 }
 
+// PositionsView mounts and immediately fires `/api/positions/account`
+// + `/api/positions` to refresh the build-time snapshot (issue #68).
+// The default mock returns the same fixtures the component is mounted
+// with, so the dispatched snapshot_refresh is a no-op for tests that
+// don't override fetch.
+function defaultFetchMock(opts?: {
+  positions?: PaperPosition[];
+  account?: PaperAccount | null;
+}) {
+  const positions = opts?.positions ?? positionsFixture.positions;
+  const account = opts?.account ?? accountFixture;
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/positions")) {
+      return new Response(JSON.stringify({ positions }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.endsWith("/api/positions/account")) {
+      return new Response(JSON.stringify(account ?? {}), {
+        status: account ? 200 : 404,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`unmocked fetch: ${url}`);
+  });
+}
+
 beforeEach(() => {
   MockEventSource.instances = [];
   vi.stubGlobal("EventSource", MockEventSource as unknown as typeof EventSource);
+  vi.stubGlobal("fetch", defaultFetchMock());
 });
 
 afterEach(() => {
@@ -93,12 +123,38 @@ describe("PositionsView", () => {
   });
 
   it("quick-close POSTs the opposing side to /api/positions/execute", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ id: "o1", status: "accepted", symbol: "USO", qty: 100, side: "sell" }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
+    // The default fetch mock from beforeEach already handles
+    // /api/positions and /api/positions/account refresh requests.
+    // Augment it to also handle the execute POST, then assert against
+    // the execute-specific call below.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/positions")) {
+        return new Response(
+          JSON.stringify({ positions: positionsFixture.positions }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/api/positions/account")) {
+        return new Response(JSON.stringify(accountFixture), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/positions/execute")) {
+        return new Response(
+          JSON.stringify({
+            id: "o1",
+            status: "accepted",
+            symbol: "USO",
+            qty: 100,
+            side: "sell",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      throw new Error(`unmocked fetch: ${url}`);
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     render(
@@ -111,10 +167,21 @@ describe("PositionsView", () => {
     const closeBtn = screen.getAllByTestId("close-position")[0];
     fireEvent.click(closeBtn);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const callArgs = fetchMock.mock.calls[0] as unknown[];
-    const url = callArgs[0];
-    const init = callArgs[1];
+    // The execute call should fire exactly once. Filter the mock
+    // calls down to the execute URL and assert against that.
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter((c) =>
+          String(c[0]).endsWith("/api/positions/execute"),
+        ),
+      ).toHaveLength(1),
+    );
+    const executeCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).endsWith("/api/positions/execute"),
+    ) as unknown[] | undefined;
+    expect(executeCall).toBeDefined();
+    const url = executeCall![0];
+    const init = executeCall![1];
     expect(url).toMatch(/\/api\/positions\/execute$/);
     const body = JSON.parse((init as RequestInit).body as string);
     // Long 100 USO → opposing sell 100 to flatten.
@@ -126,6 +193,32 @@ describe("PositionsView", () => {
       time_in_force: "day",
     });
     expect((init as RequestInit).method).toBe("POST");
+  });
+
+  it("refreshes account from the live API when the build-time snapshot is null (issue #68)", async () => {
+    // The page is statically exported, so the server-component fetch
+    // in PositionsPanel.tsx runs at `npm run build` time (no backend
+    // reachable) and always passes initialAccount=null. The client
+    // view must re-fetch on mount; otherwise tiles render $0.00 even
+    // though the live Alpaca account has equity / buying power.
+    render(
+      <PositionsView
+        initialPositions={[]}
+        initialAccount={null}
+      />,
+    );
+
+    // The default beforeEach fetch mock returns the fixture, which
+    // has equity 102,500 and buying_power 100,000. Wait for the
+    // mount-time refresh to dispatch into reducer state.
+    await waitFor(() =>
+      expect(screen.getByTestId("summary-equity").textContent).toMatch(
+        /102,500/,
+      ),
+    );
+    expect(screen.getByTestId("summary-buying-power").textContent).toMatch(
+      /100,000/,
+    );
   });
 
   it("updates the matching row when an SSE trade_update fires", async () => {

@@ -26,6 +26,11 @@ type State = {
 
 type Action =
   | { type: "trade_update"; payload: TradeUpdatePayload }
+  | {
+      type: "snapshot_refresh";
+      positions: PaperPosition[];
+      account: PaperAccount | null;
+    }
   | { type: "close_start"; symbol: string }
   | { type: "close_done"; symbol: string }
   | { type: "close_fail"; symbol: string; message: string };
@@ -56,6 +61,18 @@ function reducer(state: State, action: Action): State {
       const positions = state.positions.slice();
       positions[idx] = next;
       return { ...state, positions };
+    }
+    case "snapshot_refresh": {
+      // Replace the build-time snapshot wholesale with the
+      // runtime-fetched one. The page is statically exported, so the
+      // server-component snapshot is always null during `next build`
+      // (no backend reachable). The runtime fetch is the source of
+      // truth once the page mounts in the browser.
+      return {
+        ...state,
+        positions: action.positions,
+        account: action.account,
+      };
     }
     case "close_start":
       return {
@@ -117,6 +134,55 @@ export function PositionsView({ initialPositions, initialAccount }: Props) {
     closing: {},
     lastError: null,
   });
+
+  // Issue #68 — refresh the snapshot from the live backend on mount.
+  //
+  // The page is statically exported (`output: "export"` in
+  // next.config.mjs), so the server component fetch in
+  // PositionsPanel.tsx runs at `npm run build` time, when no backend
+  // is reachable. That always resolves to null, which is why the
+  // live page rendered `$0.00` for every tile despite Alpaca returning
+  // a healthy $100k account.
+  //
+  // We re-fetch on mount in the browser. The SSE stream below then
+  // takes over for live trade updates; this useEffect just gets the
+  // initial paint right.
+  React.useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const [acctRes, posRes] = await Promise.all([
+          fetch(`${API_BASE}/api/positions/account`, {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          }),
+          fetch(`${API_BASE}/api/positions`, {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          }),
+        ]);
+        if (cancelled) return;
+        const account = acctRes.ok
+          ? ((await acctRes.json()) as PaperAccount)
+          : null;
+        const list = posRes.ok
+          ? ((await posRes.json()) as { positions?: PaperPosition[] })
+          : null;
+        const positions = list?.positions ?? [];
+        if (cancelled) return;
+        dispatch({ type: "snapshot_refresh", positions, account });
+      } catch {
+        // Network blip during initial fetch — silent degrade. The SSE
+        // reconnection loop below will keep retrying, and the user
+        // sees the (null) state from the static export rather than
+        // an error message.
+      }
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // SSE live updates with capped exponential backoff (1/2/4/8/16s,
   // max 30s, 5 retries). Guarded so SSR passes never try to construct
