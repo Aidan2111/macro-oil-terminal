@@ -354,7 +354,6 @@ def _make_openai_client():  # noqa: ANN202
     managed-identity path is not available (local dev).
     """
     from openai import AzureOpenAI
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
     endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
     if not endpoint:
@@ -374,6 +373,11 @@ def _make_openai_client():  # noqa: ANN202
             api_key=api_key,
             api_version=api_version,
         )
+
+    # Deferred import — get_bearer_token_provider requires
+    # azure-identity ≥1.15 which may not be installed when the
+    # API-key path is used.
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
     token_provider = get_bearer_token_provider(
         DefaultAzureCredential(),
