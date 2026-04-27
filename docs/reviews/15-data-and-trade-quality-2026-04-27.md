@@ -216,7 +216,15 @@ Returning `verdict: "insufficient_data"` is the right thing to do until predicti
 
 ### Read-only audit conclusions
 
-Nothing was modified during this audit. Recommended next move: open GitHub issues for findings #1–#5 (high/medium severity), then triage as separate PRs against the stalled `feat/nextjs-fastapi-stack` integration branch.
+Nothing was modified during this audit. The five high/medium-severity findings have been filed as GitHub issues:
+
+- #64 — backtest: VaR-95, ES-95, ES-97.5, max_drawdown all return the same value (high)
+- #65 — thesis/generate: instruments[] and checklist[] never populated in live SSE done event (high)
+- #66 — data-quality: every provider returns null for last_good_at / n_obs / latency / message (high)
+- #67 — fleet page: filter chips show hardcoded count of 5 even though API returns 0 (medium)
+- #68 — positions page: equity/buying-power/day P&L all show $0.00 despite Alpaca account returning $100k (medium)
+
+Recommended next move: triage these as separate PRs against the stalled `feat/nextjs-fastapi-stack` integration branch.
 
 ---
 
