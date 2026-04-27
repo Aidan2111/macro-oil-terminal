@@ -339,26 +339,50 @@ def _project_endpoint() -> str:
 
 
 def _make_openai_client():  # noqa: ANN202
-    """Construct the OpenAI client backed by the Foundry project endpoint.
+    """Construct an Azure OpenAI client for the Assistants API.
 
-    Tests monkey-patch this function to inject a fake. Production calls
-    AIProjectClient → .get_openai_client(), which yields a token-credential
-    OpenAI client targeting the Foundry openai surface.
+    Tests monkey-patch this function to inject a fake.
 
-    ``default_query`` injects ``api-version`` into every request URL.
-    ``AIProjectClient.get_openai_client()`` only adds this automatically
-    when ``agent_name`` is provided; without it the Foundry ``/openai/v1``
-    surface rejects requests with *"api-version is not provided"*.
+    The Foundry project's ``/openai/v1`` proxy surface does **not**
+    support the Assistants (beta.threads / beta.assistants) endpoints.
+    We therefore target the Azure OpenAI resource directly via
+    ``AZURE_OPENAI_ENDPOINT``, using ``DefaultAzureCredential`` for
+    Entra ID token auth (the App Service managed identity already has
+    ``Cognitive Services OpenAI User`` on the resource).
+
+    Falls back to API-key auth via ``AZURE_OPENAI_KEY`` when the
+    managed-identity path is not available (local dev).
     """
-    from azure.ai.projects import AIProjectClient
-    from azure.identity import DefaultAzureCredential
+    from openai import AzureOpenAI
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
-    project = AIProjectClient(
-        endpoint=_project_endpoint(),
-        credential=DefaultAzureCredential(),
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+    if not endpoint:
+        raise FoundryConfigError(
+            "AZURE_OPENAI_ENDPOINT is not set; the Foundry Assistants path "
+            "needs the Azure OpenAI resource endpoint directly."
+        )
+
+    api_version = os.environ.get(
+        "AZURE_OPENAI_ASSISTANTS_API_VERSION", "2025-03-01-preview"
     )
-    return project.get_openai_client(
-        default_query={"api-version": "2025-03-01-preview"},
+    api_key = os.environ.get("AZURE_OPENAI_KEY")
+
+    if api_key:
+        return AzureOpenAI(
+            azure_endpoint=endpoint,
+            api_key=api_key,
+            api_version=api_version,
+        )
+
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(),
+        "https://cognitiveservices.azure.com/.default",
+    )
+    return AzureOpenAI(
+        azure_endpoint=endpoint,
+        azure_ad_token_provider=token_provider,
+        api_version=api_version,
     )
 
 
