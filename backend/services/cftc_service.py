@@ -104,3 +104,43 @@ def get_last_fetch_state() -> dict[str, object]:
     """Return a snapshot dict (caller-owned copy)."""
     with _DQ_STATE_LOCK:
         return dict(_DQ_LAST_FETCH)
+
+
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-WIRING — wrapper that calls record_fetch_success/failure
+# ---------------------------------------------------------------------------
+
+import time as _dq_time
+import logging as _dq_logging
+
+_dq_log = _dq_logging.getLogger(__name__)
+
+_real_get_cftc_response = get_cftc_response
+
+
+def get_cftc_response() -> CFTCResponse:  # type: ignore[no-redef]
+    t0 = _dq_time.monotonic()
+    try:
+        resp = _real_get_cftc_response()
+    except Exception as exc:
+        record_fetch_failure(f"CFTC fetch failed: {type(exc).__name__}: {exc}")
+        raise
+    latency_ms = int((_dq_time.monotonic() - t0) * 1000.0)
+    n_obs = len(resp.history) if getattr(resp, "history", None) else None
+    degraded = False
+    msg = None
+    try:
+        from backend.services.data_quality import GuardViolation, guard_cftc
+        if resp.history:
+            rows = [{"date": p.date, "value": p.mm_net} for p in resp.history]
+            try:
+                guard_cftc(rows)
+            except GuardViolation as gv:
+                degraded = True
+                msg = str(gv)
+                _dq_log.warning("CFTC guard tripped: %s", gv)
+    except Exception:
+        pass
+    record_fetch_success(n_obs=n_obs, latency_ms=latency_ms,
+                         message=msg, degraded=degraded)
+    return resp

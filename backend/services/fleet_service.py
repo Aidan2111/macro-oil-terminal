@@ -324,3 +324,44 @@ def get_last_fetch_state() -> dict[str, object]:
     """Return a snapshot dict (caller-owned copy)."""
     with _DQ_STATE_LOCK:
         return dict(_DQ_LAST_FETCH)
+
+
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-WIRING — wrapper that calls record_fetch_success/failure
+# on each vessel ingestion via publish_delta.
+# ---------------------------------------------------------------------------
+
+import logging as _dq_logging
+
+_dq_log = _dq_logging.getLogger(__name__)
+
+_real_publish_delta = publish_delta
+
+
+async def publish_delta(vessel: dict[str, Any]) -> None:  # type: ignore[no-redef]
+    t0 = time.monotonic()
+    try:
+        await _real_publish_delta(vessel)
+    except Exception as exc:
+        record_fetch_failure(f"AISStream ingest failed: {type(exc).__name__}: {exc}")
+        raise
+    latency_ms = int((time.monotonic() - t0) * 1000.0)
+    n_obs = len(_latest_by_mmsi)
+    degraded = False
+    msg = None
+    try:
+        from backend.services.data_quality import GuardViolation, guard_aisstream_vessels
+        vessels = [
+            {"mmsi": v.get("MMSI"), "lat": v.get("Latitude"), "lon": v.get("Longitude")}
+            for v in [vessel]
+        ]
+        try:
+            guard_aisstream_vessels(vessels)
+        except GuardViolation as gv:
+            degraded = True
+            msg = str(gv)
+            _dq_log.warning("AISStream guard tripped: %s", gv)
+    except Exception:
+        pass
+    record_fetch_success(n_obs=n_obs, latency_ms=latency_ms,
+                         message=msg, degraded=degraded)

@@ -441,3 +441,29 @@ def get_last_fetch_state() -> dict[str, object]:
     """Return a snapshot dict (caller-owned copy)."""
     with _DQ_STATE_LOCK:
         return dict(_DQ_LAST_FETCH)
+
+
+# ---------------------------------------------------------------------------
+# Q1-DATA-QUALITY-WIRING — wrapper that records fetch state when thesis
+# records are read from the audit log.
+# ---------------------------------------------------------------------------
+
+import time as _dq_time
+import logging as _dq_logging
+
+_dq_log = _dq_logging.getLogger(__name__)
+
+_real_get_latest_thesis = get_latest_thesis
+
+
+def get_latest_thesis() -> Optional[dict]:  # type: ignore[no-redef]
+    t0 = _dq_time.monotonic()
+    try:
+        rec = _real_get_latest_thesis()
+    except Exception as exc:
+        record_fetch_failure(f"Thesis audit log read failed: {type(exc).__name__}: {exc}")
+        raise
+    latency_ms = int((_dq_time.monotonic() - t0) * 1000.0)
+    n_obs = 1 if rec is not None else 0
+    record_fetch_success(n_obs=n_obs, latency_ms=latency_ms)
+    return rec
