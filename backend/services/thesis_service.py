@@ -368,6 +368,11 @@ async def stream_thesis(
         }
         return
 
+    # Populate .instruments and .checklist — the decorator is a pure function
+    # that returns a deepcopy; ctx is guaranteed non-None at this point.
+    import trade_thesis as _tt  # type: ignore
+    thesis_obj = _tt.decorate_thesis_for_execution(thesis_obj, ctx)
+
     applied_guardrails = list(getattr(thesis_obj, "guardrails_applied", []) or [])
     raw = _thesis_to_dict(thesis_obj)
     stance = str(raw.get("raw", {}).get("stance") or raw.get("stance") or "") \

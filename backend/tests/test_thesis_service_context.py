@@ -125,3 +125,88 @@ def test_thesis_service_module_imports_cleanly():
 
     assert hasattr(ts, "_build_thesis_context")
     assert callable(ts._build_thesis_context)
+
+
+def test_stream_thesis_done_event_includes_decorated_fields(monkeypatch):
+    """Regression for #65: stream_thesis must call decorate_thesis_for_execution
+    so the SSE done payload carries populated instruments[] and checklist[].
+
+    Patches _generate_thesis + _build_thesis_context to avoid network I/O;
+    asserts the done event's thesis dict has 3 instruments and 5 checklist items
+    for a long_spread stance.
+    """
+    import asyncio
+    import json
+
+    import trade_thesis
+    import backend.services.thesis_service as ts
+
+    ctx = trade_thesis.ThesisContext(
+        latest_brent=80.0,
+        latest_wti=76.0,
+        latest_spread=4.0,
+        rolling_mean_90d=3.5,
+        rolling_std_90d=0.5,
+        current_z=1.0,
+        z_percentile_5y=60.0,
+        days_since_last_abs_z_over_2=5,
+        bt_hit_rate=0.6,
+        bt_avg_hold_days=3.0,
+        bt_avg_pnl_per_bbl=0.1,
+        bt_max_drawdown_usd=-1000.0,
+        bt_sharpe=0.8,
+        inventory_source="EIA",
+        inventory_current_bbls=400_000_000.0,
+        inventory_4w_slope_bbls_per_day=-100_000.0,
+        inventory_52w_slope_bbls_per_day=-50_000.0,
+        inventory_floor_bbls=300_000_000.0,
+        inventory_projected_floor_date="2027-04-22",
+        days_of_supply=20.0,
+        fleet_total_mbbl=500.0,
+        fleet_jones_mbbl=100.0,
+        fleet_shadow_mbbl=200.0,
+        fleet_sanctioned_mbbl=50.0,
+        fleet_source="Historical snapshot",
+        fleet_delta_vs_30d_mbbl=5.0,
+        vol_brent_30d_pct=25.0,
+        vol_wti_30d_pct=27.0,
+        vol_spread_30d_pct=10.0,
+        vol_spread_1y_percentile=55.0,
+        next_eia_release_date="2026-04-22",
+        session_is_open=True,
+        weekend_or_holiday=False,
+        user_z_threshold=2.0,
+        hours_to_next_eia=48.0,
+    )
+    long_thesis = trade_thesis.Thesis(
+        raw={
+            "stance": "long_spread",
+            "conviction_0_to_10": 7,
+            "time_horizon_days": 5,
+            "position_sizing": {"suggested_pct_of_capital": 3.0},
+        },
+        generated_at="2026-04-27T00:00:00Z",
+        source="test",
+        mode="fast",
+    )
+
+    monkeypatch.setattr(ts, "_generate_thesis", lambda *a, **kw: long_thesis)
+    monkeypatch.setattr(ts, "_build_thesis_context", lambda: ctx)
+
+    async def _run():
+        events = []
+        async for ev in ts.stream_thesis(mode="fast", portfolio_usd=100_000):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(_run())
+    done = next(e for e in events if e.get("event") == "done")
+    payload = json.loads(done["data"])
+    thesis_dict = payload["thesis"]
+    assert len(thesis_dict["instruments"]) == 3, (
+        "expected 3 instrument tiers from decorate_thesis_for_execution — "
+        "got empty list, confirming #65 regression"
+    )
+    assert len(thesis_dict["checklist"]) == 5, (
+        "expected 5 checklist items from decorate_thesis_for_execution"
+    )
