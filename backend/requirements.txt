@@ -20,7 +20,7 @@ lxml>=5.0.0
 beautifulsoup4>=4.12.0
 websockets>=12.0
 openai>=2.0.0,<3.0.0
-alpaca-py>=0.32.0
+alpaca-py>=0.43.3
 
 # Azure AI Foundry — Agent Service migration (FT-Foundry).
 # Pulled at module level by ``backend.services.trade_thesis_foundry`` only
