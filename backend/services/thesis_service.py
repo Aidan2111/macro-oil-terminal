@@ -301,14 +301,21 @@ async def stream_thesis(
 
     async def _runner() -> Any:
         try:
-            # ``log=True`` writes to data/trade_theses.jsonl exactly once per
-            # generate call, matching existing Streamlit behaviour.
+            # ``log=False`` here — we defer the audit-log write to AFTER
+            # ``decorate_thesis_for_execution`` runs below, so the
+            # persisted record contains the decorated `instruments` and
+            # `checklist` arrays the frontend needs on first paint.
+            # The runner used to write the audit row inline (with
+            # ``log=True``), but that captured the undecorated thesis
+            # and `/api/thesis/latest` then returned a record with
+            # empty instruments / empty checklist — the visible bug
+            # behind the "Today's read is messed up" report.
             result = await asyncio.to_thread(
                 _generate_thesis,
                 ctx,
                 mode=mode,
                 stream_handler=_stream_handler,
-                log=True,
+                log=False,
             )
             return result
         finally:
@@ -372,6 +379,17 @@ async def stream_thesis(
     # that returns a deepcopy; ctx is guaranteed non-None at this point.
     import trade_thesis as _tt  # type: ignore
     thesis_obj = _tt.decorate_thesis_for_execution(thesis_obj, ctx)
+
+    # Persist the decorated thesis — _generate_thesis was invoked with
+    # log=False so we own the audit-log write here. Wrapped so any
+    # disk failure is logged but never breaks the SSE response.
+    try:
+        _tt._append_audit(ctx, thesis_obj)
+    except Exception:  # pragma: no cover — audit-log writes never fatal
+        import logging as _audit_logging
+        _audit_logging.getLogger(__name__).debug(
+            "audit append failed (post-decoration)", exc_info=True
+        )
 
     applied_guardrails = list(getattr(thesis_obj, "guardrails_applied", []) or [])
     raw = _thesis_to_dict(thesis_obj)
