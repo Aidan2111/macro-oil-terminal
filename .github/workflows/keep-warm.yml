@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Warm FastAPI backend (canadaeast)
+      - name: Warm FastAPI backend (canadaeast — /health gate)
         run: |
           set -eu
           URL="https://oil-tracker-api-canadaeast-0f18.azurewebsites.net/health"
@@ -45,6 +45,27 @@ jobs:
           done
           echo "Backend cold after 5 attempts (canadaeast)" >&2
           exit 1
+
+      - name: Warm heavy data endpoints (force lazy imports resident)
+        # /health alone doesn't touch the big lazy imports — pandas /
+        # numpy / yfinance / statsmodels / arch / sklearn only load when
+        # a real data route is hit. Without this step, the first user
+        # request to /api/spread or /api/inventory after a quiet period
+        # ate 3–21s of cold-import time. We hit each endpoint once per
+        # cron tick to keep the imports + provider clients resident.
+        #
+        # Deliberately NOT pinging /api/thesis/generate (the SSE path)
+        # because every call burns Azure OpenAI tokens. /api/thesis/latest
+        # is a cached read against the audit log — safe to probe.
+        run: |
+          set -eu
+          BASE="https://oil-tracker-api-canadaeast-0f18.azurewebsites.net"
+          # /api/spread first (loads pandas + yfinance) so the rest of
+          # the heavy endpoints reuse the warmed module cache.
+          for ep in /api/spread /api/inventory /api/cftc /api/positions/account /api/thesis/latest /api/data-quality; do
+            code_time=$(curl -sS -o /dev/null -w '%{http_code} %{time_total}s' --max-time 60 "$BASE$ep" || echo 'curl-failed -')
+            echo "  $ep -> $code_time"
+          done
 
       - name: Ping React Static Web App (non-fatal)
         run: |
