@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import pathlib
+import dataclasses
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
@@ -777,6 +778,32 @@ _AUDIT_PATH = pathlib.Path("data/trade_theses.jsonl")
 def _append_audit(ctx: ThesisContext, thesis: Thesis) -> None:
     try:
         _AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # Issue #65 follow-up — the SSE handler runs
+        # `decorate_thesis_for_execution` which fills in
+        # `thesis.instruments` + `thesis.checklist`, then yields the
+        # decorated dict to the browser. The audit log was only
+        # persisting `thesis.raw` (the LLM JSON), so on first paint
+        # `/api/thesis/latest` returned a record without instruments
+        # or checklist — the hero rendered the cached stance + headline
+        # but no trade tickets, no notional math, no checklist
+        # bullets. Live SSE then took ~100s to repopulate. Persist
+        # the decorated arrays here so the cached first-paint matches
+        # what the live regen would yield.
+        # Both ``Instrument`` and ``ChecklistItem`` are dataclasses;
+        # serialise to dicts so the JSONL row stays plain. Anything
+        # that isn't a dataclass (including raw dicts already produced
+        # by the LLM-tool path) passes through untouched.
+        def _flatten(seq: list) -> list:
+            out: list = []
+            for item in seq or []:
+                if dataclasses.is_dataclass(item):
+                    out.append(dataclasses.asdict(item))
+                else:
+                    out.append(item)
+            return out
+
+        instruments_payload = _flatten(list(getattr(thesis, "instruments", []) or []))
+        checklist_payload = _flatten(list(getattr(thesis, "checklist", []) or []))
         record = {
             "timestamp": thesis.generated_at,
             "source": thesis.source,
@@ -784,6 +811,8 @@ def _append_audit(ctx: ThesisContext, thesis: Thesis) -> None:
             "context_fingerprint": thesis.context_fingerprint,
             "context": ctx.to_dict(),
             "thesis": thesis.raw,
+            "instruments": instruments_payload,
+            "checklist": checklist_payload,
             "guardrails": thesis.guardrails_applied,
         }
         with _AUDIT_PATH.open("a") as f:

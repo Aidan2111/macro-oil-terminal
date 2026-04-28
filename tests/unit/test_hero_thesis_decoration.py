@@ -270,3 +270,85 @@ def test_decorate_flat_stance_still_empty_checklist(minimal_context):
     thesis = _thesis(stance="flat")
     out = decorate_thesis_for_execution(thesis, minimal_context)
     assert out.checklist == []
+
+
+# ---------------------------------------------------------------------------
+# Audit log persistence — instruments + checklist must be round-tripped so
+# the cached `/api/thesis/latest` first paint matches what the SSE regen
+# would yield. Without this, the hero rendered the cached stance + headline
+# but no trade tickets / checklist for ~100s on every page load while the
+# live regen stream completed.
+# ---------------------------------------------------------------------------
+
+
+def test_append_audit_persists_decorated_instruments_and_checklist(
+    monkeypatch, tmp_path, minimal_context
+):
+    """Issue #65 follow-up — `_append_audit` must persist
+    `thesis.instruments` and `thesis.checklist` (the decoration output)
+    so /api/thesis/latest returns them on first paint."""
+    import json
+    import pathlib
+
+    import trade_thesis as tt
+
+    # Re-route the audit path into a temp file so the test doesn't
+    # spew into the live data/trade_theses.jsonl.
+    audit_path = pathlib.Path(tmp_path / "trade_theses.jsonl")
+    monkeypatch.setattr(tt, "_AUDIT_PATH", audit_path)
+
+    # Build a long-spread thesis so decoration produces 3 instruments
+    # and 5 checklist items.
+    thesis = _thesis(
+        stance="long_spread",
+        position_sizing={
+            "suggested_pct_of_capital": 1.0,
+            "method": "fixed_fractional",
+            "rationale": "stub",
+        },
+    )
+    thesis = decorate_thesis_for_execution(thesis, minimal_context)
+    assert len(thesis.instruments) == 3
+    assert len(thesis.checklist) == 5
+
+    tt._append_audit(minimal_context, thesis)
+
+    rows = audit_path.read_text().strip().splitlines()
+    assert len(rows) == 1
+    record = json.loads(rows[0])
+
+    # Instruments and checklist must be present, non-empty, and have
+    # the same shape the frontend expects (dict-of-fields per item).
+    assert record["instruments"], "instruments missing from audit log"
+    assert len(record["instruments"]) == 3
+    assert all(isinstance(i, dict) and "tier" in i for i in record["instruments"])
+
+    assert record["checklist"], "checklist missing from audit log"
+    assert len(record["checklist"]) == 5
+    assert all(
+        isinstance(c, dict) and "key" in c and "prompt" in c
+        for c in record["checklist"]
+    )
+
+
+def test_append_audit_flat_thesis_writes_empty_arrays(
+    monkeypatch, tmp_path, minimal_context
+):
+    """A flat stance has no instruments / checklist — the audit row
+    should still contain the keys (as empty lists) so the frontend
+    parser sees a known-shape record."""
+    import json
+    import pathlib
+
+    import trade_thesis as tt
+
+    audit_path = pathlib.Path(tmp_path / "trade_theses.jsonl")
+    monkeypatch.setattr(tt, "_AUDIT_PATH", audit_path)
+
+    thesis = _thesis(stance="flat")
+    thesis = decorate_thesis_for_execution(thesis, minimal_context)
+    tt._append_audit(minimal_context, thesis)
+
+    record = json.loads(audit_path.read_text().strip())
+    assert record["instruments"] == []
+    assert record["checklist"] == []
