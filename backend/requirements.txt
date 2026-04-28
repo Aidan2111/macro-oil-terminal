@@ -27,7 +27,7 @@ alpaca-py>=0.32.0
 # when ``USE_FOUNDRY=true``; otherwise lazy-imported behind the flag so
 # the existing AOAI path doesn't pay the import cost.
 azure-ai-projects>=2.1.0
-azure-identity>=1.25.0
+azure-identity>=1.25.3
 
 # dev / test (CI installs these too)
 pytest>=8.2.0
