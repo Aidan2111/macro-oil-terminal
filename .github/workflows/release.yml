@@ -32,7 +32,7 @@ jobs:
       url: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net
     steps:
       - name: Checkout (with full history)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
