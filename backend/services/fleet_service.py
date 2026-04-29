@@ -186,16 +186,27 @@ def _ensure_producer_running() -> None:
 async def _run_producer() -> None:
     """Single consumer loop: open the WS and forward positions to subscribers.
 
-    Swallows all errors and retries with backoff — the rest of the system
-    should never care that AISStream flapped.
+    Retries with exponential backoff on any error; logs the first failure
+    of each connect cycle (loud-on-first-fail / quiet-on-retry) so a
+    silent feed surfaces in App Insights / `az webapp log tail`. Marks
+    the data-quality state on connect even before the first vessel
+    arrives so `/api/data-quality` shows the producer is alive.
     """
+    import logging as _logging  # local import to keep top-level minimal
+
+    log = _logging.getLogger("fleet.aisstream")
+
     api_key = os.environ.get("AISSTREAM_API_KEY")
     if not api_key:
-        return  # No key -> snapshot stays whatever callers seeded.
+        log.error("AISSTREAM_API_KEY env var is not set; producer aborting")
+        record_fetch_failure("AISSTREAM_API_KEY env var is not set")
+        return
 
     try:
         import websockets  # type: ignore
     except ImportError:
+        log.error("websockets package not installed; producer aborting")
+        record_fetch_failure("websockets package not installed in runtime")
         return
 
     backoff = 1.0
@@ -205,17 +216,35 @@ async def _run_producer() -> None:
         "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
     }
     static: dict[int, dict[str, Any]] = {}
+    log.info(
+        "AISStream producer starting (key prefix=%s, key length=%d)",
+        api_key[:6],
+        len(api_key),
+    )
 
     while True:
         try:
+            log.info("AISStream connecting wss://stream.aisstream.io/v0/stream")
             async with websockets.connect(
                 "wss://stream.aisstream.io/v0/stream",
                 max_size=2**22,
                 ping_interval=20,
             ) as ws:
                 await ws.send(json.dumps(sub))
+                log.info("AISStream connected + subscribed; awaiting messages")
+                # Heartbeat the data-quality state on connect — even if
+                # the first vessel takes a few seconds, this proves the
+                # producer is alive (and surfaces a stale-cache state
+                # to the operator if the connection drops later).
+                record_fetch_success(
+                    n_obs=0,
+                    latency_ms=0,
+                    message="connected, awaiting first vessel",
+                )
                 backoff = 1.0
+                msg_count = 0
                 async for raw in ws:
+                    msg_count += 1
                     try:
                         payload = json.loads(raw)
                     except Exception:
@@ -223,10 +252,34 @@ async def _run_producer() -> None:
                     vessel = _shape_from_aisstream(payload, static)
                     if vessel is not None:
                         await publish_delta(vessel)
+                    # Periodic heartbeat: even if every message is
+                    # ShipStaticData (so vessel is None), keep
+                    # last_good_at fresh so the data-quality envelope
+                    # stays green during static-data-only bursts.
+                    if msg_count % 50 == 0:
+                        record_fetch_success(
+                            n_obs=len(_latest_by_mmsi),
+                            latency_ms=None,
+                            message=None,
+                        )
         except asyncio.CancelledError:
             raise
-        except Exception:
-            # Never leak exceptions to the loop; back off and retry.
+        except Exception as exc:
+            # First-fail log so a stuck producer surfaces; quiet
+            # subsequent retries so we don't spam the log on flap.
+            if backoff <= 1.0:
+                log.warning(
+                    "AISStream producer error: %s: %s — retrying in %.1fs",
+                    type(exc).__name__,
+                    exc,
+                    backoff,
+                )
+            try:
+                record_fetch_failure(
+                    f"AISStream producer error: {type(exc).__name__}: {exc}"
+                )
+            except Exception:
+                pass
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 

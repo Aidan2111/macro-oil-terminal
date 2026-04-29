@@ -119,6 +119,26 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @a.on_event("startup")
+    async def _start_aisstream_producer() -> None:
+        """Eagerly start the AISStream consumer on app startup so
+        every uvicorn worker spins up its own producer task without
+        needing a /api/fleet/* request to bootstrap it. The previous
+        lazy startup meant workers that only served non-fleet routes
+        never ingested vessels — and `/api/data-quality` hit on a
+        cold worker showed `aisstream` as null forever.
+        """
+        try:
+            from backend.services import fleet_service
+            fleet_service._ensure_producer_running()
+        except Exception:
+            # Never fail startup over the AIS producer.
+            import logging
+            logging.getLogger(__name__).exception(
+                "Failed to launch AISStream producer at startup"
+            )
+
     return a
 
 
