@@ -540,6 +540,26 @@ def fleet_categories() -> Any:
         return _provider_error("aisstream", exc)
 
 
+@app.get("/api/fleet/iran")
+def fleet_iran() -> Any:
+    """Iran-flagged + Iran-destined tanker counter (issue #78).
+
+    Returns ``{exports_today, imports_today, exports_7d, imports_7d,
+    latest_vessels}``. Data sourced from the same AISStream feed
+    `fleet_service` already maintains; this endpoint just buckets +
+    persists the daily history under
+    ``data/geopolitical/iran_tankers_daily.jsonl``.
+    """
+    from backend.services import iran_tanker_service
+
+    try:
+        return _CACHE.get_or_compute(
+            "iran_tankers", 60.0, iran_tanker_service.compute_envelope,
+        )
+    except Exception as exc:
+        return _provider_error("iran_tankers", exc)
+
+
 @app.get("/api/inventory/iran-production")
 def inventory_iran_production() -> Any:
     """Iran crude oil production via EIA STEO `COPR_IR` series (issue #79).

@@ -148,6 +148,13 @@ class ThesisContext:
     # ``backend.services.iran_production_service.compute_envelope``.
     iran_production_kbpd: Optional[float] = None          # latest month, thousand bbl/day
 
+    # --- Geopolitical: Iran tanker flow (issue #78) ---------------------
+    # Rolling 7-day counts of Iranian-flagged exports vs imports into
+    # Iranian ports. Sourced from
+    # ``backend.services.iran_tanker_service.compute_envelope``.
+    iran_export_tankers_7d: Optional[int] = None
+    iran_import_tankers_7d: Optional[int] = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 

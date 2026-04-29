@@ -214,6 +214,16 @@ def _build_thesis_context() -> Any:
         }
     except Exception:
         iran_production_info = None
+    # Issue #78 — Iran-flagged + Iran-destined tanker counter.
+    try:
+        from . import iran_tanker_service  # type: ignore
+        tanker_env = iran_tanker_service.compute_envelope()
+        iran_tanker_info = {
+            "exports_7d": int(tanker_env.get("exports_7d", 0)),
+            "imports_7d": int(tanker_env.get("imports_7d", 0)),
+        }
+    except Exception:
+        iran_tanker_info = None
 
     return thesis_context.build_context(
         pricing_res=pricing_res,
@@ -231,6 +241,7 @@ def _build_thesis_context() -> Any:
         garch_info=garch_info,
         hormuz_info=hormuz_info,
         iran_production_info=iran_production_info,
+        iran_tanker_info=iran_tanker_info,
     )
 
 
