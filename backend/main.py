@@ -540,6 +540,17 @@ def fleet_categories() -> Any:
         return _provider_error("aisstream", exc)
 
 
+@app.get("/api/news/headlines")
+def news_headlines() -> Any:
+    """RSS-aggregated oil-market headlines + VADER sentiment (issue #80)."""
+    from backend.services import news_service
+
+    try:
+        return _CACHE.get_or_compute("news_headlines", 60.0, news_service.compute_envelope)
+    except Exception as exc:
+        return _provider_error("news_rss", exc)
+
+
 @app.get("/api/fleet/iran")
 def fleet_iran() -> Any:
     """Iran-flagged + Iran-destined tanker counter (issue #78).

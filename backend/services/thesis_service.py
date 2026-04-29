@@ -224,6 +224,15 @@ def _build_thesis_context() -> Any:
         }
     except Exception:
         iran_tanker_info = None
+    # Issue #80 — RSS news aggregator + VADER sentiment.
+    try:
+        from . import news_service  # type: ignore
+        from providers import news_rss
+        env = news_service.compute_envelope()
+        top = news_rss.top_weighted(env.get("headlines", []), limit=5)
+        news_info = {"top_headlines": top}
+    except Exception:
+        news_info = None
 
     return thesis_context.build_context(
         pricing_res=pricing_res,
@@ -242,6 +251,7 @@ def _build_thesis_context() -> Any:
         hormuz_info=hormuz_info,
         iran_production_info=iran_production_info,
         iran_tanker_info=iran_tanker_info,
+        news_info=news_info,
     )
 
 
