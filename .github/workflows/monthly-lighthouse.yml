@@ -1,0 +1,75 @@
+name: monthly-lighthouse-monitor
+
+# Implements issue #47 — runs Lighthouse on the live /macro page from
+# a mobile-class viewport on the 1st of each month at 10:00 UTC and
+# posts the result as a comment on the perma-thread issue. The issue
+# stays open as the rolling history of monthly scores.
+
+on:
+  schedule:
+    # 10:00 UTC on the 1st of each month.
+    - cron: "0 10 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: monthly-lighthouse
+  cancel-in-progress: false
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Lighthouse + chrome-launcher
+        run: npm install --no-save --no-audit lighthouse@12 chrome-launcher@1
+
+      - name: Run Lighthouse on /macro (mobile preset)
+        id: lh
+        env:
+          TARGET_URL: https://delightful-pebble-00d8eb30f.7.azurestaticapps.net/macro
+        run: |
+          set -eu
+          node <<'JS' > /tmp/lh.json
+          (async () => {
+            const chromeLauncher = await import('chrome-launcher');
+            const lighthouse = (await import('lighthouse')).default;
+            const chrome = await chromeLauncher.launch({chromeFlags: ['--headless=new', '--no-sandbox']});
+            const flags = {logLevel: 'error', output: 'json', port: chrome.port,
+                           formFactor: 'mobile', screenEmulation: {mobile: true, width: 412, height: 823, deviceScaleFactor: 2}};
+            const config = {extends: 'lighthouse:default'};
+            const runnerResult = await lighthouse(process.env.TARGET_URL, flags, config);
+            console.log(runnerResult.report);
+            await chrome.kill();
+          })();
+          JS
+          PERF=$(jq '.categories.performance.score' /tmp/lh.json)
+          A11Y=$(jq '.categories.accessibility.score' /tmp/lh.json)
+          BP=$(jq '.categories["best-practices"].score' /tmp/lh.json)
+          SEO=$(jq '.categories.seo.score' /tmp/lh.json)
+          DATE=$(date -u +'%Y-%m-%d')
+          {
+            echo "## Monthly Lighthouse — \`/macro\` mobile · ${DATE}"
+            echo
+            echo "| Category | Score |"
+            echo "|---|---|"
+            echo "| Performance | ${PERF} |"
+            echo "| Accessibility | ${A11Y} |"
+            echo "| Best Practices | ${BP} |"
+            echo "| SEO | ${SEO} |"
+          } > /tmp/lh-comment.md
+          cat /tmp/lh-comment.md
+
+      - name: Post result as a comment on issue #47
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh issue comment 47 --repo "${{ github.repository }}" --body-file /tmp/lh-comment.md
