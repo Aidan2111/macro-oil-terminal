@@ -22,6 +22,19 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
+      - "providers/**"                # used by backend.services._compat shim
+      - "trade_thesis.py"              # ThesisContext schema + LLM call
+      - "thesis_context.py"            # build_context wires every provider
+      - "quantitative_models.py"       # backtest math used by /api/backtest
+      - "cointegration.py"             # used by cointegration_service
+      - "data_ingestion.py"            # legacy provider entry — backend imports it
+      - "backtest.py"                  # used by backtest_service
+      - "language.py"                  # legacy module imported by backend.services
+      - "calibration.py"               # legacy module imported by backend.services
+      - "alerts.py"                    # alerts surface used by /api/alerts
+      - "vol_models.py"                # used by garch_stretch
+      - "options_validation.py"        # used by backend.services.options_validation
+      - "requirements.txt"             # CI deps (also drives backend deploy)
       - ".github/workflows/cd-nextjs.yml"
   workflow_dispatch:
 
