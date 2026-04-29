@@ -25,6 +25,7 @@ const PROVIDER_LABELS: Record<ProviderName, string> = {
   aisstream: "AISStream",
   alpaca_paper: "Alpaca",
   audit_log: "Thesis log",
+  hormuz: "Hormuz",
 };
 
 const STATUS_DOT: Record<HealthStatus, string> = {
@@ -176,7 +177,7 @@ export function DataQualityTile() {
             {STATUS_LABEL[env.overall]}
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           {env.providers.map((p) => (
             <Tooltip key={p.name}>
               <TooltipTrigger asChild>
