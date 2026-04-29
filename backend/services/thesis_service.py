@@ -247,6 +247,18 @@ def _build_thesis_context() -> Any:
         }
     except Exception:
         ofac_info = None
+    # Issue #82 — Russia mirror.
+    try:
+        from . import russia_service  # type: ignore
+        ru_env = russia_service.compute_envelope()
+        russia_info = {
+            "chokepoint_transits_24h": int(ru_env.get("chokepoint_transits_24h", 0)),
+            "percentile_1y": float(ru_env.get("percentile_1y", 0.0)),
+            "exports_7d": int(ru_env.get("exports_7d", 0)),
+            "imports_7d": int(ru_env.get("imports_7d", 0)),
+        }
+    except Exception:
+        russia_info = None
 
     return thesis_context.build_context(
         pricing_res=pricing_res,
@@ -267,6 +279,7 @@ def _build_thesis_context() -> Any:
         iran_tanker_info=iran_tanker_info,
         news_info=news_info,
         ofac_info=ofac_info,
+        russia_info=russia_info,
     )
 
 

@@ -540,6 +540,18 @@ def fleet_categories() -> Any:
         return _provider_error("aisstream", exc)
 
 
+@app.get("/api/geopolitical/russia")
+def geopolitical_russia() -> Any:
+    """Russia mirror — chokepoint transits + Russian-flagged tankers +
+    Russia-bucket OFAC delta surfaced under one envelope (#82)."""
+    from backend.services import russia_service
+
+    try:
+        return _CACHE.get_or_compute("geopolitical_russia", 60.0, russia_service.compute_envelope)
+    except Exception as exc:
+        return _provider_error("russia", exc)
+
+
 @app.get("/api/sanctions/delta")
 def sanctions_delta() -> Any:
     """OFAC SDN sanctions delta — buckets by Iran / Russia / Venezuela (#81)."""

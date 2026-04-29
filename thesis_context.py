@@ -105,6 +105,7 @@ def build_context(
     iran_tanker_info: dict | None = None,
     news_info: dict | None = None,
     ofac_info: dict | None = None,
+    russia_info: dict | None = None,
 ) -> ThesisContext:
     latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
     latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
@@ -336,4 +337,17 @@ def build_context(
         new_sanctions_venezuela_30d=(int(ofac_info.get("delta_venezuela"))
                                      if ofac_info and ofac_info.get("delta_venezuela") is not None
                                      else None),
+        # --- Russia mirror (issue #82) ---------------------------------
+        russia_chokepoint_transits_24h=(int(russia_info.get("chokepoint_transits_24h"))
+                                        if russia_info and russia_info.get("chokepoint_transits_24h") is not None
+                                        else None),
+        russia_chokepoint_transits_pct_1y=(float(russia_info.get("percentile_1y"))
+                                           if russia_info and russia_info.get("percentile_1y") is not None
+                                           else None),
+        russia_export_tankers_7d=(int(russia_info.get("exports_7d"))
+                                  if russia_info and russia_info.get("exports_7d") is not None
+                                  else None),
+        russia_import_tankers_7d=(int(russia_info.get("imports_7d"))
+                                  if russia_info and russia_info.get("imports_7d") is not None
+                                  else None),
     )

@@ -168,6 +168,16 @@ class ThesisContext:
     new_sanctions_russia_30d: Optional[int] = None
     new_sanctions_venezuela_30d: Optional[int] = None
 
+    # --- Russia mirror (issue #82) --------------------------------------
+    # Chokepoint transits (Bosphorus + Black Sea + Baltic export ports)
+    # over 24h plus rolling 7-day Russian-flagged exports + foreign-flag
+    # imports into Russian export ports. Backed by
+    # ``backend.services.russia_service.compute_envelope``.
+    russia_chokepoint_transits_24h: Optional[int] = None
+    russia_chokepoint_transits_pct_1y: Optional[float] = None
+    russia_export_tankers_7d: Optional[int] = None
+    russia_import_tankers_7d: Optional[int] = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 
