@@ -233,6 +233,20 @@ def _build_thesis_context() -> Any:
         news_info = {"top_headlines": top}
     except Exception:
         news_info = None
+    # Issue #81 — OFAC sanctions delta. Best-effort; deltas missing
+    # just leave the LLM without that catalyst input rather than failing
+    # the whole thesis.
+    try:
+        from . import ofac_service  # type: ignore
+        ofac_env = ofac_service.compute_envelope()
+        delta = ofac_env.get("delta_vs_baseline", {}) or {}
+        ofac_info = {
+            "delta_iran": int(delta.get("iran", 0)),
+            "delta_russia": int(delta.get("russia", 0)),
+            "delta_venezuela": int(delta.get("venezuela", 0)),
+        }
+    except Exception:
+        ofac_info = None
 
     return thesis_context.build_context(
         pricing_res=pricing_res,
@@ -252,6 +266,7 @@ def _build_thesis_context() -> Any:
         iran_production_info=iran_production_info,
         iran_tanker_info=iran_tanker_info,
         news_info=news_info,
+        ofac_info=ofac_info,
     )
 
 

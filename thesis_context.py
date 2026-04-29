@@ -104,6 +104,7 @@ def build_context(
     iran_production_info: dict | None = None,
     iran_tanker_info: dict | None = None,
     news_info: dict | None = None,
+    ofac_info: dict | None = None,
 ) -> ThesisContext:
     latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
     latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
@@ -325,4 +326,14 @@ def build_context(
             if news_info and news_info.get("top_headlines")
             else []
         ),
+        # --- OFAC sanctions delta (issue #81) ---------------------------
+        new_sanctions_iran_30d=(int(ofac_info.get("delta_iran"))
+                                if ofac_info and ofac_info.get("delta_iran") is not None
+                                else None),
+        new_sanctions_russia_30d=(int(ofac_info.get("delta_russia"))
+                                  if ofac_info and ofac_info.get("delta_russia") is not None
+                                  else None),
+        new_sanctions_venezuela_30d=(int(ofac_info.get("delta_venezuela"))
+                                     if ofac_info and ofac_info.get("delta_venezuela") is not None
+                                     else None),
     )

@@ -161,6 +161,13 @@ class ThesisContext:
     # when the news provider is unreachable.
     recent_headlines: list = field(default_factory=list)
 
+    # --- OFAC sanctions delta (issue #81) -------------------------------
+    # Per-region delta of new SDN entries vs the prior daily snapshot.
+    # Counts integers; None when the OFAC provider is unreachable.
+    new_sanctions_iran_30d: Optional[int] = None
+    new_sanctions_russia_30d: Optional[int] = None
+    new_sanctions_venezuela_30d: Optional[int] = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 

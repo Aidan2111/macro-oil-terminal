@@ -540,6 +540,19 @@ def fleet_categories() -> Any:
         return _provider_error("aisstream", exc)
 
 
+@app.get("/api/sanctions/delta")
+def sanctions_delta() -> Any:
+    """OFAC SDN sanctions delta — buckets by Iran / Russia / Venezuela (#81)."""
+    from backend.services import ofac_service
+
+    try:
+        # 1h cache at the route layer; the underlying SDN snapshot rotates
+        # each call, so consecutive hits within 1h share the same delta.
+        return _CACHE.get_or_compute("ofac_sanctions_delta", 3600.0, ofac_service.compute_envelope)
+    except Exception as exc:
+        return _provider_error("ofac", exc)
+
+
 @app.get("/api/news/headlines")
 def news_headlines() -> Any:
     """RSS-aggregated oil-market headlines + VADER sentiment (issue #80)."""
