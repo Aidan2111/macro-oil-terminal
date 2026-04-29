@@ -1,0 +1,53 @@
+name: monthly-calibration-monitor
+
+# Implements issue #48 — runs the calibration verdict + Brier score
+# computation on the live /track-record data on the 1st of each month
+# at 10:30 UTC and posts the result as a comment on the perma-thread
+# issue. The issue stays open as the rolling history.
+
+on:
+  schedule:
+    # 10:30 UTC on the 1st of each month.
+    - cron: "30 10 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: monthly-calibration
+  cancel-in-progress: false
+
+jobs:
+  calibration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull track-record JSON from the live API
+        id: tr
+        run: |
+          set -eu
+          curl -fsS https://oil-tracker-api-canadaeast-0f18.azurewebsites.net/api/track-record \
+            > /tmp/track-record.json
+          ROWS=$(jq '.rows | length' /tmp/track-record.json 2>/dev/null || echo "0")
+          BRIER=$(jq -r '.summary.brier // "n/a"' /tmp/track-record.json 2>/dev/null || echo "n/a")
+          VERDICT=$(jq -r '.summary.verdict // "n/a"' /tmp/track-record.json 2>/dev/null || echo "n/a")
+          DATE=$(date -u +'%Y-%m-%d')
+          {
+            echo "## Monthly Calibration — \`/track-record\` · ${DATE}"
+            echo
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Verdict | ${VERDICT} |"
+            echo "| Brier score | ${BRIER} |"
+            echo "| Rows in track record | ${ROWS} |"
+          } > /tmp/cal-comment.md
+          cat /tmp/cal-comment.md
+
+      - name: Post result as a comment on issue #48
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh issue comment 48 --repo "${{ github.repository }}" --body-file /tmp/cal-comment.md
