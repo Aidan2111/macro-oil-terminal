@@ -203,6 +203,17 @@ def _build_thesis_context() -> Any:
         }
     except Exception:
         hormuz_info = None
+    # Issue #79 — EIA STEO Iran crude production. Best-effort fetch;
+    # the LLM sees `iran_production_kbpd` whenever the EIA key is
+    # configured and the STEO endpoint is reachable.
+    try:
+        from . import iran_production_service  # type: ignore
+        iran_env = iran_production_service.compute_envelope()
+        iran_production_info = {
+            "latest_kbpd": float(iran_env.get("latest_kbpd", 0.0)),
+        }
+    except Exception:
+        iran_production_info = None
 
     return thesis_context.build_context(
         pricing_res=pricing_res,
@@ -219,6 +230,7 @@ def _build_thesis_context() -> Any:
         regime_info=regime_info,
         garch_info=garch_info,
         hormuz_info=hormuz_info,
+        iran_production_info=iran_production_info,
     )
 
 
