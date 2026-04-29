@@ -30,6 +30,7 @@ ProviderName = Literal[
     "aisstream",
     "alpaca_paper",
     "audit_log",
+    "hormuz",
 ]
 HealthStatus = Literal["green", "amber", "red"]
 
@@ -67,6 +68,7 @@ _FRESHNESS_HOURS: dict[str, float] = {
     "aisstream": 0.083,     # 5 min
     "alpaca_paper": 0.25,   # 15 min — account state is sticky
     "audit_log": 24.0,      # at least one thesis per day
+    "hormuz": 1.0,          # 24h transit window, refreshed every endpoint hit
 }
 
 
@@ -146,6 +148,7 @@ _PROVIDER_MAP: list[tuple[ProviderName, str]] = [
     ("aisstream", "fleet_service"),
     ("alpaca_paper", "alpaca_service"),
     ("audit_log", "thesis_service"),
+    ("hormuz", "geopolitical_service"),
 ]
 
 

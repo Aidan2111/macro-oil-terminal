@@ -350,13 +350,31 @@ export type BuildInfo = {
 // ---- Q1 Data-quality slice -------------------------------------------
 // Q1-DATA-QUALITY-TYPES
 
+// ---- Geopolitical: Hormuz transit counter ---------------------------
+
+/** One day's tanker transit count through the Strait of Hormuz. */
+export type HormuzTransitPoint = {
+  date: string; // ISO date "YYYY-MM-DD"
+  count: number;
+};
+
+/** Response shape for GET /api/geopolitical/hormuz */
+export type HormuzTransitResponse = {
+  count_24h: number;
+  percentile_1y: number;
+  trend_30d: HormuzTransitPoint[];
+};
+
+// ---- Q1 Data-quality provider names (extended with hormuz) ----------
+
 export type ProviderName =
   | "yfinance"
   | "eia"
   | "cftc"
   | "aisstream"
   | "alpaca_paper"
-  | "audit_log";
+  | "audit_log"
+  | "hormuz";
 
 export type HealthStatus = "green" | "amber" | "red";
 

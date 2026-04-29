@@ -191,6 +191,18 @@ def _build_thesis_context() -> Any:
         garch_info = {"z": gz, **gdiag}
     except Exception:
         garch_info = None
+    # Issue #77 — Strait of Hormuz tanker transit counter. Read the
+    # already-computed envelope from `geopolitical_service` so the
+    # thesis context picks up the same numbers the macro tile shows.
+    try:
+        from . import geopolitical_service  # type: ignore
+        env = geopolitical_service.compute_envelope()
+        hormuz_info = {
+            "transits_24h": int(env.get("count_24h", 0)),
+            "transits_pct_1y": float(env.get("percentile_1y", 0.0)),
+        }
+    except Exception:
+        hormuz_info = None
 
     return thesis_context.build_context(
         pricing_res=pricing_res,
@@ -206,6 +218,7 @@ def _build_thesis_context() -> Any:
         coint_info=coint_info,
         regime_info=regime_info,
         garch_info=garch_info,
+        hormuz_info=hormuz_info,
     )
 
 

@@ -133,6 +133,15 @@ class ThesisContext:
     garch_persistence: Optional[float] = None             # α + β
     garch_fallback_reason: Optional[str] = None           # populated when garch_ok=False
 
+    # --- Geopolitical: Strait of Hormuz tanker transits (issue #77) -----
+    # Counts crude / oil-product tanker transits within a 50nm radius of
+    # the Strait of Hormuz center over the rolling 24h window. Sourced
+    # from ``backend.services.geopolitical_service.compute_envelope`` —
+    # both fields are optional so existing audit-log rows still
+    # deserialise cleanly.
+    hormuz_transits_24h: Optional[int] = None             # transit count over last 24h
+    hormuz_transits_pct_1y: Optional[float] = None        # 0..100 percentile vs rolling baseline
+
     def to_dict(self) -> dict:
         return asdict(self)
 

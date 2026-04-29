@@ -7,13 +7,20 @@ import { SpreadChart } from "@/components/charts/SpreadChart";
 import { StretchChart } from "@/components/charts/StretchChart";
 import { BacktestChart } from "@/components/charts/BacktestChart";
 import { ChartErrorBoundary } from "@/components/common/ChartErrorBoundary";
+import { HormuzTile } from "@/components/geopolitical/HormuzTile";
 import { fetchJson } from "@/lib/api";
-import type { BacktestLiveResponse, SpreadLiveResponse } from "@/types/api";
+import type { BacktestLiveResponse, HormuzTransitResponse, SpreadLiveResponse } from "@/types/api";
 
 export default function MacroPage() {
   const spread = useQuery<SpreadLiveResponse>({
     queryKey: ["spread", "macro"],
     queryFn: () => fetchJson<SpreadLiveResponse>("/api/spread"),
+    refetchInterval: 60_000,
+  });
+
+  const hormuz = useQuery<HormuzTransitResponse>({
+    queryKey: ["hormuz"],
+    queryFn: () => fetchJson<HormuzTransitResponse>("/api/geopolitical/hormuz"),
     refetchInterval: 60_000,
   });
 
@@ -64,6 +71,20 @@ export default function MacroPage() {
               data={spread.data?.history ?? []}
               error={spread.isError ? "Stretch unavailable." : null}
             />
+          </ChartErrorBoundary>
+        )}
+      </Section>
+
+      <Section
+        id="hormuz"
+        title="Hormuz transits"
+        subtitle="Rolling 24h crude/oil-product tanker count through the Strait of Hormuz."
+      >
+        {hormuz.isLoading ? (
+          <ChartShimmer height={140} bars={10} />
+        ) : (
+          <ChartErrorBoundary label="Hormuz transit counter">
+            <HormuzTile />
           </ChartErrorBoundary>
         )}
       </Section>
