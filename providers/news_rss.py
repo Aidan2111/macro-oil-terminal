@@ -100,11 +100,20 @@ _RSS_TIMEOUT = 8.0  # seconds per feed
 
 
 def _http_get(url: str, *, timeout: float = _RSS_TIMEOUT) -> bytes:
+    # Restrict to http(s) so bandit B310 (file:/ + custom schemes) is
+    # satisfied. The default RSS feeds in DEFAULT_FEEDS are all https
+    # but the function is also called with caller-supplied URLs in the
+    # test path, hence the runtime guard.
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Refusing to fetch non-http(s) URL: {url!r}")
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "macro-oil-terminal/news-rss"},
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — scheme validated
         return resp.read()
 
 
