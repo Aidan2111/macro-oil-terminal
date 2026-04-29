@@ -142,6 +142,12 @@ class ThesisContext:
     hormuz_transits_24h: Optional[int] = None             # transit count over last 24h
     hormuz_transits_pct_1y: Optional[float] = None        # 0..100 percentile vs rolling baseline
 
+    # --- Geopolitical: Iran crude production (issue #79) ----------------
+    # Latest monthly Iran crude oil production from the EIA STEO series
+    # ``COPR_IR`` (thousand bbl/day). Sourced from
+    # ``backend.services.iran_production_service.compute_envelope``.
+    iran_production_kbpd: Optional[float] = None          # latest month, thousand bbl/day
+
     def to_dict(self) -> dict:
         return asdict(self)
 

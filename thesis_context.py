@@ -101,6 +101,7 @@ def build_context(
     regime_info: dict | None = None,
     garch_info: dict | None = None,
     hormuz_info: dict | None = None,
+    iran_production_info: dict | None = None,
 ) -> ThesisContext:
     latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
     latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
@@ -302,4 +303,9 @@ def build_context(
         hormuz_transits_pct_1y=(float(hormuz_info.get("transits_pct_1y"))
                                 if hormuz_info and hormuz_info.get("transits_pct_1y") is not None
                                 else None),
+        # --- Iran crude production (issue #79) ---------------------------
+        iran_production_kbpd=(float(iran_production_info.get("latest_kbpd"))
+                              if iran_production_info
+                              and iran_production_info.get("latest_kbpd") is not None
+                              else None),
     )

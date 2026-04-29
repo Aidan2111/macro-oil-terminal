@@ -31,6 +31,7 @@ ProviderName = Literal[
     "alpaca_paper",
     "audit_log",
     "hormuz",
+    "iran_production",
 ]
 HealthStatus = Literal["green", "amber", "red"]
 
@@ -69,6 +70,7 @@ _FRESHNESS_HOURS: dict[str, float] = {
     "alpaca_paper": 0.25,   # 15 min — account state is sticky
     "audit_log": 24.0,      # at least one thesis per day
     "hormuz": 1.0,          # 24h transit window, refreshed every endpoint hit
+    "iran_production": 24.0 * 35,  # STEO is monthly; 35-day grace covers release cadence
 }
 
 
@@ -149,6 +151,7 @@ _PROVIDER_MAP: list[tuple[ProviderName, str]] = [
     ("alpaca_paper", "alpaca_service"),
     ("audit_log", "thesis_service"),
     ("hormuz", "geopolitical_service"),
+    ("iran_production", "iran_production_service"),
 ]
 
 

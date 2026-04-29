@@ -540,6 +540,26 @@ def fleet_categories() -> Any:
         return _provider_error("aisstream", exc)
 
 
+@app.get("/api/inventory/iran-production")
+def inventory_iran_production() -> Any:
+    """Iran crude oil production via EIA STEO `COPR_IR` series (issue #79).
+
+    Returns monthly thousand-bbl/day series + latest + YTD-avg + delta.
+    Cached 1 hour at the route layer; the underlying STEO fetch caches
+    24 hours since EIA only publishes monthly.
+    """
+    from backend.services import iran_production_service
+
+    try:
+        return _CACHE.get_or_compute(
+            "iran_production",
+            3600.0,
+            iran_production_service.compute_envelope,
+        )
+    except Exception as exc:
+        return _provider_error("iran_production", exc, hint="Check EIA_API_KEY app setting.")
+
+
 @app.get("/api/geopolitical/hormuz")
 def geopolitical_hormuz() -> Any:
     """Strait of Hormuz tanker transit counter — issue #77.

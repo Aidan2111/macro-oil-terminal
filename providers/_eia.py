@@ -294,6 +294,92 @@ __all__ = [
     "fetch_series_v2",
     "fetch_cushing",
     "fetch_inventory",
+    "fetch_steo_series",
     "active_mode",
     "health_check",
 ]
+
+
+# ---------------------------------------------------------------------------
+# STEO (Short-Term Energy Outlook) — issue #79
+# ---------------------------------------------------------------------------
+#
+# Iran crude oil production is published as a monthly STEO series at:
+#   https://api.eia.gov/v2/steo/data/
+#       ?frequency=monthly&data[0]=value
+#       &facets[seriesId][]=COPR_IR
+#       &api_key=<key>
+#
+# The series ID we care about is `COPR_IR` (Iran Crude Oil Production,
+# Monthly, thousand bbl/day). Other STEO series share the same shape so
+# the helper takes the bare ID and is generic.
+#
+# STEO is monthly; we cache for 24h. EIA publishes new STEO releases on
+# the 2nd Tuesday of each month — well within the cache window.
+
+_STEO_BASE = "https://api.eia.gov/v2/steo/data/"
+_STEO_TTL_SECONDS = 60 * 60 * 24  # 24 h
+_STEO_CACHE: dict[str, tuple[float, list[dict]]] = {}
+
+
+def fetch_steo_series(
+    series_id: str = "COPR_IR",
+    *,
+    timeout: int = 15,
+    limit: int = 60,
+) -> list[dict]:
+    """Fetch the monthly STEO series for `series_id`.
+
+    Returns a list of `{"month": "YYYY-MM", "value": float}` rows
+    sorted ascending by month, oldest → newest. Returns the most recent
+    `limit` rows.
+
+    Raises RuntimeError on any upstream failure (caller surfaces 503).
+    """
+    api_key = os.environ.get("EIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("EIA_API_KEY not set — STEO requires the v2 API key")
+
+    now = time.time()
+    hit = _STEO_CACHE.get(series_id)
+    if hit is not None and now - hit[0] < _STEO_TTL_SECONDS:
+        return hit[1][-limit:]
+
+    resp = requests.get(
+        _STEO_BASE,
+        params={
+            "frequency": "monthly",
+            "data[0]": "value",
+            "facets[seriesId][]": series_id,
+            "sort[0][column]": "period",
+            "sort[0][direction]": "desc",
+            "length": str(limit),
+            "api_key": api_key,
+        },
+        timeout=timeout,
+    )
+    if resp.status_code == 403:
+        raise RuntimeError(f"EIA STEO: 403 forbidden for {series_id}")
+    resp.raise_for_status()
+    payload = resp.json()
+    data = (payload.get("response") or {}).get("data") or []
+    if not data:
+        raise RuntimeError(f"EIA STEO: empty data for {series_id}")
+
+    rows: list[dict] = []
+    for r in data:
+        period = r.get("period")
+        value = r.get("value")
+        if period is None or value is None:
+            continue
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            continue
+        # Period from STEO is "YYYY-MM"; pass through unchanged.
+        rows.append({"month": str(period), "value": v})
+    if not rows:
+        raise RuntimeError(f"EIA STEO: zero valid rows for {series_id}")
+    rows.sort(key=lambda r: r["month"])
+    _STEO_CACHE[series_id] = (now, rows)
+    return rows[-limit:]
