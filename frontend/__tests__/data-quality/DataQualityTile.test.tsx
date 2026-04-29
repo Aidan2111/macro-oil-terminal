@@ -15,6 +15,7 @@ function makeEnvelope(overrides: Partial<DataQualityEnvelope> = {}): DataQuality
       { name: "aisstream", status: "green", last_good_at: now, n_obs: 41, latency_ms: 12, freshness_target_hours: 0.083, message: null },
       { name: "alpaca_paper", status: "green", last_good_at: now, n_obs: null, latency_ms: 80, freshness_target_hours: 0.25, message: null },
       { name: "audit_log", status: "green", last_good_at: now, n_obs: null, latency_ms: null, freshness_target_hours: 24, message: null },
+      { name: "hormuz", status: "green", last_good_at: now, n_obs: 42, latency_ms: 5, freshness_target_hours: 0.25, message: null },
     ],
     ...overrides,
   };
@@ -41,15 +42,24 @@ describe("DataQualityTile", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders all six provider cells when status is green", async () => {
+  it("renders all seven provider cells when status is green", async () => {
     stubFetch(makeEnvelope());
     render(<DataQualityTile />);
 
     await screen.findByTestId("data-quality-tile");
-    for (const name of ["yfinance", "eia", "cftc", "aisstream", "alpaca_paper", "audit_log"] as const) {
+    for (const name of ["yfinance", "eia", "cftc", "aisstream", "alpaca_paper", "audit_log", "hormuz"] as const) {
       const cell = await screen.findByTestId(`data-quality-cell-${name}`);
       expect(cell.getAttribute("data-status")).toBe("green");
     }
+  });
+
+  it("renders data-quality-cell-hormuz with green status", async () => {
+    stubFetch(makeEnvelope());
+    render(<DataQualityTile />);
+
+    const hormuzCell = await screen.findByTestId("data-quality-cell-hormuz");
+    expect(hormuzCell).toBeInTheDocument();
+    expect(hormuzCell.getAttribute("data-status")).toBe("green");
   });
 
   it("flags amber when a provider degrades", async () => {
