@@ -29,6 +29,11 @@ alpaca-py>=0.43.3
 azure-ai-projects>=2.1.0
 azure-identity>=1.25.3
 
+# Hardened XML parser — used by providers/news_rss.py to parse
+# untrusted RSS feeds without exposing the stdlib XXE / billion-laughs
+# attack surface (bandit B314).
+defusedxml>=0.7.1
+
 # dev / test (CI installs these too)
 pytest>=8.2.0
 pytest-asyncio>=0.24.0

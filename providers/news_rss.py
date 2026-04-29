@@ -22,7 +22,11 @@ import time as _time
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Optional
-from xml.etree import ElementTree as ET
+# Use defusedxml so the bandit B314 check passes — RSS feeds from
+# unknown sources can carry external entity / billion-laughs payloads.
+# defusedxml.ElementTree wraps the stdlib ElementTree with a hardened
+# parser; the rest of the API is identical.
+from defusedxml import ElementTree as ET  # type: ignore
 
 logger = logging.getLogger(__name__)
 
