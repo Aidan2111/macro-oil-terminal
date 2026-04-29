@@ -151,6 +151,12 @@ def _ingest(vessel: dict[str, Any]) -> None:
         except ValueError:
             pass
     _ring.append(mmsi)
+    # Stamp the ingest timestamp so geopolitical_service can age out
+    # vessels that haven't been re-emitted in the last 24h. Stored in
+    # a private key prefixed with `_` so it doesn't leak into
+    # downstream JSON without explicit serialisation.
+    if "_ingested_at" not in vessel:
+        vessel = {**vessel, "_ingested_at": time.time()}
     _latest_by_mmsi[mmsi] = vessel
     # Keep the dict bounded alongside the deque: evict MMSIs that fell off.
     if len(_latest_by_mmsi) > BUFFER_MAX:

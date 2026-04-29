@@ -100,6 +100,7 @@ def build_context(
     cftc_res=None,
     regime_info: dict | None = None,
     garch_info: dict | None = None,
+    hormuz_info: dict | None = None,
 ) -> ThesisContext:
     latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
     latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
@@ -288,4 +289,17 @@ def build_context(
         garch_fallback_reason=(str(garch_info.get("fallback_reason"))
                                if garch_info and garch_info.get("fallback_reason")
                                else None),
+        # --- Geopolitical: Strait of Hormuz ---------------------------
+        # Same plumbing pattern as the Q3 slice above — accepts an
+        # optional `hormuz_info` dict. Caller passes `{"transits_24h":
+        # int, "transits_pct_1y": float}` from
+        # `geopolitical_service.compute_envelope`. Both fields stay
+        # None when the dict is absent / partial so existing callers
+        # keep working.
+        hormuz_transits_24h=(int(hormuz_info.get("transits_24h"))
+                             if hormuz_info and hormuz_info.get("transits_24h") is not None
+                             else None),
+        hormuz_transits_pct_1y=(float(hormuz_info.get("transits_pct_1y"))
+                                if hormuz_info and hormuz_info.get("transits_pct_1y") is not None
+                                else None),
     )

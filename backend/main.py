@@ -540,6 +540,27 @@ def fleet_categories() -> Any:
         return _provider_error("aisstream", exc)
 
 
+@app.get("/api/geopolitical/hormuz")
+def geopolitical_hormuz() -> Any:
+    """Strait of Hormuz tanker transit counter — issue #77.
+
+    Returns ``{count_24h, percentile_1y, trend_30d}``. Counts vessels in
+    `fleet_service._latest_by_mmsi` whose lat/lon falls within a 50nm
+    radius of (26.5°N, 56.3°E) and whose `_ingested_at` stamp is within
+    the last 24 hours. Persists today's bucket to
+    `data/geopolitical/hormuz_daily.jsonl` for the 30-day trend +
+    rolling-baseline percentile.
+    """
+    from backend.services import geopolitical_service
+
+    try:
+        return _CACHE.get_or_compute(
+            "geopolitical_hormuz", 60.0, geopolitical_service.compute_envelope,
+        )
+    except Exception as exc:
+        return _provider_error("hormuz", exc)
+
+
 @app.get("/api/fleet/vessels")
 async def fleet_vessels_stream():
     """SSE stream of live vessel position deltas filtered to crude
