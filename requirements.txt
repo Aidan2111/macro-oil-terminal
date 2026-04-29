@@ -20,6 +20,10 @@ azure-data-tables>=12.5.0
 statsmodels>=0.14.6
 arch>=8.0.0
 
+# defusedxml — providers/news_rss.py parses untrusted RSS XML and
+# uses defusedxml.ElementTree to satisfy bandit B314.
+defusedxml>=0.7.1
+
 # --- dev / test (installed by CI, also fine for local) ---
 pytest>=8.2.0
 pytest-cov>=5.0.0

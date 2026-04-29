@@ -155,6 +155,12 @@ class ThesisContext:
     iran_export_tankers_7d: Optional[int] = None
     iran_import_tankers_7d: Optional[int] = None
 
+    # --- News headlines + sentiment (issue #80) -------------------------
+    # Top weighted (|sentiment_score|) recent headlines for the LLM to
+    # cite. Each item is `{source, title, sentiment_score}`. Empty list
+    # when the news provider is unreachable.
+    recent_headlines: list = field(default_factory=list)
+
     def to_dict(self) -> dict:
         return asdict(self)
 
