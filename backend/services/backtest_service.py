@@ -143,6 +143,20 @@ def run_backtest(
         commission_per_trade=commission_per_trade,
     )
 
+    # Issue #94 — surface bootstrap 95% CIs on every metric the
+    # frontend renders so the reader can see the sampling-noise
+    # envelope around the headline numbers. Best-effort: an empty
+    # ``trades`` blotter or a sub-5-trade sample skips this block.
+    metric_cis: dict = {}
+    try:
+        import quantitative_models  # type: ignore
+
+        metric_cis = quantitative_models.bootstrap_metric_cis(
+            raw.get("trades"), n_resamples=1000, confidence=0.95
+        )
+    except Exception:
+        metric_cis = {}
+
     equity_curve = _jsonable(raw.get("equity_curve"))
     trades = _jsonable(raw.get("trades"))
 
@@ -163,6 +177,7 @@ def run_backtest(
         "rolling_12m_sharpe": _jsonable(raw.get("rolling_12m_sharpe")),
         "equity_curve": equity_curve or [],
         "trades": trades or [],
+        "metric_cis": _jsonable(metric_cis),
         "params": {
             "entry_z": entry_z,
             "exit_z": exit_z,
