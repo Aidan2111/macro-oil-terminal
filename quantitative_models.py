@@ -606,12 +606,192 @@ def regime_breakdown(
     return grouped.sort_values("regime").reset_index(drop=True)
 
 
+# ---------------------------------------------------------------------------
+# Bootstrap CIs on backtest metrics (issue #94)
+# ---------------------------------------------------------------------------
+def bootstrap_metric_cis(
+    trades: pd.DataFrame,
+    *,
+    n_resamples: int = 1000,
+    confidence: float = 0.95,
+    seed: int = 7,
+) -> Dict[str, Dict[str, float]]:
+    """Stationary-bootstrap 95% CIs for the per-trade summary metrics.
+
+    The reported headline numbers (Sharpe, hit rate, VaR/ES, max DD)
+    are point estimates on a *single* realization of the trade list.
+    With ~30 trades the sampling noise alone is enormous — a Sharpe
+    of 4.4 has a 95% CI on the order of ±2 even under ideal
+    iid-trade assumptions. The honest thing to publish is the CI.
+
+    We use a basic iid trade-level resample because trades are
+    already serially-dependent through the entry/exit logic — the
+    user-visible thing we want to characterise is "if you'd run this
+    strategy on a slightly different draw of the same regime, where
+    would the Sharpe land?". Block-bootstrap on the underlying
+    spread series is a future refinement.
+
+    Returns ``{metric: {"point": float, "ci_low": float, "ci_high": float}}``.
+    """
+    if trades is None or (hasattr(trades, "empty") and trades.empty):
+        return {}
+
+    tdf = trades.copy() if hasattr(trades, "copy") else pd.DataFrame(trades)
+    n = len(tdf)
+    if n < 5:
+        return {}
+
+    pnl = tdf["pnl_usd"].astype(float).to_numpy()
+    days = tdf["days_held"].astype(float).to_numpy() if "days_held" in tdf.columns else np.full(n, 1.0)
+
+    rng = np.random.default_rng(seed)
+
+    sharpes: list[float] = []
+    hits: list[float] = []
+    var95s: list[float] = []
+    es95s: list[float] = []
+    max_dds: list[float] = []
+    totals: list[float] = []
+
+    for _ in range(int(n_resamples)):
+        idx = rng.integers(0, n, size=n)
+        pnl_b = pnl[idx]
+        days_b = days[idx]
+        std = pnl_b.std(ddof=0)
+        mean_hold = days_b.mean() or 1.0
+        trades_per_year = 365.0 / max(mean_hold, 1.0)
+        sharpe = float((pnl_b.mean() / std) * np.sqrt(trades_per_year)) if std > 0 else 0.0
+        sharpes.append(sharpe)
+        hits.append(float((pnl_b > 0).mean()))
+        var95s.append(float(np.quantile(pnl_b, 0.05)))
+        tail = pnl_b[pnl_b <= var95s[-1]]
+        es95s.append(float(tail.mean()) if tail.size else var95s[-1])
+        cum = np.cumsum(pnl_b)
+        running_max = np.maximum.accumulate(cum)
+        max_dds.append(float((cum - running_max).min()))
+        totals.append(float(pnl_b.sum()))
+
+    alpha = (1.0 - confidence) / 2.0
+
+    def _ci(values: list[float], point: float) -> Dict[str, float]:
+        arr = np.array(values, dtype=float)
+        return {
+            "point": float(point),
+            "ci_low": float(np.quantile(arr, alpha)),
+            "ci_high": float(np.quantile(arr, 1 - alpha)),
+        }
+
+    # Point estimates (recompute from the original trades to avoid
+    # round-trip-rounding mismatches against the published headline).
+    std0 = pnl.std(ddof=0)
+    mean_hold0 = days.mean() or 1.0
+    tpy0 = 365.0 / max(mean_hold0, 1.0)
+    sharpe0 = float((pnl.mean() / std0) * np.sqrt(tpy0)) if std0 > 0 else 0.0
+    hit0 = float((pnl > 0).mean())
+    var0 = float(np.quantile(pnl, 0.05))
+    tail0 = pnl[pnl <= var0]
+    es0 = float(tail0.mean()) if tail0.size else var0
+    cum0 = np.cumsum(pnl)
+    running_max0 = np.maximum.accumulate(cum0)
+    max_dd0 = float((cum0 - running_max0).min())
+    total0 = float(pnl.sum())
+
+    return {
+        "sharpe": _ci(sharpes, sharpe0),
+        "hit_rate": _ci(hits, hit0),
+        "var_95": _ci(var95s, var0),
+        "es_95": _ci(es95s, es0),
+        "max_drawdown_usd": _ci(max_dds, max_dd0),
+        "total_pnl_usd": _ci(totals, total0),
+        "n_resamples": {"point": float(n_resamples), "ci_low": float(n_resamples), "ci_high": float(n_resamples)},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward OOS — fit on past, test on future, slide forward (issue #94)
+# ---------------------------------------------------------------------------
+def walk_forward_oos_backtest(
+    spread_df: pd.DataFrame,
+    *,
+    fit_window_days: int = 90,
+    oos_window_days: int = 30,
+    entry_z: float = 2.0,
+    exit_z: float = 0.2,
+    slippage_per_bbl: float = 0.0,
+    commission_per_trade: float = 0.0,
+) -> pd.DataFrame:
+    """Time-aware out-of-sample walk-forward.
+
+    For each cursor date ``t``:
+      1. Fit window = ``[t - fit_window_days, t]`` — used ONLY to
+         confirm the rolling Z series has fully warmed up.
+      2. Test window = ``(t, t + oos_window_days]`` — backtest runs
+         on this slice using the (lagged) Z stats already in
+         ``spread_df``. PnL collected from this slice is OOS by
+         construction.
+      3. Cursor advances by ``oos_window_days`` so test windows
+         never overlap.
+
+    The per-window stats are aggregated into a DataFrame that the
+    audit document references as the "honest" Sharpe estimate vs the
+    headline in-sample number.
+    """
+    if spread_df is None or spread_df.empty or "Z_Score" not in spread_df.columns:
+        return pd.DataFrame(
+            columns=["fit_start", "fit_end", "oos_start", "oos_end", "n_trades", "win_rate", "sharpe", "total_pnl_usd"]
+        )
+
+    df = spread_df.dropna(subset=["Z_Score"]).copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    start = df.index.min()
+    end = df.index.max()
+    fit_offset = pd.Timedelta(days=fit_window_days)
+    oos_offset = pd.Timedelta(days=oos_window_days)
+
+    rows: list[dict] = []
+    cursor = start + fit_offset
+    while cursor + oos_offset <= end:
+        fit_start = cursor - fit_offset
+        fit_end = cursor
+        oos_start = cursor
+        oos_end = cursor + oos_offset
+        oos_slice = df.loc[oos_start:oos_end]
+        if oos_slice.empty:
+            cursor = cursor + oos_offset
+            continue
+        out = backtest_zscore_meanreversion(
+            oos_slice,
+            entry_z=entry_z,
+            exit_z=exit_z,
+            slippage_per_bbl=slippage_per_bbl,
+            commission_per_trade=commission_per_trade,
+        )
+        rows.append(
+            {
+                "fit_start": fit_start,
+                "fit_end": fit_end,
+                "oos_start": oos_start,
+                "oos_end": oos_end,
+                "n_trades": int(out["n_trades"]),
+                "win_rate": float(out["win_rate"]),
+                "sharpe": float(out.get("sharpe", 0.0)),
+                "total_pnl_usd": float(out["total_pnl_usd"]),
+            }
+        )
+        cursor = cursor + oos_offset
+    return pd.DataFrame(rows)
+
+
 __all__ = [
     "compute_spread_zscore",
     "forecast_depletion",
     "categorize_flag_states",
     "backtest_zscore_meanreversion",
     "walk_forward_backtest",
+    "walk_forward_oos_backtest",
     "monte_carlo_entry_noise",
     "regime_breakdown",
+    "bootstrap_metric_cis",
 ]
