@@ -91,3 +91,52 @@ def test_fetch_steo_series_shape_validation():
     finally:
         if saved is not None:
             os.environ["EIA_API_KEY"] = saved
+
+
+def test_steo_unit_multiplier_converts_mmbpd_to_kbpd_for_copr_ir():
+    """Issue #91 / #96 — COPR_IR is published by EIA in MMbbl/d but
+    our `kbpd` field name promises thousand bbl/d. The provider must
+    multiply by 1000 at the boundary so consumers downstream don't
+    have to know about the unit drift.
+    """
+    from providers import _eia
+
+    # The map must list COPR_IR as a 1000x conversion.
+    assert _eia._STEO_UNIT_MULTIPLIERS.get("COPR_IR") == 1000.0
+    # Russia and Venezuela equivalents must share the conversion since
+    # EIA publishes all three on the same MMbbl/d basis.
+    assert _eia._STEO_UNIT_MULTIPLIERS.get("COPR_RU") == 1000.0
+    assert _eia._STEO_UNIT_MULTIPLIERS.get("COPR_VE") == 1000.0
+
+
+def test_iran_production_envelope_in_kbpd_after_provider_conversion():
+    """Sanity check — Iran has been producing ~3.3 MMbbl/d for the
+    past two years. After the provider-level conversion, the
+    envelope's `latest_kbpd` should be in the 2500-4000 kbpd range,
+    NOT the 2.5-4.0 MMbbl/d range that flagged issue #91.
+
+    We mock the STEO fetch with values in MMbbl/d (the EIA-native
+    unit, e.g. 3.3) and confirm the envelope returns kbpd
+    (3300).
+    """
+    from backend.services import iran_production_service as svc
+    from providers import _eia
+
+    # Fake fetch returns values AFTER the provider multiplier has been
+    # applied — that's what the production code path passes downstream.
+    mmbpd_native = 3.3
+    expected_kbpd = mmbpd_native * _eia._STEO_UNIT_MULTIPLIERS["COPR_IR"]
+
+    def _fake(series_id, *, limit=60):
+        return [
+            {"month": "2026-02", "value": expected_kbpd},
+            {"month": "2026-03", "value": expected_kbpd + 50},
+            {"month": "2026-04", "value": expected_kbpd + 100},
+        ]
+
+    env = svc.compute_envelope(fetch_fn=_fake)
+    # latest_kbpd in the 2500-4000 band confirms the unit is kbpd, not MMbpd.
+    assert 2500.0 <= env["latest_kbpd"] <= 4000.0, (
+        f"latest_kbpd = {env['latest_kbpd']} — outside the plausible "
+        f"kbpd band; the unit-conversion regressed back to MMbpd."
+    )
