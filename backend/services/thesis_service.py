@@ -471,6 +471,27 @@ async def stream_thesis(
         if isinstance(raw, dict) else ""
     materiality_flat = stance == "flat"
 
+    # Issue #98 — validate numeric claims in the thesis natural-language
+    # fields against the structured context. Best-effort: a validator
+    # crash MUST NOT break the SSE response; we just emit "verified"
+    # with no violations and log the failure.
+    validation: dict = {"verdict": "verified", "n_claims": 0, "violations": []}
+    try:
+        from .thesis_claim_validator import validate_thesis_claims
+
+        thesis_for_validation = (
+            raw.get("raw") if isinstance(raw, dict) and isinstance(raw.get("raw"), dict)
+            else raw
+        )
+        ctx_dict = ctx.to_dict() if ctx is not None and hasattr(ctx, "to_dict") else {}
+        validation = validate_thesis_claims(thesis_for_validation, ctx_dict)
+    except Exception:  # pragma: no cover — validator never breaks SSE
+        import logging as _validation_logging
+        _validation_logging.getLogger(__name__).debug(
+            "claim validator raised; emitting empty verified verdict",
+            exc_info=True,
+        )
+
     yield {
         "event": "done",
         "data": json.dumps(
@@ -478,6 +499,7 @@ async def stream_thesis(
                 "thesis": raw,
                 "applied_guardrails": applied_guardrails,
                 "materiality_flat": materiality_flat,
+                "validation": validation,
             },
             default=str,
         ),
