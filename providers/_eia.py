@@ -311,8 +311,21 @@ __all__ = [
 #       &api_key=<key>
 #
 # The series ID we care about is `COPR_IR` (Iran Crude Oil Production,
-# Monthly, thousand bbl/day). Other STEO series share the same shape so
-# the helper takes the bare ID and is generic.
+# Monthly). EIA publishes this STEO series in **million barrels/day**
+# (MMbbl/d) — Iran has been producing ~3.3 MMbbl/d for the past two
+# years and the raw API value is ~3.30, NOT 3300. We convert to
+# **thousand bbl/day** at the provider boundary (multiply by 1000)
+# so every downstream consumer can trust the `kbpd` field name. See
+# issue #91 / #96 for the unit-audit history; see also
+# `docs/quant/unit-audit.md` for the field-by-field table.
+#
+# Other STEO series may publish in different units (e.g. PADD-level
+# inventory in Mbbl, refinery-utilisation as a percent). The
+# ``_STEO_UNIT_MULTIPLIERS`` map below records the per-series
+# conversion to barrels-per-day-or-similar canonical units; series
+# missing from the map default to a no-op (1.0) and are flagged in
+# the audit doc as "unverified — provider does not document a unit
+# conversion".
 #
 # STEO is monthly; we cache for 24h. EIA publishes new STEO releases on
 # the 2nd Tuesday of each month — well within the cache window.
@@ -320,6 +333,15 @@ __all__ = [
 _STEO_BASE = "https://api.eia.gov/v2/steo/data/"
 _STEO_TTL_SECONDS = 60 * 60 * 24  # 24 h
 _STEO_CACHE: dict[str, tuple[float, list[dict]]] = {}
+
+# Per-series unit conversion to canonical kbpd (thousand bbl/day).
+# Add a row here when onboarding a new STEO series — every STEO field
+# touched by the API must round-trip through this map.
+_STEO_UNIT_MULTIPLIERS: dict[str, float] = {
+    "COPR_IR": 1000.0,  # MMbbl/d -> kbbl/d
+    "COPR_RU": 1000.0,  # Russia crude — also MMbbl/d
+    "COPR_VE": 1000.0,  # Venezuela crude — also MMbbl/d
+}
 
 
 def fetch_steo_series(
@@ -366,6 +388,7 @@ def fetch_steo_series(
     if not data:
         raise RuntimeError(f"EIA STEO: empty data for {series_id}")
 
+    multiplier = _STEO_UNIT_MULTIPLIERS.get(series_id, 1.0)
     rows: list[dict] = []
     for r in data:
         period = r.get("period")
@@ -373,7 +396,7 @@ def fetch_steo_series(
         if period is None or value is None:
             continue
         try:
-            v = float(value)
+            v = float(value) * multiplier
         except (TypeError, ValueError):
             continue
         # Period from STEO is "YYYY-MM"; pass through unchanged.
