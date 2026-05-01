@@ -21,6 +21,29 @@ class SpreadPoint(BaseModel):
     z_score: float | None = Field(default=None, description="Rolling 90d Z-score")
 
 
+class CorroborationSnapshot(BaseModel):
+    """Cross-source price-corroboration snapshot (issue #97).
+
+    yfinance is the primary source for Brent/WTI; FRED's daily
+    DCOILBRENTEU + DCOILWTICO series are the secondary check. A
+    `max_relative_delta` > 2% flips `/api/data-quality` for the
+    yfinance row to amber.
+    """
+
+    yfinance: dict[str, float | None] = Field(
+        default_factory=dict,
+        description="Primary {brent, wti} closes (USD/bbl). May contain None.",
+    )
+    fred: dict[str, float | None] = Field(
+        default_factory=dict,
+        description="FRED {brent, wti} closes (USD/bbl). None on fetch failure.",
+    )
+    max_relative_delta: float | None = Field(
+        default=None,
+        description="max(|yf - fred| / fred) across both legs; None if FRED unavailable.",
+    )
+
+
 class SpreadResponse(BaseModel):
     """Current Brent-WTI prices + latest spread stretch + 90-day history."""
 
@@ -43,4 +66,8 @@ class SpreadResponse(BaseModel):
     history: list[SpreadPoint] = Field(
         default_factory=list,
         description="Last 90 daily bars (ascending).",
+    )
+    corroboration: CorroborationSnapshot | None = Field(
+        default=None,
+        description="Cross-source price corroboration vs FRED (issue #97).",
     )
