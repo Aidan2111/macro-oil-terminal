@@ -70,18 +70,23 @@ def test_each_trade_has_breakdown():
     out = run_realistic_backtest(spread_df=df, entry_z=1.5, exit_z=0.2)
     for tr in out["trades"]:
         bd = tr["pnl_breakdown"]
-        # Net = gross - spread - commission - carry
+        # Net = gross - spread - commission - carry - roll
+        # (roll added in issue #95 — defaults to $0 for trades held
+        # <= 25 days so this still works on holdings shorter than
+        # the front-month roll cycle.)
         recomputed = (
             bd["gross_usd"]
             - bd["spread_cost_usd"]
             - bd["commission_usd"]
             - bd["overnight_carry_usd"]
+            - bd.get("roll_cost_usd", 0.0)
         )
         assert recomputed == pytest.approx(bd["net_pnl_usd"])
         # Costs are non-negative
         assert bd["spread_cost_usd"] >= 0
         assert bd["commission_usd"] >= 0
         assert bd["overnight_carry_usd"] >= 0
+        assert bd.get("roll_cost_usd", 0.0) >= 0
 
 
 def test_high_carry_lowers_net_pnl():
