@@ -17,7 +17,64 @@ import math
 
 import pandas as pd
 
-from ..models.spread import SpreadPoint, SpreadResponse
+from ..models.spread import CorroborationSnapshot, SpreadPoint, SpreadResponse
+
+
+# Issue #97 — divergence threshold above which the data-quality
+# envelope flips yfinance to amber. 2% is the threshold cited in the
+# issue body. Live (next-day) FRED vs intraday yfinance commonly
+# diverges 0.1-0.3%; ~2% is a genuine "the two feeds disagree"
+# signal.
+PRICE_CORROBORATION_THRESHOLD = 0.02
+
+
+def _max_relative_delta(yf: dict[str, float | None], fred: dict[str, float | None]) -> float | None:
+    """Helper — returns max(|y - f| / f) across overlapping legs.
+
+    Returns None if neither leg has both yfinance + FRED values.
+    """
+    deltas: list[float] = []
+    for leg in ("brent", "wti"):
+        y = yf.get(leg)
+        f = fred.get(leg)
+        if y is None or f is None or f == 0.0:
+            continue
+        deltas.append(abs(y - f) / abs(f))
+    if not deltas:
+        return None
+    return max(deltas)
+
+
+def corroborate_with_fred(
+    *, brent_yf: float | None, wti_yf: float | None,
+    fetch_fn=None,
+) -> tuple[CorroborationSnapshot, bool, str | None]:
+    """Build a CorroborationSnapshot from current yfinance + latest FRED.
+
+    Returns ``(snapshot, degraded, message)``. ``degraded`` is True
+    iff ``max_relative_delta`` exceeds PRICE_CORROBORATION_THRESHOLD;
+    ``message`` is the data-quality string to surface.
+
+    `fetch_fn` is injectable for tests — defaults to
+    ``providers._fred.fetch_oil_prices_latest``.
+    """
+    if fetch_fn is None:
+        from providers import _fred
+
+        fetch_fn = _fred.fetch_oil_prices_latest
+
+    yf = {"brent": brent_yf, "wti": wti_yf}
+    try:
+        fred = fetch_fn() or {"brent": None, "wti": None}
+    except Exception:
+        fred = {"brent": None, "wti": None}
+
+    delta = _max_relative_delta(yf, fred)
+    snapshot = CorroborationSnapshot(yfinance=yf, fred=fred, max_relative_delta=delta)
+    if delta is not None and delta > PRICE_CORROBORATION_THRESHOLD:
+        msg = f"price-source divergence: {delta:.3f} (yf vs FRED)"
+        return snapshot, True, msg
+    return snapshot, False, None
 
 
 def _as_float(value: object) -> float | None:
@@ -176,6 +233,34 @@ def get_spread_response(history_bars: int = 90):  # type: ignore[no-redef]
     except Exception:
         # Guard is best-effort — never fail the request because of it.
         pass
+
+    # Issue #97 — cross-source price corroboration vs FRED. Best-effort:
+    # if FRED is unavailable or unkeyed, ``corroborate_with_fred`` returns
+    # an "all-None FRED" snapshot with delta=None and the wrapper proceeds
+    # without flipping data-quality.
+    try:
+        snap, corroboration_degraded, corroboration_msg = corroborate_with_fred(
+            brent_yf=resp.brent, wti_yf=resp.wti
+        )
+        # Attach the snapshot to the response model so /api/spread
+        # callers can read it. Pydantic is OK with assigning to an
+        # Optional[Model] field after construction.
+        try:
+            resp = resp.model_copy(update={"corroboration": snap})
+        except Exception:
+            # If model_copy isn't available (older pydantic), set on
+            # the instance directly — best-effort.
+            try:
+                resp.corroboration = snap  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        if corroboration_degraded and not degraded:
+            degraded = True
+            msg = corroboration_msg
+            _dq_log.warning("price corroboration tripped: %s", corroboration_msg)
+    except Exception as exc:
+        _dq_log.warning("corroboration step failed (non-fatal): %s", exc)
+
     record_fetch_success(n_obs=n_obs, latency_ms=latency_ms,
                          message=msg, degraded=degraded)
     return resp
