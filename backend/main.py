@@ -1291,6 +1291,25 @@ def data_quality() -> Any:
         return _provider_error("data_quality", exc)
 
 
+@app.get("/api/backtest/significance")
+def backtest_significance() -> Any:
+    """Multiple-testing-corrected significance for the threshold sweep
+    (issue #102).
+
+    Returns p_raw + p_bonferroni + p_bh per entry-Z threshold tested
+    so the reader can see how the apparent significance collapses
+    once the search space is accounted for.
+    """
+    try:
+        from backend.services.backtest_service import _load_spread_df
+        import quantitative_models  # type: ignore
+
+        spread_df = _load_spread_df(lookback_days=365 * 5)
+        return quantitative_models.threshold_sweep_with_correction(spread_df)
+    except Exception as exc:  # pragma: no cover — provider/cointegration failures
+        return _provider_error("backtest_significance", exc)
+
+
 @app.get("/api/backtest/regimes")
 def backtest_regimes() -> Any:
     """4-bucket regime-segmented backtest (issue #101).

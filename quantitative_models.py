@@ -955,6 +955,161 @@ def _regime_metrics(regime: str, sub: pd.DataFrame) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Threshold sweep with FDR correction — issue #102
+# ---------------------------------------------------------------------------
+def threshold_sweep_with_correction(
+    spread_df: pd.DataFrame,
+    *,
+    thresholds: list[float] | None = None,
+    n_resamples: int = 500,
+    exit_z: float = 0.2,
+    seed: int = 7,
+) -> Dict[str, Any]:
+    """Sweep entry-Z thresholds, compute per-threshold p-values via
+    permutation, then return raw + FDR-corrected p-values.
+
+    Reporting only the best raw p-value across a threshold grid is
+    statistical malpractice — the more thresholds tested, the
+    higher the chance of a spurious hit. We compute a per-threshold
+    permutation p-value (test stat = total PnL) by randomly
+    permuting the trade-side flag and re-running the engine, then
+    apply Bonferroni and Benjamini-Hochberg corrections.
+
+    Parameters
+    ----------
+    spread_df
+        Frame with ``Spread`` + ``Z_Score`` columns.
+    thresholds
+        Entry-Z thresholds to sweep. Defaults to [1.0, 1.5, 2.0, 2.5, 3.0].
+    n_resamples
+        Permutation samples per threshold. 500 is fast enough for an
+        API call; bump for the offline calibration script.
+    exit_z
+        Exit threshold passed through to the engine.
+    seed
+        Reproducibility.
+
+    Returns
+    -------
+    dict
+        ``{
+          "thresholds": [...],
+          "p_raw": [...],
+          "p_bonferroni": [...],
+          "p_bh": [...],
+          "test_stat_label": "total_pnl_usd",
+        }``
+    """
+    if thresholds is None:
+        thresholds = [1.0, 1.5, 2.0, 2.5, 3.0]
+    if spread_df is None or spread_df.empty:
+        return {
+            "thresholds": thresholds,
+            "p_raw": [1.0] * len(thresholds),
+            "p_bonferroni": [1.0] * len(thresholds),
+            "p_bh": [1.0] * len(thresholds),
+            "test_stat_label": "total_pnl_usd",
+        }
+
+    rng = np.random.default_rng(seed)
+    p_raws: list[float] = []
+    for t in thresholds:
+        observed = backtest_zscore_meanreversion(
+            spread_df, entry_z=float(t), exit_z=exit_z,
+        )
+        observed_pnl = float(observed["total_pnl_usd"])
+        # Build the null by sign-flipping each trade independently.
+        trades = observed.get("trades")
+        if trades is None or (hasattr(trades, "empty") and trades.empty):
+            p_raws.append(1.0)
+            continue
+        pnls = np.asarray(trades["pnl_usd"], dtype=float)
+        n = len(pnls)
+        if n < 5:
+            p_raws.append(1.0)
+            continue
+        null_dist = np.empty(n_resamples, dtype=float)
+        for i in range(n_resamples):
+            signs = rng.choice([-1.0, 1.0], size=n)
+            null_dist[i] = float(np.sum(pnls * signs))
+        # Two-sided p-value against the null.
+        p_two_sided = float(np.mean(np.abs(null_dist) >= abs(observed_pnl)))
+        p_raws.append(p_two_sided)
+
+    cor = multiple_testing_correction(p_raws, method="both")
+    return {
+        "thresholds": thresholds,
+        "p_raw": cor["p_raw"],
+        "p_bonferroni": cor["p_bonferroni"],
+        "p_bh": cor["p_bh"],
+        "test_stat_label": "total_pnl_usd",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Multiple-testing correction — issue #102
+# ---------------------------------------------------------------------------
+def multiple_testing_correction(
+    raw_p_values: list[float] | "pd.Series",
+    *,
+    method: str = "both",
+) -> Dict[str, list[float]]:
+    """Apply Bonferroni and Benjamini-Hochberg corrections.
+
+    Parameters
+    ----------
+    raw_p_values
+        Sequence of per-threshold p-values from the bootstrap-or-
+        permutation test on each Z-score entry threshold tested.
+    method
+        ``"bonferroni"`` (conservative — multiply each p by k),
+        ``"bh"`` (Benjamini-Hochberg FDR, more powerful), or
+        ``"both"`` (default — return both alongside the raw).
+
+    Returns
+    -------
+    dict
+        ``{
+          "p_raw": [...],
+          "p_bonferroni": [...],
+          "p_bh": [...],
+        }``  Each list aligned with the input order. Corrected
+        values are clipped to [0, 1].
+    """
+    raw = np.asarray(list(raw_p_values), dtype=float)
+    k = len(raw)
+    out: Dict[str, list[float]] = {"p_raw": raw.tolist()}
+
+    if k == 0:
+        out["p_bonferroni"] = []
+        out["p_bh"] = []
+        return out
+
+    if method in ("bonferroni", "both"):
+        bonf = np.clip(raw * k, 0.0, 1.0)
+        out["p_bonferroni"] = bonf.tolist()
+
+    if method in ("bh", "both"):
+        # Benjamini-Hochberg: rank p ascending, multiply each by m / rank,
+        # then enforce monotonicity (decreasing in p) by taking the
+        # cumulative MIN from the largest p down. Standard formulation.
+        order = np.argsort(raw)
+        ranked = raw[order]
+        m = len(ranked)
+        adjusted = ranked * m / np.arange(1, m + 1)
+        # Cumulative min from right -> left to enforce monotonicity.
+        for i in range(m - 2, -1, -1):
+            adjusted[i] = min(adjusted[i], adjusted[i + 1])
+        adjusted = np.clip(adjusted, 0.0, 1.0)
+        # Restore original ordering.
+        bh = np.empty(m, dtype=float)
+        bh[order] = adjusted
+        out["p_bh"] = bh.tolist()
+
+    return out
+
+
 __all__ = [
     "compute_spread_zscore",
     "forecast_depletion",
@@ -966,4 +1121,6 @@ __all__ = [
     "regime_breakdown",
     "regime_segmented_backtest",
     "bootstrap_metric_cis",
+    "multiple_testing_correction",
+    "threshold_sweep_with_correction",
 ]
