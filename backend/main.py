@@ -1289,3 +1289,24 @@ def data_quality() -> Any:
         return env.model_dump(mode="json")
     except Exception as exc:  # pragma: no cover — collator is pure
         return _provider_error("data_quality", exc)
+
+
+@app.get("/api/alerts")
+def alerts() -> Any:
+    """Active silence-detector alerts (issue #99).
+
+    Tiered severity: critical (yfinance/EIA/audit_log) > 1h stale,
+    warning (cftc/alpaca/news/ofac) > 4h, info (AIS/geopolitical) > 24h.
+    Returns ``alert_count: 0`` + ``highest_severity: "none"`` when the
+    fleet is healthy. Cron watchdog and React banner both consume this.
+    """
+    try:
+        from backend.services.silence_detector import (
+            alerts_to_payload,
+            compute_alerts_live,
+        )
+
+        alerts_list = compute_alerts_live()
+        return alerts_to_payload(alerts_list)
+    except Exception as exc:  # pragma: no cover — pure read
+        return _provider_error("silence_detector", exc)
