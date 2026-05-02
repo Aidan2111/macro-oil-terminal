@@ -372,9 +372,15 @@ export type ProviderName =
   | "eia"
   | "cftc"
   | "aisstream"
+  | "aisstream_secondary"
   | "alpaca_paper"
   | "audit_log"
-  | "hormuz";
+  | "hormuz"
+  | "iran_production"
+  | "iran_tankers"
+  | "news_rss"
+  | "ofac"
+  | "russia";
 
 export type HealthStatus = "green" | "amber" | "red";
 
@@ -388,10 +394,29 @@ export type ProviderHealth = {
   message: string | null;
 };
 
+/**
+ * Issue #108 — graceful-degradation freshness badge per provider.
+ * `tier` drives the pill colour; `hide_content` is true ONLY at red
+ * so amber tiles keep rendering cached data with a stale pill.
+ */
+export type FreshnessBadge = {
+  name: string;
+  tier: HealthStatus;
+  age_label: string; // "2h ago", "silent 27 min", "warming up", "never"
+  age_seconds: number | null;
+  hide_content: boolean;
+  threshold_hours: number;
+};
+
 export type DataQualityEnvelope = {
   generated_at: string;
   overall: HealthStatus;
   providers: ProviderHealth[];
+  /** Issue #108 — populated when /api/data-quality is hit on the
+   *  graceful-degradation backend; older deploys may omit. */
+  badges?: FreshnessBadge[];
+  stale_providers?: string[];
+  any_red?: boolean;
 };
 
 /**

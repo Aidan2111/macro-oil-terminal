@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { fetchJson, ApiError } from "@/lib/api";
 import type {
-  DataQualityEnvelope,
+  FreshnessBadge,
   HealthStatus,
   ProviderHealth,
   ProviderName,
@@ -15,17 +14,22 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-
-const POLL_MS = 60_000;
+import { useDataQuality } from "@/lib/hooks/use-data-quality";
 
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   yfinance: "yfinance",
   eia: "EIA",
   cftc: "CFTC",
   aisstream: "AISStream",
+  aisstream_secondary: "AIS 2°",
   alpaca_paper: "Alpaca",
   audit_log: "Thesis log",
   hormuz: "Hormuz",
+  iran_production: "Iran prod.",
+  iran_tankers: "Iran tankers",
+  news_rss: "News",
+  ofac: "OFAC",
+  russia: "Russia",
 };
 
 const STATUS_DOT: Record<HealthStatus, string> = {
@@ -38,6 +42,12 @@ const STATUS_LABEL: Record<HealthStatus, string> = {
   green: "Live",
   amber: "Degraded",
   red: "Stale",
+};
+
+const PILL_CLASSES: Record<HealthStatus, string> = {
+  green: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+  amber: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  red: "border-rose-500/40 bg-rose-500/10 text-rose-300",
 };
 
 /**
@@ -101,37 +111,7 @@ function ProviderTooltipBody({ p }: { p: ProviderHealth }) {
  * want it on the LCP critical path.
  */
 export function DataQualityTile() {
-  const [env, setEnv] = React.useState<DataQualityEnvelope | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const data = await fetchJson<DataQualityEnvelope>("/api/data-quality");
-        if (!cancelled) {
-          setEnv(data);
-          setError(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof ApiError
-              ? err.detail ?? err.message
-              : "Could not load data-quality envelope.",
-          );
-        }
-      }
-    }
-
-    void load();
-    const id = window.setInterval(load, POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+  const { envelope: env, error, badge } = useDataQuality();
 
   if (error && !env) {
     return (
@@ -178,37 +158,53 @@ export function DataQualityTile() {
           </span>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-          {env.providers.map((p) => (
-            <Tooltip key={p.name}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  data-testid={`data-quality-cell-${p.name}`}
-                  data-status={p.status}
-                  className="flex flex-col items-start gap-1 rounded-btn border border-border bg-bg-1 px-3 py-2 text-left text-xs hover:bg-bg-3 focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "h-2 w-2 rounded-full",
-                        STATUS_DOT[p.status],
-                      )}
-                    />
-                    <span className="font-medium text-text-primary">
-                      {PROVIDER_LABELS[p.name]}
+          {env.providers.map((p) => {
+            const b: FreshnessBadge | undefined = badge(p.name);
+            const tier: HealthStatus = b?.tier ?? p.status;
+            const ageLabel = b?.age_label ?? relTime(p.last_good_at);
+            return (
+              <Tooltip key={p.name}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    data-testid={`data-quality-cell-${p.name}`}
+                    data-status={p.status}
+                    data-tier={tier}
+                    className="flex flex-col items-start gap-1 rounded-btn border border-border bg-bg-1 px-3 py-2 text-left text-xs hover:bg-bg-3 focus:outline-none focus:ring-2 focus:ring-accent"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "h-2 w-2 rounded-full",
+                          STATUS_DOT[tier],
+                        )}
+                      />
+                      <span className="font-medium text-text-primary">
+                        {PROVIDER_LABELS[p.name] ?? p.name}
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-text-muted">
-                    {relTime(p.last_good_at)}
-                  </span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs">
-                <ProviderTooltipBody p={p} />
-              </TooltipContent>
-            </Tooltip>
-          ))}
+                    {/* Issue #108 freshness pill — always renders the
+                        age label; colours by tier so amber/red are
+                        visible at a glance without opening the
+                        tooltip. */}
+                    <span
+                      data-testid={`data-quality-pill-${p.name}`}
+                      className={cn(
+                        "inline-flex items-center rounded-full border px-2 py-[1px] text-[10px] font-medium leading-none",
+                        PILL_CLASSES[tier],
+                      )}
+                    >
+                      {ageLabel}
+                    </span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <ProviderTooltipBody p={p} />
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
         </div>
       </div>
     </TooltipProvider>
