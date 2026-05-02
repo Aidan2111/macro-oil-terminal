@@ -11,7 +11,7 @@ budget conversation is explicit.
 |---|---|---|---|---|
 | Databento | Stocks Starter + Futures (CME + ICE Europe) | ~$29-79 | Real-time CL/BZ tick data; replaces yfinance's 15-min-delayed feed as the primary intraday source | `DATABENTO_API_KEY` |
 | Twelve Data | Free tier (800 calls/day) | $0 | Third price-corroboration source; triangulates against yfinance + FRED. Issue #106 wires this in. | `TWELVEDATA_API_KEY` |
-| AIS redundancy | TBD (Spire / MarineTraffic) | TBD | Second AIS feed so a single-provider silence (the 4-day AISStream outage that triggered #93) doesn't blank the fleet tile. Issue #107 surveys candidates. | TBD |
+| AIS redundancy (secondary feed) | Candidate: fleetmon ($129/mo Pro) / hifleet (custom) / Spire (enterprise) | TBD | Second AIS feed so a single-provider silence doesn't blank the fleet tile. Wired via the `AIS_SECONDARY_ENABLED=1` + `AIS_SECONDARY_PROVIDER=<tag>` env-var pair (issue #107). The merge logic (dedup-by-MMSI, freshest-wins) lives in `backend/services/ais_merger.py` and is provider-agnostic — the operator routes the chosen feed's vessels into the merger. | `AIS_SECONDARY_ENABLED`, `AIS_SECONDARY_PROVIDER`, plus the chosen provider's API key |
 
 ## Free / existing sources
 
