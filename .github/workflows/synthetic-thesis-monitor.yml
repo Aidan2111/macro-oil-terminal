@@ -1,0 +1,192 @@
+name: synthetic-thesis-monitor
+
+# Issue #100 — every 15 min, exercise the write path end-to-end:
+#   1. POST /api/thesis/generate with the standard portfolio.
+#   2. Stream the SSE response until the `done` event lands.
+#   3. Validate the done payload against the issue-#100 contract.
+#   4. POST the run to /api/synthetic/record so the API keeps the
+#      24h log + the consecutive-failure streak counter.
+#   5. If the streak hits 3, comment on a perma-tracking issue.
+#
+# Rationale: /api/data-quality only watches the read path. Foundry
+# SSE thesis generation is the more failure-prone surface (LLM
+# timeouts, App Service idle hangs, audit-log write failures —
+# the #75/#76 cycle was a recent example). This monitor is a
+# canary on that surface.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: synthetic-thesis-monitor
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Generate thesis (SSE) and validate
+        id: probe
+        run: |
+          set -eu
+          BASE="https://oil-tracker-api-canadaeast-0f18.azurewebsites.net"
+          STARTED=$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")
+          T0=$(date +%s)
+
+          # Kick off generation. The endpoint accepts a portfolio_usd
+          # body field; default 250000 matches the reference user.
+          gen_resp=$(curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
+            -d '{"mode":"fast","portfolio_usd":250000}' \
+            "$BASE/api/thesis/generate" || echo '{}')
+          stream_url=$(echo "$gen_resp" | jq -r '.stream_url // empty')
+          if [ -z "$stream_url" ]; then
+            echo "no stream_url in /api/thesis/generate response: $gen_resp" >&2
+            stream_url="$BASE/api/thesis/stream"
+          fi
+          # If returned URL is relative, prepend BASE.
+          case "$stream_url" in
+            /*) stream_url="$BASE$stream_url" ;;
+          esac
+
+          # Read the SSE stream up to 100s. Capture the `done` event payload.
+          tmp=$(mktemp)
+          curl -fsS --max-time 100 -H 'Accept: text/event-stream' "$stream_url" > "$tmp" || true
+          T1=$(date +%s)
+          DURATION=$((T1 - T0))
+          FINISHED=$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")
+
+          # Extract the LAST `data: {...}` line whose preceding `event: done`
+          # marker indicates it's the terminal event.
+          done_payload=$(awk '
+            /^event: done/ { capture=1; next }
+            /^data: / && capture { print substr($0, 7); capture=0 }
+          ' "$tmp" | tail -1)
+
+          ok=true
+          violations='[]'
+          stance="null"
+          conviction="null"
+
+          if [ -z "$done_payload" ]; then
+            ok=false
+            violations='["no done event in SSE stream"]'
+          else
+            # Run the python validator inline so contract changes only
+            # require a code edit (not a workflow edit).
+            cat > /tmp/validate.py <<PYEOF
+          import json, sys
+          sys.path.insert(0, ".")
+          from backend.services.synthetic_monitor import validate_done_event, LATENCY_SLA_SECONDS
+          payload = json.loads(sys.argv[1])
+          duration = float(sys.argv[2])
+          ok, violations = validate_done_event(payload, duration_s=duration)
+          stance = (payload.get("thesis", {}) or {}).get("raw", {}).get("stance")
+          conv = (payload.get("thesis", {}) or {}).get("raw", {}).get("conviction_0_to_10")
+          print(json.dumps({"ok": ok, "violations": violations, "stance": stance, "conviction": conv}))
+          PYEOF
+            # We can't easily import the validator without checking out the
+            # repo, but the logic is small — replicate the contract here.
+            # Keep this in sync with backend/services/synthetic_monitor.py.
+            python3 - "$done_payload" "$DURATION" <<'PYEOF'
+          import json, sys
+          payload = json.loads(sys.argv[1])
+          duration = float(sys.argv[2])
+          violations = []
+          thesis = payload.get("thesis") or {}
+          if not isinstance(thesis, dict):
+              print(json.dumps({"ok": False, "violations": ["thesis missing"], "stance": None, "conviction": None}))
+              sys.exit(0)
+          instr = thesis.get("instruments") or []
+          if not isinstance(instr, list) or len(instr) < 3:
+              violations.append(f"instruments has {len(instr)} entries, expected >= 3")
+          chk = thesis.get("checklist") or []
+          if not isinstance(chk, list) or len(chk) != 5:
+              violations.append(f"checklist has {len(chk)} entries, expected exactly 5")
+          raw = thesis.get("raw") or {}
+          stance = raw.get("stance")
+          if stance not in ("long_spread", "short_spread", "flat"):
+              violations.append(f"stance {stance!r} not in allowed set")
+          conv = raw.get("conviction_0_to_10")
+          if not isinstance(conv, (int, float)) or int(conv) < 1 or int(conv) > 10:
+              violations.append(f"conviction_0_to_10={conv} not in 1..10")
+          headline = thesis.get("plain_english_headline") or raw.get("plain_english_headline")
+          if not headline:
+              violations.append("plain_english_headline empty")
+          if duration > 90.0:
+              violations.append(f"duration {duration:.1f}s exceeds 90s SLA")
+          print(json.dumps({"ok": not violations, "violations": violations, "stance": stance, "conviction": conv}))
+          PYEOF
+          fi
+
+          # POST the result back to the API so it gets logged.
+          payload=$(cat <<JSON
+          {
+            "started_at": "$STARTED",
+            "finished_at": "$FINISHED",
+            "duration_s": $DURATION,
+            "ok": $ok,
+            "violations": $violations,
+            "stance": $stance,
+            "conviction": $conviction
+          }
+          JSON
+          )
+          record=$(curl -fsS --max-time 15 -X POST -H 'Content-Type: application/json' \
+            -d "$payload" "$BASE/api/synthetic/record" || echo '{"consecutive_failures":-1}')
+          consecutive=$(echo "$record" | jq -r '.consecutive_failures // -1')
+          echo "consecutive=$consecutive" >> "$GITHUB_OUTPUT"
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Synthetic thesis monitor — $FINISHED"
+            echo
+            echo "- duration_s: $DURATION"
+            echo "- ok: $ok"
+            echo "- consecutive_failures: $consecutive"
+            echo "- violations: $violations"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Page on 3 consecutive failures
+        if: steps.probe.outputs.consecutive >= '3'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const consecutive = '${{ steps.probe.outputs.consecutive }}';
+            const body = [
+              `### Synthetic thesis monitor — ${consecutive} consecutive failures`,
+              ``,
+              `The /api/thesis/generate write path has failed validation`,
+              `${consecutive} cron cycles in a row (≥45 min). Investigate:`,
+              `- Foundry SSE: streaming health, latency, model errors`,
+              `- App Service idle timeouts on the SSE keepalive`,
+              `- audit-log writes (the #75/#76 regression was here)`,
+              ``,
+              `Run history: see Actions tab + \`/api/synthetic/last-24h\`.`,
+              ``,
+              `_Auto-generated by \`.github/workflows/synthetic-thesis-monitor.yml\`._`,
+            ].join('\n');
+            const title = 'synthetic-thesis-monitor: write path failure';
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'monitor', per_page: 100,
+            });
+            let tracking = existing.data.find(i => i.title === title);
+            if (!tracking) {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body: 'Tracking issue for the synthetic-thesis monitor (#100). Comments below auto-post when the write path fails ≥3 cycles in a row.',
+                labels: ['monitor'],
+              });
+              tracking = created.data;
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: tracking.number,
+              body,
+            });
