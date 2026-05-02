@@ -28,51 +28,122 @@ from ..models.spread import CorroborationSnapshot, SpreadPoint, SpreadResponse
 PRICE_CORROBORATION_THRESHOLD = 0.02
 
 
-def _max_relative_delta(yf: dict[str, float | None], fred: dict[str, float | None]) -> float | None:
-    """Helper — returns max(|y - f| / f) across overlapping legs.
-
-    Returns None if neither leg has both yfinance + FRED values.
-    """
+def _pair_relative_delta(
+    a: dict[str, float | None], b: dict[str, float | None],
+) -> float | None:
+    """Worst |a-b|/|b| across the brent/wti legs of two providers."""
     deltas: list[float] = []
     for leg in ("brent", "wti"):
-        y = yf.get(leg)
-        f = fred.get(leg)
-        if y is None or f is None or f == 0.0:
+        x = a.get(leg)
+        y = b.get(leg)
+        if x is None or y is None or y == 0.0:
             continue
-        deltas.append(abs(y - f) / abs(f))
+        deltas.append(abs(x - y) / abs(y))
     if not deltas:
         return None
     return max(deltas)
 
 
+def _max_relative_delta(yf: dict[str, float | None], fred: dict[str, float | None]) -> float | None:
+    """Backwards-compat alias kept for older callers (#97 only checked
+    yfinance vs FRED). Issue #106 extends to a 3-source pairwise
+    matrix via :func:`_pairwise_max_delta`.
+    """
+    return _pair_relative_delta(yf, fred)
+
+
+def _pairwise_max_delta(
+    snapshots: dict[str, dict[str, float | None]],
+) -> float | None:
+    """Worst pairwise relative delta across an arbitrary set of
+    provider snapshots (issue #106). Each value is a {brent, wti}
+    dict. Pairs with at least one missing leg are skipped silently."""
+    keys = [k for k in snapshots if snapshots[k]]
+    deltas: list[float] = []
+    for i, k1 in enumerate(keys):
+        for k2 in keys[i + 1 :]:
+            d = _pair_relative_delta(snapshots[k1], snapshots[k2])
+            if d is not None:
+                deltas.append(d)
+    if not deltas:
+        return None
+    return max(deltas)
+
+
+def _fetch_twelve_data_latest() -> dict[str, float | None]:
+    """Best-effort — returns the latest Twelve Data Brent + WTI close,
+    or {brent: None, wti: None} when unkeyed / unreachable."""
+    try:
+        from providers import _twelvedata
+
+        df = _twelvedata.fetch_daily(years=1)
+        if df is None or df.empty:
+            return {"brent": None, "wti": None}
+        last = df.iloc[-1]
+        return {
+            "brent": float(last["Brent"]) if "Brent" in last.index else None,
+            "wti": float(last["WTI"]) if "WTI" in last.index else None,
+        }
+    except Exception:
+        return {"brent": None, "wti": None}
+
+
 def corroborate_with_fred(
     *, brent_yf: float | None, wti_yf: float | None,
     fetch_fn=None,
+    twelve_data_fn=None,
 ) -> tuple[CorroborationSnapshot, bool, str | None]:
-    """Build a CorroborationSnapshot from current yfinance + latest FRED.
+    """Build a CorroborationSnapshot from yfinance + FRED + Twelve Data.
 
     Returns ``(snapshot, degraded, message)``. ``degraded`` is True
-    iff ``max_relative_delta`` exceeds PRICE_CORROBORATION_THRESHOLD;
-    ``message`` is the data-quality string to surface.
+    iff the worst pairwise relative delta across ANY two sources
+    exceeds PRICE_CORROBORATION_THRESHOLD (issue #106 generalises
+    issue #97's 2-source check to 3-source).
 
-    `fetch_fn` is injectable for tests — defaults to
-    ``providers._fred.fetch_oil_prices_latest``.
+    Both ``fetch_fn`` (FRED) and ``twelve_data_fn`` (Twelve Data) are
+    injectable for tests; default to the live providers. Twelve Data
+    is best-effort — when unkeyed it returns all-None and the snapshot
+    simply omits it from the pairwise comparison.
     """
     if fetch_fn is None:
         from providers import _fred
 
         fetch_fn = _fred.fetch_oil_prices_latest
+    if twelve_data_fn is None:
+        twelve_data_fn = _fetch_twelve_data_latest
 
     yf = {"brent": brent_yf, "wti": wti_yf}
     try:
         fred = fetch_fn() or {"brent": None, "wti": None}
     except Exception:
         fred = {"brent": None, "wti": None}
+    try:
+        twelve = twelve_data_fn() or {"brent": None, "wti": None}
+    except Exception:
+        twelve = {"brent": None, "wti": None}
 
-    delta = _max_relative_delta(yf, fred)
-    snapshot = CorroborationSnapshot(yfinance=yf, fred=fred, max_relative_delta=delta)
+    snapshots: dict[str, dict[str, float | None]] = {"yfinance": yf}
+    if any(v is not None for v in fred.values()):
+        snapshots["fred"] = fred
+    if any(v is not None for v in twelve.values()):
+        snapshots["twelve_data"] = twelve
+
+    delta = _pairwise_max_delta(snapshots)
+    snapshot = CorroborationSnapshot(
+        yfinance=yf, fred=fred, twelve_data=twelve, max_relative_delta=delta,
+    )
     if delta is not None and delta > PRICE_CORROBORATION_THRESHOLD:
-        msg = f"price-source divergence: {delta:.3f} (yf vs FRED)"
+        # Identify the worst-pair so the message names the offenders.
+        worst_pair = ""
+        worst_value = -1.0
+        keys = list(snapshots.keys())
+        for i, k1 in enumerate(keys):
+            for k2 in keys[i + 1 :]:
+                d = _pair_relative_delta(snapshots[k1], snapshots[k2])
+                if d is not None and d > worst_value:
+                    worst_value = d
+                    worst_pair = f"{k1} vs {k2}"
+        msg = f"price-source divergence: {delta:.3f} ({worst_pair})"
         return snapshot, True, msg
     return snapshot, False, None
 

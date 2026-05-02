@@ -22,12 +22,13 @@ class SpreadPoint(BaseModel):
 
 
 class CorroborationSnapshot(BaseModel):
-    """Cross-source price-corroboration snapshot (issue #97).
+    """Cross-source price-corroboration snapshot (issues #97 / #106).
 
-    yfinance is the primary source for Brent/WTI; FRED's daily
-    DCOILBRENTEU + DCOILWTICO series are the secondary check. A
-    `max_relative_delta` > 2% flips `/api/data-quality` for the
-    yfinance row to amber.
+    yfinance is the primary; FRED (DCOILBRENTEU + DCOILWTICO) is the
+    secondary; Twelve Data (BRN/USD + WTI/USD) is the third when
+    keyed (issue #106 — free 800-call/day tier). Any pairwise
+    relative delta > 2% flips `/api/data-quality` for yfinance to
+    amber so the reader can see the disagreement.
     """
 
     yfinance: dict[str, float | None] = Field(
@@ -38,9 +39,13 @@ class CorroborationSnapshot(BaseModel):
         default_factory=dict,
         description="FRED {brent, wti} closes (USD/bbl). None on fetch failure.",
     )
+    twelve_data: dict[str, float | None] = Field(
+        default_factory=dict,
+        description="Twelve Data {brent, wti} closes (USD/bbl). Empty when unkeyed.",
+    )
     max_relative_delta: float | None = Field(
         default=None,
-        description="max(|yf - fred| / fred) across both legs; None if FRED unavailable.",
+        description="Worst pairwise |a - b| / |b| across yfinance/FRED/Twelve Data.",
     )
 
 
