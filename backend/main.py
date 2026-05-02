@@ -1291,6 +1291,27 @@ def data_quality() -> Any:
         return _provider_error("data_quality", exc)
 
 
+@app.get("/api/backtest/regimes")
+def backtest_regimes() -> Any:
+    """4-bucket regime-segmented backtest (issue #101).
+
+    Buckets: high-vol × contango, high-vol × backwardation/flat,
+    low_or_normal-vol × contango, low_or_normal × backwardation/flat.
+    Per bucket: trade count, hit rate, Sharpe, VaR-95, ES-95, max DD,
+    total PnL. Confirms whether the headline 90% hit rate is
+    load-bearing on a single bucket.
+    """
+    try:
+        from backend.services.backtest_service import _load_spread_df
+        import quantitative_models  # type: ignore
+
+        spread_df = _load_spread_df(lookback_days=365 * 5)
+        out = quantitative_models.regime_segmented_backtest(spread_df)
+        return out
+    except Exception as exc:  # pragma: no cover — provider/cointegration failures
+        return _provider_error("backtest_regimes", exc)
+
+
 @app.get("/api/synthetic/last-24h")
 def synthetic_last_24h() -> Any:
     """Recent synthetic-thesis runs (issue #100).
