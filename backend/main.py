@@ -878,23 +878,50 @@ def thesis_latest_fixture() -> dict[str, Any]:
 
 
 @app.get("/api/calibration")
-def calibration_endpoint(limit: int = 200) -> Any:
+def calibration_endpoint(limit: int = 200, include_shadow: bool = True) -> Any:
     """Confidence-calibration stats for the public /track-record page.
 
     Reads the same audit log the frontend hits at /api/thesis/history,
     bands the rows by stated conviction, and returns per-bucket hit
     rates + a Brier score + a "calibrated/overconfident/underconfident"
-    verdict. The frontend renders a 4-bar reliability diagram.
+    verdict.
+
+    Issue #103 — when the live audit log doesn't have enough closed
+    outcomes (sub-20 rows), supplement with the shadow-thesis burn-in
+    at ``data/shadow_theses.jsonl``. Set ``include_shadow=false`` to
+    force the live-only view. Source counts are surfaced in the
+    response so the frontend can label the verdict honestly.
     """
     if limit < 1 or limit > 500:
         return JSONResponse(status_code=422, content={"detail": "limit out of range"})
     try:
         from backend.services.thesis_service import get_thesis_history
         from backend.services.calibration import compute_calibration
+        from backend.services.shadow_theses import load_shadow_rows
 
-        rows = get_thesis_history(limit)
+        live_rows = get_thesis_history(limit)
+        live_count = sum(
+            1 for r in live_rows
+            if isinstance(r, dict)
+            and isinstance(r.get("thesis"), dict)
+            and (r["thesis"].get("outcome") or {}).get("hit_target") is not None
+        )
+
+        rows = list(live_rows)
+        shadow_count = 0
+        if include_shadow and live_count < 20:
+            shadow_rows = load_shadow_rows()
+            shadow_count = len(shadow_rows)
+            rows.extend(shadow_rows)
+
         stats = compute_calibration(rows)
-        return stats.to_dict()
+        out = stats.to_dict()
+        out["sources"] = {
+            "live_outcome_closed": live_count,
+            "shadow_burn_in": shadow_count,
+            "shadow_included": include_shadow and shadow_count > 0,
+        }
+        return out
     except Exception as exc:
         return _provider_error("calibration", exc)
 
