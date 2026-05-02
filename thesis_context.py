@@ -106,6 +106,7 @@ def build_context(
     news_info: dict | None = None,
     ofac_info: dict | None = None,
     russia_info: dict | None = None,
+    stale_providers: list | None = None,
 ) -> ThesisContext:
     latest_brent = float(pricing_res.frame["Brent"].iloc[-1])
     latest_wti = float(pricing_res.frame["WTI"].iloc[-1])
@@ -350,4 +351,7 @@ def build_context(
         russia_import_tankers_7d=(int(russia_info.get("imports_7d"))
                                   if russia_info and russia_info.get("imports_7d") is not None
                                   else None),
+        # Issue #108 graceful degradation — surface stale provider names
+        # to the LLM so it can hedge.
+        stale_providers=list(stale_providers or []),
     )

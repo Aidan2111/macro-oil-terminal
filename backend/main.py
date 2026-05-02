@@ -1308,12 +1308,25 @@ def data_quality() -> Any:
     grid + per-cell tooltip from this body. Endpoint is intentionally
     public for now; auth gate will land alongside the rest of /api in a
     follow-up.
+
+    Issue #108 — also surfaces a ``badges`` block + ``stale_providers``
+    list so the React tiles can render freshness pills + the LLM
+    can hedge its conclusions on stale inputs.
     """
     try:
         from backend.services.data_quality import compute_quality_envelope
+        from backend.services.freshness_badges import compute_badges_from_envelope
 
         env = compute_quality_envelope()
-        return env.model_dump(mode="json")
+        body = env.model_dump(mode="json")
+        try:
+            badges_block = compute_badges_from_envelope(body)
+            body.update(badges_block)
+        except Exception:  # pragma: no cover — badges are best-effort
+            body.setdefault("badges", [])
+            body.setdefault("stale_providers", [])
+            body.setdefault("any_red", False)
+        return body
     except Exception as exc:  # pragma: no cover — collator is pure
         return _provider_error("data_quality", exc)
 
