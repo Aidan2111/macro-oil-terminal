@@ -1331,6 +1331,20 @@ def data_quality() -> Any:
         return _provider_error("data_quality", exc)
 
 
+def _load_spread_for_quant_endpoints():
+    """Build a spread_df for the regime/significance endpoints the same
+    way `_real_backtest` does — providers.pricing.fetch_pricing_daily()
+    + quantitative_models.compute_spread_zscore() — because
+    backtest_service._load_spread_df assumes a `cointegration` entry
+    point that doesn't exist on the deployed legacy module.
+    """
+    from providers import pricing as pricing_provider  # type: ignore
+    import quantitative_models  # type: ignore
+
+    pricing_res = pricing_provider.fetch_pricing_daily()
+    return quantitative_models.compute_spread_zscore(pricing_res.frame)
+
+
 @app.get("/api/backtest/significance")
 def backtest_significance() -> Any:
     """Multiple-testing-corrected significance for the threshold sweep
@@ -1341,12 +1355,15 @@ def backtest_significance() -> Any:
     once the search space is accounted for.
     """
     try:
-        from backend.services.backtest_service import _load_spread_df
         import quantitative_models  # type: ignore
 
-        spread_df = _load_spread_df(lookback_days=365 * 5)
-        return quantitative_models.threshold_sweep_with_correction(spread_df)
-    except Exception as exc:  # pragma: no cover — provider/cointegration failures
+        spread_df = _load_spread_for_quant_endpoints()
+        # 200 resamples is the API-call default; CLI/offline runs can
+        # use the function directly with a higher count.
+        return quantitative_models.threshold_sweep_with_correction(
+            spread_df, n_resamples=200
+        )
+    except Exception as exc:  # pragma: no cover — provider failures
         return _provider_error("backtest_significance", exc)
 
 
@@ -1361,13 +1378,12 @@ def backtest_regimes() -> Any:
     load-bearing on a single bucket.
     """
     try:
-        from backend.services.backtest_service import _load_spread_df
         import quantitative_models  # type: ignore
 
-        spread_df = _load_spread_df(lookback_days=365 * 5)
+        spread_df = _load_spread_for_quant_endpoints()
         out = quantitative_models.regime_segmented_backtest(spread_df)
         return out
-    except Exception as exc:  # pragma: no cover — provider/cointegration failures
+    except Exception as exc:  # pragma: no cover — provider failures
         return _provider_error("backtest_regimes", exc)
 
 
