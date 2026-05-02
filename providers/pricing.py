@@ -1,6 +1,9 @@
 """Pricing provider orchestrator — daily + intraday.
 
-Primary: yfinance (BZ=F, CL=F). Intraday is 1-min with ~15min publisher
+Primary: Databento (``DATABENTO_API_KEY``) — real-time CL/BZ tick data
+from CME/ICE. Falls back to yfinance when the key is not provisioned.
+
+Secondary: yfinance (BZ=F, CL=F). Intraday is 1-min with ~15min publisher
 delay on futures.
 
 Optional: Twelve Data (``TWELVEDATA_API_KEY``) — if set, preferred for
@@ -33,8 +36,23 @@ class PricingResult:
 
 
 def fetch_pricing_daily(years: int = 5) -> PricingResult:
-    """Try yfinance → Twelve Data → Polygon.io in order, each gated on availability."""
+    """Try Databento → yfinance → Twelve Data → Polygon.io in order, each gated on availability."""
     errors: list[str] = []
+
+    # Primary: Databento (real-time futures)
+    if os.environ.get("DATABENTO_API_KEY"):
+        try:
+            from . import _databento
+            df = _databento.fetch_daily(years=years)
+            return PricingResult(
+                frame=df, source="databento", kind="daily",
+                source_url="https://databento.com/",
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
+            )
+        except Exception as exc:
+            errors.append(f"databento: {exc!r}")
+
+    # Fallback: yfinance
     try:
         from . import _yfinance
         df = _yfinance.fetch_daily(years=years)
@@ -77,6 +95,23 @@ def fetch_pricing_daily(years: int = 5) -> PricingResult:
 
 def fetch_pricing_intraday(interval: str = "1m", period: str = "2d") -> PricingResult:
     errors: list[str] = []
+
+    # Primary: Databento (real-time intraday)
+    if os.environ.get("DATABENTO_API_KEY"):
+        try:
+            from . import _databento
+            df = _databento.fetch_intraday(interval=interval, period=period)
+            return PricingResult(
+                frame=df,
+                source="databento",
+                kind="intraday",
+                source_url="https://databento.com/",
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
+            )
+        except Exception as exc:
+            errors.append(f"databento: {exc!r}")
+
+    # Fallback: yfinance
     try:
         from . import _yfinance
         df = _yfinance.fetch_intraday(interval=interval, period=period)
@@ -89,13 +124,15 @@ def fetch_pricing_intraday(interval: str = "1m", period: str = "2d") -> PricingR
         )
     except Exception as exc:
         errors.append(f"yfinance: {exc!r}")
-    # Room for twelvedata.fetch_intraday when TWELVEDATA_API_KEY is set
+
     raise PricingUnavailable(
         "No pricing provider returned intraday data:\n- " + "\n- ".join(errors)
     )
 
 
 def active_pricing_provider(kind: str) -> str:
+    if os.environ.get("DATABENTO_API_KEY"):
+        return f"Databento ({kind}, real-time futures) → yfinance fallback"
     if os.environ.get("TWELVEDATA_API_KEY"):
-        return f"Twelve Data ({kind}, keyed)  → yfinance fallback"
+        return f"Twelve Data ({kind}, keyed) → yfinance fallback"
     return f"Yahoo Finance ({kind}, 15-min delayed futures)"
