@@ -178,6 +178,13 @@ class ThesisContext:
     russia_export_tankers_7d: Optional[int] = None
     russia_import_tankers_7d: Optional[int] = None
 
+    # --- Issue #108 graceful degradation -----------------------------------
+    # Names of providers currently in amber-or-red on /api/data-quality —
+    # passed to the LLM so it can explicitly hedge its conclusions when
+    # the inputs are stale. Default empty list keeps the audit-log shape
+    # compatible with rows that predate this field.
+    stale_providers: list = field(default_factory=list)
+
     def to_dict(self) -> dict:
         return asdict(self)
 

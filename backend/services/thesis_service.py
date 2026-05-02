@@ -260,6 +260,17 @@ def _build_thesis_context() -> Any:
     except Exception:
         russia_info = None
 
+    # Issue #108 — collect stale provider names so the LLM can hedge.
+    stale_providers: list = []
+    try:
+        from . import data_quality
+        from .freshness_badges import stale_providers_from_envelope
+
+        envelope = data_quality.compute_quality_envelope().model_dump(mode="json")
+        stale_providers = stale_providers_from_envelope(envelope)
+    except Exception:
+        stale_providers = []
+
     return thesis_context.build_context(
         pricing_res=pricing_res,
         inventory_res=inventory_res,
@@ -280,6 +291,7 @@ def _build_thesis_context() -> Any:
         news_info=news_info,
         ofac_info=ofac_info,
         russia_info=russia_info,
+        stale_providers=stale_providers,
     )
 
 
