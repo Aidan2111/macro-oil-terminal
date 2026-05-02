@@ -1291,6 +1291,71 @@ def data_quality() -> Any:
         return _provider_error("data_quality", exc)
 
 
+@app.get("/api/synthetic/last-24h")
+def synthetic_last_24h() -> Any:
+    """Recent synthetic-thesis runs (issue #100).
+
+    Returns a JSON list of the last 24h of runs, newest first. Powers
+    the GH-Actions watchdog inspection + a future React tile.
+    """
+    try:
+        from backend.services.synthetic_monitor import recent_runs
+
+        runs = recent_runs(limit=200)
+        consecutive_fail = 0
+        for r in runs:
+            if r.get("ok"):
+                break
+            consecutive_fail += 1
+        return {
+            "count": len(runs),
+            "consecutive_failures": consecutive_fail,
+            "runs": runs,
+        }
+    except Exception as exc:  # pragma: no cover — disk read
+        return _provider_error("synthetic_monitor", exc)
+
+
+@app.post("/api/synthetic/record")
+async def synthetic_record(req: Request) -> Any:
+    """Append one synthetic-thesis run to the 24h log (issue #100).
+
+    Accepts the SyntheticRun shape from the GH watchdog. Returns the
+    consecutive-failure streak so the cron can decide whether to
+    escalate to a paging comment.
+    """
+    try:
+        body = await req.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "invalid JSON"})
+
+    try:
+        from backend.services.synthetic_monitor import (
+            SyntheticRun,
+            consecutive_failures,
+            record_synthetic_run,
+        )
+
+        run = SyntheticRun(
+            started_at=str(body.get("started_at") or _utcnow_iso()),
+            finished_at=str(body.get("finished_at") or _utcnow_iso()),
+            duration_s=float(body.get("duration_s") or 0.0),
+            ok=bool(body.get("ok", False)),
+            violations=list(body.get("violations") or []),
+            latency_violation=bool(body.get("latency_violation", False)),
+            stance=body.get("stance"),
+            conviction=body.get("conviction"),
+            notes=body.get("notes"),
+        )
+        record_synthetic_run(run)
+        return {
+            "recorded": True,
+            "consecutive_failures": consecutive_failures(),
+        }
+    except Exception as exc:  # pragma: no cover — disk write
+        return _provider_error("synthetic_monitor", exc)
+
+
 @app.get("/api/alerts")
 def alerts() -> Any:
     """Active silence-detector alerts (issue #99).
