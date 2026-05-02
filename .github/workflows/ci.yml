@@ -35,7 +35,11 @@ jobs:
 
       - name: Run pytest + coverage
         run: |
-          python -m pytest tests/unit \
+          # tests/unit is the bulk of the suite; tests/regression
+          # contains the issue-#104 LLM regression corpus and runs on
+          # every PR under the deterministic stub predictor (no LLM
+          # cost). Drift on a corpus scenario fails the build.
+          python -m pytest tests/unit tests/regression \
             --cov \
             --cov-report=term \
             --cov-report=xml:coverage.xml
