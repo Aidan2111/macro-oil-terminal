@@ -28,6 +28,7 @@ ProviderName = Literal[
     "eia",
     "cftc",
     "aisstream",
+    "aisstream_secondary",  # issue #107 — pluggable AIS redundancy
     "alpaca_paper",
     "audit_log",
     "hormuz",
@@ -71,6 +72,7 @@ _FRESHNESS_HOURS: dict[str, float] = {
     "eia": 24.0 * 8,        # weekly + 1 day grace
     "cftc": 24.0 * 8,       # weekly Tuesdays + grace
     "aisstream": 0.083,     # 5 min
+    "aisstream_secondary": 0.083,  # 5 min when enabled, NaN when disabled
     "alpaca_paper": 0.25,   # 15 min — account state is sticky
     "audit_log": 24.0,      # at least one thesis per day
     "hormuz": 1.0,          # 24h transit window, refreshed every endpoint hit
@@ -156,6 +158,13 @@ _PROVIDER_MAP: list[tuple[ProviderName, str]] = [
     ("eia", "inventory_service"),
     ("cftc", "cftc_service"),
     ("aisstream", "fleet_service"),
+    # Issue #107 — secondary AIS feed. The provider module is
+    # "ais_secondary_service" (a thin shim around the merger that
+    # records last-fetch state when AIS_SECONDARY_ENABLED=1).
+    # When the secondary is disabled the shim returns status=amber
+    # last_good_at=None so the tile shows "not provisioned" rather
+    # than red.
+    ("aisstream_secondary", "ais_secondary_service"),
     ("alpaca_paper", "alpaca_service"),
     ("audit_log", "thesis_service"),
     ("hormuz", "geopolitical_service"),
