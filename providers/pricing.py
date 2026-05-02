@@ -33,8 +33,26 @@ class PricingResult:
 
 
 def fetch_pricing_daily(years: int = 5) -> PricingResult:
-    """Try yfinance → Twelve Data → Polygon.io in order, each gated on availability."""
+    """Try Databento (paid) → yfinance → Twelve Data → Polygon.io in order.
+
+    Issue #105 — Databento is the paid primary when DATABENTO_API_KEY
+    is set; yfinance remains the free fallback so the codebase stays
+    deployable without the subscription.
+    """
     errors: list[str] = []
+
+    if os.environ.get("DATABENTO_API_KEY"):
+        try:
+            from . import _databento
+            df = _databento.fetch_daily(years=years)
+            return PricingResult(
+                frame=df, source="databento", kind="daily",
+                source_url="https://databento.com/",
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
+            )
+        except Exception as exc:
+            errors.append(f"databento: {exc!r}")
+
     try:
         from . import _yfinance
         df = _yfinance.fetch_daily(years=years)
@@ -76,7 +94,30 @@ def fetch_pricing_daily(years: int = 5) -> PricingResult:
 
 
 def fetch_pricing_intraday(interval: str = "1m", period: str = "2d") -> PricingResult:
+    """Issue #105 — Databento primary when keyed; yfinance fallback."""
     errors: list[str] = []
+
+    if os.environ.get("DATABENTO_API_KEY"):
+        try:
+            from . import _databento
+            # Period like "2d" -> int days; default to 1 if unparseable.
+            try:
+                lookback_days = int(period.rstrip("d") or 1)
+            except ValueError:
+                lookback_days = 1
+            df = _databento.fetch_intraday(
+                interval=interval, lookback_days=lookback_days
+            )
+            return PricingResult(
+                frame=df,
+                source="databento",
+                kind="intraday",
+                source_url="https://databento.com/",
+                fetched_at=pd.Timestamp.now(tz="UTC").tz_convert(None),
+            )
+        except Exception as exc:
+            errors.append(f"databento: {exc!r}")
+
     try:
         from . import _yfinance
         df = _yfinance.fetch_intraday(interval=interval, period=period)
@@ -96,6 +137,8 @@ def fetch_pricing_intraday(interval: str = "1m", period: str = "2d") -> PricingR
 
 
 def active_pricing_provider(kind: str) -> str:
+    if os.environ.get("DATABENTO_API_KEY"):
+        return f"Databento ({kind}, real-time)  → yfinance fallback"
     if os.environ.get("TWELVEDATA_API_KEY"):
         return f"Twelve Data ({kind}, keyed)  → yfinance fallback"
     return f"Yahoo Finance ({kind}, 15-min delayed futures)"
