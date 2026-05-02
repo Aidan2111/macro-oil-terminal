@@ -784,6 +784,177 @@ def walk_forward_oos_backtest(
     return pd.DataFrame(rows)
 
 
+# ---------------------------------------------------------------------------
+# Regime-segmented backtest — issue #101
+# ---------------------------------------------------------------------------
+def _classify_term_structure(spread: float, threshold: float = 0.25) -> str:
+    """Bin a Brent-WTI spread into contango / backwardation / flat.
+
+    Mirrors ``backend.services.regime_service._classify_term_structure``
+    so the LLM badge and the backtest segmentation use the same
+    boundaries. Brent > WTI by > $0.25 → "contango"; the reverse →
+    "backwardation"; everything in between → "flat".
+    """
+    if not (spread == spread):  # NaN guard
+        return "flat"
+    if spread > threshold:
+        return "contango"
+    if spread < -threshold:
+        return "backwardation"
+    return "flat"
+
+
+def _bucket_vol(percentile: float) -> str:
+    """Trade-time vol bucket. Mirrors regime_service._bucket_vol."""
+    if not (percentile == percentile):
+        return "unknown"
+    if percentile < 33.3:
+        return "low"
+    if percentile < 66.7:
+        return "normal"
+    return "high"
+
+
+def regime_segmented_backtest(
+    spread_df: pd.DataFrame,
+    *,
+    entry_z: float = 2.0,
+    exit_z: float = 0.2,
+    notional_bbls: float = 10_000.0,
+    slippage_per_bbl: float = 0.0,
+    commission_per_trade: float = 0.0,
+    vol_window: int = 20,
+) -> Dict[str, Any]:
+    """Run the Z-score backtest, then partition trades into 4 buckets:
+
+        - high-vol × contango
+        - high-vol × backwardation_or_flat
+        - low_or_normal-vol × contango
+        - low_or_normal-vol × backwardation_or_flat
+
+    For each bucket, report: trade count, hit rate, Sharpe, VaR-95,
+    ES-95, max DD. Pure read of the existing engine — no changes to
+    the engine itself.
+
+    Returns ``{"regimes": [{regime, n_trades, hit_rate, sharpe,
+    var_95, es_95, max_drawdown_usd}, ...]}``.
+    """
+    base = backtest_zscore_meanreversion(
+        spread_df, entry_z=entry_z, exit_z=exit_z,
+        notional_bbls=notional_bbls,
+        slippage_per_bbl=slippage_per_bbl,
+        commission_per_trade=commission_per_trade,
+    )
+    trades = base.get("trades")
+    if trades is None or (hasattr(trades, "empty") and trades.empty):
+        return {"regimes": _empty_regime_rows()}
+
+    df_t = trades.copy() if hasattr(trades, "copy") else pd.DataFrame(trades)
+    if df_t.empty:
+        return {"regimes": _empty_regime_rows()}
+
+    # 20-day annualised vol percentile at each bar.
+    spread = spread_df["Spread"] if "Spread" in spread_df.columns else spread_df.iloc[:, 0]
+    rolling_vol = spread.diff().rolling(vol_window).std()
+    # Percentile-rank over the entire history — matches the live
+    # `regime_realized_vol_20d_pct` field the LLM sees.
+    vol_pct = rolling_vol.rank(pct=True) * 100.0
+
+    # Term-structure classifier on the bar at entry.
+    spread_at_entry = spread.reindex(df_t["entry_date"]).ffill().to_numpy()
+    vol_pct_at_entry = vol_pct.reindex(df_t["entry_date"]).ffill().to_numpy()
+
+    df_t = df_t.assign(
+        _ts=[_classify_term_structure(s) for s in spread_at_entry],
+        _vol=[_bucket_vol(p) for p in vol_pct_at_entry],
+    )
+
+    def _label(row) -> str:
+        vol_high = row["_vol"] == "high"
+        ts_contango = row["_ts"] == "contango"
+        head = "high_vol" if vol_high else "low_or_normal_vol"
+        tail = "contango" if ts_contango else "backwardation_or_flat"
+        return f"{head}__{tail}"
+
+    df_t = df_t.assign(_regime=df_t.apply(_label, axis=1))
+
+    rows: list[dict] = []
+    for regime, sub in df_t.groupby("_regime"):
+        rows.append(_regime_metrics(regime, sub))
+    # Make sure all 4 buckets are present even when empty.
+    expected = {
+        "high_vol__contango",
+        "high_vol__backwardation_or_flat",
+        "low_or_normal_vol__contango",
+        "low_or_normal_vol__backwardation_or_flat",
+    }
+    present = {r["regime"] for r in rows}
+    for regime in expected - present:
+        rows.append(_regime_metrics(regime, pd.DataFrame(columns=df_t.columns)))
+
+    rows.sort(key=lambda r: r["regime"])
+    return {"regimes": rows}
+
+
+def _empty_regime_rows() -> list[dict]:
+    return [
+        {
+            "regime": r,
+            "n_trades": 0,
+            "hit_rate": 0.0,
+            "sharpe": 0.0,
+            "var_95": 0.0,
+            "es_95": 0.0,
+            "max_drawdown_usd": 0.0,
+            "total_pnl_usd": 0.0,
+        }
+        for r in (
+            "high_vol__contango",
+            "high_vol__backwardation_or_flat",
+            "low_or_normal_vol__contango",
+            "low_or_normal_vol__backwardation_or_flat",
+        )
+    ]
+
+
+def _regime_metrics(regime: str, sub: pd.DataFrame) -> dict:
+    """Compute the per-regime metric dict on a slice of the trade list."""
+    n = len(sub)
+    if n == 0:
+        return {
+            "regime": regime,
+            "n_trades": 0,
+            "hit_rate": 0.0,
+            "sharpe": 0.0,
+            "var_95": 0.0,
+            "es_95": 0.0,
+            "max_drawdown_usd": 0.0,
+            "total_pnl_usd": 0.0,
+        }
+    pnl = sub["pnl_usd"].astype(float).to_numpy()
+    days = sub["days_held"].astype(float).to_numpy() if "days_held" in sub.columns else np.full(n, 1.0)
+    std = pnl.std(ddof=0)
+    mean_hold = float(days.mean()) or 1.0
+    tpy = 365.0 / max(mean_hold, 1.0)
+    sharpe = float((pnl.mean() / std) * np.sqrt(tpy)) if std > 0 else 0.0
+    cum = np.cumsum(pnl)
+    running_max = np.maximum.accumulate(cum)
+    max_dd = float((cum - running_max).min())
+    var95 = float(np.quantile(pnl, 0.05))
+    tail = pnl[pnl <= var95]
+    es95 = float(tail.mean()) if tail.size else var95
+    return {
+        "regime": regime,
+        "n_trades": int(n),
+        "hit_rate": float((pnl > 0).mean()),
+        "sharpe": sharpe,
+        "var_95": var95,
+        "es_95": es95,
+        "max_drawdown_usd": max_dd,
+        "total_pnl_usd": float(pnl.sum()),
+    }
+
+
 __all__ = [
     "compute_spread_zscore",
     "forecast_depletion",
@@ -793,5 +964,6 @@ __all__ = [
     "walk_forward_oos_backtest",
     "monte_carlo_entry_noise",
     "regime_breakdown",
+    "regime_segmented_backtest",
     "bootstrap_metric_cis",
 ]
