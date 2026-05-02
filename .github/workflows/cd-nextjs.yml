@@ -129,8 +129,17 @@ jobs:
               cp "$legacy_mod" build/
             fi
           done
+          # Issue #103 — ship the shadow-thesis calibration burn-in
+          # so backend.services.shadow_theses can read it in
+          # production. The directory is .gitignore'd but the JSONL
+          # itself is force-added (see PR #120). Always create the
+          # data/ dir so the zip include below is unconditional.
+          mkdir -p build/data
+          if [ -f data/shadow_theses.jsonl ]; then
+            cp data/shadow_theses.jsonl build/data/
+          fi
           (cd build && zip -rq ../dist/backend.zip \
-            backend requirements.txt providers *.py \
+            backend requirements.txt providers *.py data \
             -x "*/tests/*" \
             -x "*/__pycache__/*" \
             -x "*.pyc")
