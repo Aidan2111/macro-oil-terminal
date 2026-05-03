@@ -77,17 +77,29 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          # Fixture-backed backend: only FastAPI + stdlib.
-          # Root requirements intentionally NOT installed — no pandas /
-          # sklearn / yfinance needed until we rewire real providers.
+          # Backend deps + the legacy quant stack the services depend
+          # on at runtime (pandas / sklearn / yfinance / requests / etc).
+          # Root requirements.txt is the source of truth for that stack.
           pip install -r backend/requirements.txt
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
 
-      - name: Test gate — smoke-import backend.main
+      - name: Test gate — backend.main import
         run: |
-          # Fixture-backed mode: legacy tests target the old service-layer
-          # API and no longer match. Smoke-import the app instead; real
-          # pytest gate returns when services re-wire.
+          # Smoke-import gates against a totally broken module before
+          # we even spend time on pytest collection.
           python -c "from backend.main import app; print('import ok, routes=', len(app.routes))"
+
+      - name: Test gate — pytest (issue #131)
+        run: |
+          # Issue #131 — block the deploy on test failures rather than
+          # the prior smoke-import-only gate. tests/unit covers the
+          # service layer (badges, silence detector, synthetic monitor,
+          # corroboration, claim validator, calibration, regimes,
+          # multiple-testing, cost pinning, look-ahead, providers, etc).
+          # tests/regression is the LLM-stance corpus (#104).
+          # -x --tb=short keeps the CI log compact when something breaks.
+          python -m pytest tests/unit tests/regression -x --tb=short
 
       - name: Azure login (OIDC)
         uses: azure/login@v3
