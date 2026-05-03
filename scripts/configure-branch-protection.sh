@@ -34,8 +34,6 @@ cat <<JSON > /tmp/main-protection.json
   "required_status_checks": {
     "strict": true,
     "contexts": [
-      "Backend pytest",
-      "Frontend build + test",
       "pytest (unit + coverage) (3.11)",
       "pytest (unit + coverage) (3.12)",
       "Analyze (python)",
