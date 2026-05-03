@@ -1,18 +1,15 @@
 name: synthetic-thesis-monitor
 
 # Issue #100 — every 15 min, exercise the write path end-to-end:
-#   1. POST /api/thesis/generate with the standard portfolio.
-#   2. Stream the SSE response until the `done` event lands.
-#   3. Validate the done payload against the issue-#100 contract.
-#   4. POST the run to /api/synthetic/record so the API keeps the
-#      24h log + the consecutive-failure streak counter.
-#   5. If the streak hits 3, comment on a perma-tracking issue.
-#
-# Rationale: /api/data-quality only watches the read path. Foundry
-# SSE thesis generation is the more failure-prone surface (LLM
-# timeouts, App Service idle hangs, audit-log write failures —
-# the #75/#76 cycle was a recent example). This monitor is a
-# canary on that surface.
+#   1. POST to /api/thesis/generate which IS the SSE stream
+#      (returns text/event-stream, not a JSON envelope with a
+#      `stream_url` — that was the assumption #129 caught).
+#   2. Capture the `data:` line that follows the `event: done`
+#      marker; that's the terminal payload to validate.
+#   3. POST the run summary to /api/synthetic/record so the API
+#      keeps the 24h ring buffer + consecutive-failure counter.
+#   4. Page on 3 consecutive failures (the OpenAI-503 tolerance
+#      band).
 
 on:
   schedule:
@@ -35,37 +32,45 @@ jobs:
       - name: Generate thesis (SSE) and validate
         id: probe
         run: |
-          set -eu
+          set -euo pipefail
           BASE="https://oil-tracker-api-canadaeast-0f18.azurewebsites.net"
           STARTED=$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")
           T0=$(date +%s)
 
-          # Kick off generation. The endpoint accepts a portfolio_usd
-          # body field; default 250000 matches the reference user.
-          gen_resp=$(curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
-            -d '{"mode":"fast","portfolio_usd":250000}' \
-            "$BASE/api/thesis/generate" || echo '{}')
-          stream_url=$(echo "$gen_resp" | jq -r '.stream_url // empty')
-          if [ -z "$stream_url" ]; then
-            echo "no stream_url in /api/thesis/generate response: $gen_resp" >&2
-            stream_url="$BASE/api/thesis/stream"
-          fi
-          # If returned URL is relative, prepend BASE.
-          case "$stream_url" in
-            /*) stream_url="$BASE$stream_url" ;;
-          esac
-
-          # Read the SSE stream up to 100s. Capture the `done` event payload.
+          # `/api/thesis/generate` is the SSE stream itself — POST
+          # returns a text/event-stream body. We give it 100s
+          # (>90s SLA, <120s App Service idle). On timeout / HTTP
+          # error the file is empty; downstream parsing handles
+          # that path.
           tmp=$(mktemp)
-          curl -fsS --max-time 100 -H 'Accept: text/event-stream' "$stream_url" > "$tmp" || true
+          curl -sS --max-time 110 \
+               -X POST \
+               -H 'Content-Type: application/json' \
+               -H 'Accept: text/event-stream' \
+               -H 'Cache-Control: no-cache' \
+               -d '{"mode":"fast","portfolio_usd":250000}' \
+               "$BASE/api/thesis/generate" \
+               > "$tmp" 2>/tmp/curl-stderr.log || true
+
           T1=$(date +%s)
           DURATION=$((T1 - T0))
           FINISHED=$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")
 
-          # Extract the LAST `data: {...}` line whose preceding `event: done`
-          # marker indicates it's the terminal event.
+          echo "DURATION=${DURATION}s" >> "$GITHUB_STEP_SUMMARY"
+          echo "BYTES=$(wc -c < "$tmp")" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s /tmp/curl-stderr.log ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/curl-stderr.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Extract the LAST `data: {…}` line whose preceding
+          # marker was `event: done`. Reset the capture flag on any
+          # other event so we don't accidentally pair a delta payload
+          # with a stale done-flag.
           done_payload=$(awk '
-            /^event: done/ { capture=1; next }
+            /^event: done/      { capture=1; next }
+            /^event:/           { capture=0; next }
             /^data: / && capture { print substr($0, 7); capture=0 }
           ' "$tmp" | tail -1)
 
@@ -76,74 +81,76 @@ jobs:
 
           if [ -z "$done_payload" ]; then
             ok=false
-            violations='["no done event in SSE stream"]'
+            violations='["no done event in SSE stream (timeout / 5xx / non-SSE response)"]'
+            echo "no done payload — first 200 chars of body:" >> "$GITHUB_STEP_SUMMARY"
+            head -c 200 "$tmp" >> "$GITHUB_STEP_SUMMARY" || true
           else
-            # Run the python validator inline so contract changes only
-            # require a code edit (not a workflow edit).
-            cat > /tmp/validate.py <<PYEOF
-          import json, sys
-          sys.path.insert(0, ".")
-          from backend.services.synthetic_monitor import validate_done_event, LATENCY_SLA_SECONDS
-          payload = json.loads(sys.argv[1])
-          duration = float(sys.argv[2])
-          ok, violations = validate_done_event(payload, duration_s=duration)
-          stance = (payload.get("thesis", {}) or {}).get("raw", {}).get("stance")
-          conv = (payload.get("thesis", {}) or {}).get("raw", {}).get("conviction_0_to_10")
-          print(json.dumps({"ok": ok, "violations": violations, "stance": stance, "conviction": conv}))
-          PYEOF
-            # We can't easily import the validator without checking out the
-            # repo, but the logic is small — replicate the contract here.
-            # Keep this in sync with backend/services/synthetic_monitor.py.
-            python3 - "$done_payload" "$DURATION" <<'PYEOF'
-          import json, sys
-          payload = json.loads(sys.argv[1])
-          duration = float(sys.argv[2])
-          violations = []
-          thesis = payload.get("thesis") or {}
-          if not isinstance(thesis, dict):
-              print(json.dumps({"ok": False, "violations": ["thesis missing"], "stance": None, "conviction": None}))
-              sys.exit(0)
-          instr = thesis.get("instruments") or []
-          if not isinstance(instr, list) or len(instr) < 3:
-              violations.append(f"instruments has {len(instr)} entries, expected >= 3")
-          chk = thesis.get("checklist") or []
-          if not isinstance(chk, list) or len(chk) != 5:
-              violations.append(f"checklist has {len(chk)} entries, expected exactly 5")
-          raw = thesis.get("raw") or {}
-          stance = raw.get("stance")
-          if stance not in ("long_spread", "short_spread", "flat"):
-              violations.append(f"stance {stance!r} not in allowed set")
-          conv = raw.get("conviction_0_to_10")
-          if not isinstance(conv, (int, float)) or int(conv) < 1 or int(conv) > 10:
-              violations.append(f"conviction_0_to_10={conv} not in 1..10")
-          headline = thesis.get("plain_english_headline") or raw.get("plain_english_headline")
-          if not headline:
-              violations.append("plain_english_headline empty")
-          if duration > 90.0:
-              violations.append(f"duration {duration:.1f}s exceeds 90s SLA")
-          print(json.dumps({"ok": not violations, "violations": violations, "stance": stance, "conviction": conv}))
-          PYEOF
+            # Inline contract check — keep in sync with
+            # backend/services/synthetic_monitor.py::validate_done_event.
+            # We use python3's -c with stdin so the heredoc indentation
+            # doesn't break the parser (issue #129 also caught this).
+            validation=$(python3 -c '
+import json, sys
+payload = json.loads(sys.argv[1])
+duration = float(sys.argv[2])
+violations = []
+thesis = payload.get("thesis") or {}
+if not isinstance(thesis, dict):
+    print(json.dumps({"ok": False, "violations": ["thesis missing"], "stance": None, "conviction": None}))
+    sys.exit(0)
+instr = thesis.get("instruments") or []
+if not isinstance(instr, list) or len(instr) < 3:
+    violations.append("instruments has %d entries, expected >= 3" % len(instr))
+chk = thesis.get("checklist") or []
+if not isinstance(chk, list) or len(chk) != 5:
+    violations.append("checklist has %d entries, expected exactly 5" % len(chk))
+raw = thesis.get("raw") or {}
+stance = raw.get("stance")
+if stance not in ("long_spread", "short_spread", "flat"):
+    violations.append("stance %r not in allowed set" % stance)
+conv = raw.get("conviction_0_to_10")
+if not isinstance(conv, (int, float)) or int(conv) < 1 or int(conv) > 10:
+    violations.append("conviction_0_to_10=%r not in 1..10" % conv)
+headline = thesis.get("plain_english_headline") or raw.get("plain_english_headline")
+if not headline:
+    violations.append("plain_english_headline empty")
+if duration > 90.0:
+    violations.append("duration %.1fs exceeds 90s SLA" % duration)
+print(json.dumps({"ok": not violations, "violations": violations, "stance": stance, "conviction": conv}))
+' "$done_payload" "$DURATION")
+            ok=$(echo "$validation" | jq -r '.ok')
+            violations=$(echo "$validation" | jq -c '.violations')
+            stance=$(echo "$validation" | jq -c '.stance')
+            conviction=$(echo "$validation" | jq -c '.conviction')
           fi
 
-          # POST the result back to the API so it gets logged.
-          payload=$(cat <<JSON
-          {
-            "started_at": "$STARTED",
-            "finished_at": "$FINISHED",
-            "duration_s": $DURATION,
-            "ok": $ok,
-            "violations": $violations,
-            "stance": $stance,
-            "conviction": $conviction
-          }
-          JSON
-          )
-          record=$(curl -fsS --max-time 15 -X POST -H 'Content-Type: application/json' \
-            -d "$payload" "$BASE/api/synthetic/record" || echo '{"consecutive_failures":-1}')
-          consecutive=$(echo "$record" | jq -r '.consecutive_failures // -1')
+          # POST the run back to /api/synthetic/record. Wrap with `set +e`
+          # so a failed record call doesn't hide the upstream verdict.
+          payload=$(jq -nc \
+            --arg started_at "$STARTED" \
+            --arg finished_at "$FINISHED" \
+            --argjson duration_s "$DURATION" \
+            --argjson ok "$ok" \
+            --argjson violations "$violations" \
+            --argjson stance "$stance" \
+            --argjson conviction "$conviction" \
+            '{started_at: $started_at, finished_at: $finished_at,
+              duration_s: $duration_s, ok: $ok,
+              violations: $violations, stance: $stance,
+              conviction: $conviction}')
+
+          record=$(curl -sS --max-time 15 -X POST -H 'Content-Type: application/json' \
+                       -d "$payload" "$BASE/api/synthetic/record" 2>/dev/null \
+                   || echo '{"consecutive_failures":-1}')
+          # Defensively coerce to an integer; if record came back as
+          # non-JSON (old #129 mode) we still emit -1 and the page
+          # step skips.
+          consecutive=$(echo "$record" | jq -r 'try .consecutive_failures // -1' 2>/dev/null || echo '-1')
+
           echo "consecutive=$consecutive" >> "$GITHUB_OUTPUT"
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
           {
+            echo
             echo "## Synthetic thesis monitor — $FINISHED"
             echo
             echo "- duration_s: $DURATION"
