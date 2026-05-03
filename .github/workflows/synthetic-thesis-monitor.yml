@@ -87,37 +87,46 @@ jobs:
           else
             # Inline contract check — keep in sync with
             # backend/services/synthetic_monitor.py::validate_done_event.
-            # We use python3's -c with stdin so the heredoc indentation
-            # doesn't break the parser (issue #129 also caught this).
-            validation=$(python3 -c '
-import json, sys
-payload = json.loads(sys.argv[1])
-duration = float(sys.argv[2])
-violations = []
-thesis = payload.get("thesis") or {}
-if not isinstance(thesis, dict):
-    print(json.dumps({"ok": False, "violations": ["thesis missing"], "stance": None, "conviction": None}))
-    sys.exit(0)
-instr = thesis.get("instruments") or []
-if not isinstance(instr, list) or len(instr) < 3:
-    violations.append("instruments has %d entries, expected >= 3" % len(instr))
-chk = thesis.get("checklist") or []
-if not isinstance(chk, list) or len(chk) != 5:
-    violations.append("checklist has %d entries, expected exactly 5" % len(chk))
-raw = thesis.get("raw") or {}
-stance = raw.get("stance")
-if stance not in ("long_spread", "short_spread", "flat"):
-    violations.append("stance %r not in allowed set" % stance)
-conv = raw.get("conviction_0_to_10")
-if not isinstance(conv, (int, float)) or int(conv) < 1 or int(conv) > 10:
-    violations.append("conviction_0_to_10=%r not in 1..10" % conv)
-headline = thesis.get("plain_english_headline") or raw.get("plain_english_headline")
-if not headline:
-    violations.append("plain_english_headline empty")
-if duration > 90.0:
-    violations.append("duration %.1fs exceeds 90s SLA" % duration)
-print(json.dumps({"ok": not violations, "violations": violations, "stance": stance, "conviction": conv}))
-' "$done_payload" "$DURATION")
+            # Write the validator to a tmp .py instead of inlining via
+            # `python3 -c` because the YAML literal block scalar (|)
+            # requires every line to be indented to the block base, and
+            # an indented multi-line python heredoc is more brittle than
+            # a `cat > file.py` followed by `python3 file.py`.
+            cat > /tmp/validate_done.py <<'PYEOF'
+            import json, sys
+            payload = json.loads(sys.argv[1])
+            duration = float(sys.argv[2])
+            violations = []
+            thesis = payload.get("thesis") or {}
+            if not isinstance(thesis, dict):
+                print(json.dumps({"ok": False, "violations": ["thesis missing"], "stance": None, "conviction": None}))
+                sys.exit(0)
+            instr = thesis.get("instruments") or []
+            if not isinstance(instr, list) or len(instr) < 3:
+                violations.append("instruments has %d entries, expected >= 3" % len(instr))
+            chk = thesis.get("checklist") or []
+            if not isinstance(chk, list) or len(chk) != 5:
+                violations.append("checklist has %d entries, expected exactly 5" % len(chk))
+            raw = thesis.get("raw") or {}
+            stance = raw.get("stance")
+            if stance not in ("long_spread", "short_spread", "flat"):
+                violations.append("stance %r not in allowed set" % stance)
+            conv = raw.get("conviction_0_to_10")
+            if not isinstance(conv, (int, float)) or int(conv) < 1 or int(conv) > 10:
+                violations.append("conviction_0_to_10=%r not in 1..10" % conv)
+            headline = thesis.get("plain_english_headline") or raw.get("plain_english_headline")
+            if not headline:
+                violations.append("plain_english_headline empty")
+            if duration > 90.0:
+                violations.append("duration %.1fs exceeds 90s SLA" % duration)
+            print(json.dumps({"ok": not violations, "violations": violations, "stance": stance, "conviction": conv}))
+            PYEOF
+            # The heredoc above strips the 12-space indent (because of
+            # `<<-` would, but we used `<<` so each line keeps the
+            # leading whitespace). Strip it before running so python's
+            # IndentationError doesn't bite.
+            sed -i 's/^            //' /tmp/validate_done.py
+            validation=$(python3 /tmp/validate_done.py "$done_payload" "$DURATION")
             ok=$(echo "$validation" | jq -r '.ok')
             violations=$(echo "$validation" | jq -c '.violations')
             stance=$(echo "$validation" | jq -c '.stance')
