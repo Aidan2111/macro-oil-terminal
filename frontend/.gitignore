@@ -5,6 +5,10 @@ node_modules/
 
 # testing
 coverage/
+# Playwright (issue #132) — local trace + report dirs
+playwright-report/
+test-results/
+.playwright/
 
 # next
 .next/
