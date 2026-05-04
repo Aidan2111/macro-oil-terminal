@@ -135,7 +135,7 @@ jobs:
 
       - name: Page on 3 consecutive failures
         if: steps.probe.outputs.consecutive >= '3'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const consecutive = '${{ steps.probe.outputs.consecutive }}';
