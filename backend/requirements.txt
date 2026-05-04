@@ -1,7 +1,7 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.46.0
 pydantic>=2.9.0
-python-dotenv>=1.0.0
+python-dotenv>=1.2.2
 sse-starlette>=2.1.0
 
 # Phase 1 — real provider stack pulled in via lazy imports inside
